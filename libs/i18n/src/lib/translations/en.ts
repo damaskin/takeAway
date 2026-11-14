@@ -3311,7 +3311,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     takeawayPromos: {
       title: 'takeAway promos',
       subtitle:
-        "Percent discounts at every venue at takeAway's expense: the guest pays less, and takeAway pays the venue the difference in the next payout.",
+        "Percent discounts at every venue at takeAway's expense: the guest pays less, and takeAway compensates the venue in the settlement — netted against its commission.",
       tabs: {
         list: 'Promos',
         debt: 'takeAway debt',
@@ -3412,7 +3412,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       debt: {
         title: "takeAway's debt to the venues",
-        hint: 'Now, all time. Accrued — discounts of counted orders; in a payout — part of a payout fixed but not transferred yet; repaid — in payouts marked paid. Debt = accrued − repaid: the money to have ready for the next payouts.',
+        hint: 'Now, all time. Accrued — discounts of counted orders; in a settlement — part of a settlement fixed but not confirmed yet; repaid — in settlements the receiver confirmed. Debt = accrued − repaid.',
         kpi: 'takeAway debt · {{currency}}',
         accrued: 'accrued {{value}}',
         repaid: 'repaid {{value}}',
@@ -3420,7 +3420,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
           brand: 'Brand',
           currency: 'Currency',
           accrued: 'Accrued',
-          inPayout: 'In a payout',
+          inPayout: 'In a settlement',
           repaid: 'Repaid',
           debt: 'Debt',
         },
