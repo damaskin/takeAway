@@ -442,6 +442,7 @@ export const TRANSLATIONS_RU = {
         add: 'Добавить в корзину — {{total}}',
         adding: 'Добавляем…',
         goToCheckout: 'Перейти к оформлению · {{count}} в корзине',
+        continueShopping: 'Продолжить покупки',
         signInPrompt: 'Войдите, чтобы оформить заказ.',
         noStore: 'Ни одна точка этого бренда сейчас не принимает заказы.',
       },
@@ -4137,6 +4138,7 @@ export const TRANSLATIONS_RU = {
     },
     checkout: {
       title: 'Оформление',
+      continueShopping: 'Продолжить покупки',
       pickupWhen: 'Когда забираете?',
       asap: 'Сейчас · ~{{min}} мин',
       schedule: 'Запланировать',

@@ -425,6 +425,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         add: 'Add to cart — {{total}}',
         adding: 'Adding…',
         goToCheckout: 'Go to checkout · {{count}} in cart',
+        continueShopping: 'Continue shopping',
         signInPrompt: 'Sign in to place an order.',
         noStore: 'No store from this brand is taking orders right now.',
       },
@@ -4107,6 +4108,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
     },
     checkout: {
+      continueShopping: 'Continue shopping',
       title: 'Checkout',
       pickupWhen: 'When do you want to pick up?',
       asap: 'ASAP · ~{{min}} min',

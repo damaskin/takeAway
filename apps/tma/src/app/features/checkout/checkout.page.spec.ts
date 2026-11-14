@@ -241,6 +241,13 @@ describe('TmaCheckoutPage — pickup time', () => {
     expect(texts('cart-line-options')).toEqual(['M · Овсяное · Сахар ×2']);
   });
 
+  it('leads back to the store’s menu for one more product', async () => {
+    const { root } = await open(STORE);
+    const more = root.querySelector<HTMLAnchorElement>('[data-testid="checkout-continue-shopping"]');
+    expect(more?.textContent?.trim()).toBe('Продолжить покупки');
+    expect(more?.getAttribute('href')).toBe('/stores/centre');
+  });
+
   it('takes a pre-order for tomorrow morning while the store is closed for the night', async () => {
     const { page, root, texts, days } = await open(NIGHT);
 
