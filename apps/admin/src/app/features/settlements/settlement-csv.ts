@@ -11,10 +11,13 @@ const COLUMNS: ReadonlyArray<{ key: keyof SettlementTotals; money: boolean }> = 
   { key: 'deliveryFeeCents', money: true },
   { key: 'capturedCents', money: true },
   { key: 'refundedCents', money: true },
+  { key: 'cardNetCents', money: true },
   { key: 'takeawayCompensationCents', money: true },
+  { key: 'pointsCompensationCents', money: true },
+  { key: 'compensationCents', money: true },
   { key: 'commissionBaseCents', money: true },
   { key: 'commissionCents', money: true },
-  { key: 'payableCents', money: true },
+  { key: 'netCents', money: true },
 ];
 
 export const SETTLEMENT_CSV_COLUMNS = COLUMNS.map((c) => c.key);
@@ -24,7 +27,8 @@ export const SETTLEMENT_CSV_COLUMNS = COLUMNS.map((c) => c.key);
  * and the rates, then one row per day and a total. In Russian the separator
  * is `;` and the decimal mark `,` — what Excel expects on a Russian system;
  * in English `,` and `.`. Amounts are in major units with two decimals, so
- * the file sums to the kopeck.
+ * the file sums to the kopeck. The net («К взаиморасчёту») keeps its sign:
+ * plus — the brand owes takeAway, minus — takeAway owes the brand.
  *
  * `label` turns a column key ("salesCents") or a line name ("brand") into
  * the viewer's language.
@@ -41,7 +45,7 @@ export function settlementCsv(report: SettlementReport, label: (key: string) => 
   const cell = (value: string) =>
     value.includes(sep) || /["\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
   const line = (cells: string[]) => cells.map(cell).join(sep);
-  // `?? 0`: an API older than takeAway promos sends no compensation.
+  // `?? 0`: a figure an older API does not send reads as nothing.
   const row = (first: string, t: SettlementTotals) =>
     line([first, ...COLUMNS.map((c) => (c.money ? money(t[c.key] ?? 0) : String(t[c.key] ?? 0)))]);
   const rates = report.rates

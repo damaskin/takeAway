@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
@@ -25,6 +25,11 @@ import {
  * is the overwhelmingly common case, but the amount stays editable for the
  * "one drink was wrong" conversation — except for a QR payment, which the
  * bank gives back only whole. It is irreversible, so it asks once.
+ *
+ * Discounts takeAway funds — its promo and loyalty points — are compensated
+ * to the business, and takeAway's commission is on the full amount, so the
+ * panel shows what the order is worth to the business as well as what the
+ * guest paid (2026-11-14).
  */
 @Component({
   selector: 'app-order-detail-panel',
@@ -213,7 +218,7 @@ import {
               money(o.subtotalCents, o.currency)
             }}</span>
           </div>
-          @if (o.discountCents > 0) {
+          @if (o.discountCents - pointsCents() > 0) {
             <div class="flex items-center justify-between">
               <span style="font-size: 13px; color: var(--color-mint)"
                 >{{
@@ -223,7 +228,20 @@ import {
                 }}
                 {{ o.couponCode }}</span
               >
-              <span style="font-size: 13px; color: var(--color-mint)">− {{ money(o.discountCents, o.currency) }}</span>
+              <span style="font-size: 13px; color: var(--color-mint)"
+                >− {{ money(o.discountCents - pointsCents(), o.currency) }}</span
+              >
+            </div>
+          }
+          <!-- Points: takeAway funds the loyalty programme and compensates them to the business. -->
+          @if (pointsCents() > 0) {
+            <div data-testid="order-points" class="flex items-center justify-between" style="gap: 12px">
+              <span style="font-size: 13px; color: var(--color-mint)">{{
+                'admin.orderDetail.points' | translate
+              }}</span>
+              <span style="font-size: 13px; color: var(--color-mint); white-space: nowrap"
+                >− {{ money(pointsCents(), o.currency) }}</span
+              >
             </div>
           }
           @if (o.deliveryFeeCents > 0) {
@@ -274,6 +292,27 @@ import {
                       }
               }}
             </p>
+          }
+          <!-- What the business is credited with: the guest's payment + what takeAway compensates. -->
+          @if (fundedCents() > 0) {
+            <div
+              data-testid="order-business-total"
+              class="flex flex-col"
+              style="gap: 2px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--color-border-light)"
+            >
+              <div class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; font-weight: 600; color: var(--color-espresso)">{{
+                  'admin.orderDetail.businessTotal' | translate
+                }}</span>
+                <span style="font-size: 14px; font-weight: 700; color: var(--color-espresso); white-space: nowrap">{{
+                  money(o.totalCents + fundedCents(), o.currency)
+                }}</span>
+              </div>
+              <span style="font-size: 12px; color: var(--color-text-secondary)">{{
+                'admin.orders.fundedLine'
+                  | translate: { paid: money(o.totalCents, o.currency), funded: money(fundedCents(), o.currency) }
+              }}</span>
+            </div>
           }
           @if (paidWith(); as provider) {
             <div class="flex items-center justify-between">
@@ -445,6 +484,13 @@ export class OrderDetailPanelComponent {
   // native DOM event of that name.
   @Output() readonly closed = new EventEmitter<void>();
 
+  /**
+   * What takeAway funds on the order as the orders list knows it
+   * (`takeawayFundedCents`). The detail does not carry the points yet, so
+   * this is how the panel tells them apart from the brand's own discount.
+   */
+  readonly takeawayFundedCents = input<number | null | undefined>(undefined);
+
   readonly order = signal<AdminOrderDetail | null>(null);
   /** Who cancelled the order, why and where the money went — see `orderCancelSummary`. */
   readonly cancelSummary = computed(() => {
@@ -458,6 +504,29 @@ export class OrderDetailPanelComponent {
   readonly paidWith = computed(() => {
     const payment = orderMoneyPayment(this.order()?.payments ?? []);
     return payment ? { key: paymentProviderKey(payment.provider), raw: payment.provider } : null;
+  });
+
+  /**
+   * Loyalty points spent on the order, which takeAway compensates to the
+   * business. A takeAway promo and points never combine, so without the
+   * figure on the detail it is what the list says takeAway funds minus the
+   * promo's discount. None once the order was cancelled or expired: the
+   * points went back to the guest.
+   */
+  readonly pointsCents = computed(() => {
+    const o = this.order();
+    if (!o || o.status === 'CANCELLED' || o.status === 'EXPIRED') return 0;
+    if (typeof o.pointsDiscountCents === 'number') return Math.max(0, Math.min(o.discountCents, o.pointsDiscountCents));
+    const funded = this.takeawayFundedCents();
+    if (typeof funded !== 'number') return 0;
+    return Math.max(0, Math.min(o.discountCents, funded - (o.takeawayPromo?.discountCents ?? 0)));
+  });
+
+  /** takeAway's promo discount + the points: what takeAway compensates to the business. */
+  readonly fundedCents = computed(() => {
+    const o = this.order();
+    if (!o || o.status === 'CANCELLED' || o.status === 'EXPIRED') return 0;
+    return Math.max(0, o.takeawayPromo?.discountCents ?? 0) + this.pointsCents();
   });
 
   /** Paid by QR: the bank gives it back only whole, so the amount is not editable. */

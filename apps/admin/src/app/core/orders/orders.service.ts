@@ -39,6 +39,13 @@ export interface AdminOrderSummary {
   storeTimezone?: string | null;
   itemCount: number;
   createdAt: string;
+  /**
+   * The order's discounts takeAway funds — its promo and loyalty points: the
+   * brand gets them as compensation and pays commission on them, so for the
+   * business the order is worth `totalCents + takeawayFundedCents`. 0 for a
+   * cancelled or expired order. Absent from an API older than 2026-11-14.
+   */
+  takeawayFundedCents?: number;
 }
 
 export interface AdminOrderItem {
@@ -105,6 +112,12 @@ export interface AdminOrderDetail {
    * takeAway promos.
    */
   takeawayPromo?: TakeawayPromoLine | null;
+  /**
+   * Loyalty points spent on the order (part of `discountCents`); takeAway
+   * compensates them to the brand. The API does not send it yet — the panel
+   * then takes it from the list's `takeawayFundedCents`.
+   */
+  pointsDiscountCents?: number;
   /**
    * Who cancelled the order, the kitchen's reason and comment, and where the
    * money went (as the customer's push said) — see `orderCancelSummary`.

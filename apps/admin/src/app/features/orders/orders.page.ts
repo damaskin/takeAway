@@ -148,8 +148,21 @@ type StatusFilter = OrderStatus | 'ALL';
                     }}
                     · {{ formatTime(o.pickupAt, o.storeTimezone) }}
                   </td>
-                  <td style="font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right">
-                    {{ price(o.totalCents, o.currency) }}
+                  <td
+                    data-testid="order-amount"
+                    style="font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right"
+                  >
+                    {{ price(o.totalCents + funded(o), o.currency) }}
+                    @if (funded(o) > 0) {
+                      <span
+                        data-testid="order-funded"
+                        style="display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); white-space: nowrap"
+                        >{{
+                          'admin.orders.fundedLine'
+                            | translate: { paid: price(o.totalCents, o.currency), funded: price(funded(o), o.currency) }
+                        }}</span
+                      >
+                    }
                   </td>
                   <td style="text-align: center">
                     <span
@@ -200,7 +213,12 @@ type StatusFilter = OrderStatus | 'ALL';
     </section>
 
     @if (selectedOrderId(); as id) {
-      <app-order-detail-panel [orderId]="id" (closed)="selectedOrderId.set(null)" (refunded)="refresh()" />
+      <app-order-detail-panel
+        [orderId]="id"
+        [takeawayFundedCents]="selectedFunded()"
+        (closed)="selectedOrderId.set(null)"
+        (refunded)="refresh()"
+      />
     }
   `,
   styles: [
@@ -257,6 +275,12 @@ export class AdminOrdersPage implements OnInit {
   readonly orders = signal<AdminOrderSummary[]>([]);
   /** Which order's detail drawer is open, if any. */
   readonly selectedOrderId = signal<string | null>(null);
+  /** What takeAway funds on the open order, as the list knows it — the panel splits out the points with it. */
+  readonly selectedFunded = computed(() => {
+    const id = this.selectedOrderId();
+    const order = id ? this.orders().find((o) => o.id === id) : undefined;
+    return order?.takeawayFundedCents ?? null;
+  });
 
   readonly statusFilters: Array<{ key: StatusFilter; label: string }> = [
     { key: 'ALL', label: 'admin.orders.filters.all' },
@@ -336,6 +360,15 @@ export class AdminOrdersPage implements OnInit {
 
   price(cents: number, currency: string): string {
     return this.fmt.money(cents, currency);
+  }
+
+  /**
+   * What takeAway compensates on the order (its promo, points). The business
+   * is credited with the guest's payment plus this, and takeAway's
+   * commission is on that full amount (Maxim's list, 2026-11-14, item 4).
+   */
+  funded(order: AdminOrderSummary): number {
+    return Math.max(0, order.takeawayFundedCents ?? 0);
   }
 
   /** On the store's clock: that is the time the barista and the customer agreed on. */

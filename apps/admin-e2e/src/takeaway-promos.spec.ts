@@ -84,10 +84,11 @@ test.describe('takeAway promos', () => {
     // The platform admin's section is not for a brand.
     await expect(page.getByRole('link', { name: 'Акции takeAway' })).toHaveCount(0);
 
-    const tile = page.getByTestId('settlement-compensation');
-    await expect(tile).toContainText('Компенсация takeAway по акциям');
-    await expect(tile).toContainText('10');
-    await expect(page.locator('.st-table thead')).toContainText('Компенсация takeAway');
+    // «Компенсация takeAway», split into promos and points (since 2026-11-14).
+    await expect(page.getByTestId('figure-compensation')).toContainText('Компенсация takeAway');
+    await expect(page.getByTestId('figure-compensation-promo')).toContainText('по акциям');
+    await expect(page.getByTestId('figure-compensation-promo')).toContainText('10');
+    await expect(page.getByTestId('settlement-days').locator('thead')).toContainText('Компенсация по акциям');
     await page.screenshot({ path: test.info().outputPath('settlements-compensation.png') });
 
     const block = page.getByTestId('settlement-takeaway-promos');
@@ -123,6 +124,7 @@ test.describe('takeAway promos', () => {
             storeTimezone: STORE.timezone,
             itemCount: 1,
             createdAt: '2026-11-06T09:00:00.000Z',
+            takeawayFundedCents: 1_000,
           },
         ]),
       }),
@@ -130,6 +132,8 @@ test.describe('takeAway promos', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto('/orders');
+    // The business sees the full amount: takeAway compensates the discount and takes commission on all of it.
+    await expect(page.getByTestId('order-amount')).toContainText('100 MDL');
     await page.getByRole('cell', { name: TAKEAWAY_PROMO_ORDER.orderCode, exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText(`#${TAKEAWAY_PROMO_ORDER.orderCode}`);
@@ -137,5 +141,6 @@ test.describe('takeAway promos', () => {
       'Акция takeAway −10%: гость оплатил 90 MDL, ещё 10 MDL компенсирует takeAway',
     );
     await expect(dialog).toContainText('Акция takeAway −10% HELLO10');
+    await expect(dialog.getByTestId('order-business-total')).toContainText('100 MDL');
   });
 });

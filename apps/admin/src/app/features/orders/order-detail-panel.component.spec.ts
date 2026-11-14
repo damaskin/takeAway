@@ -40,6 +40,18 @@ const ORDER: AdminOrderDetail = {
 
 const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
+/** Text of an element with its pieces apart: «Сумма для бизнеса 100 MDL», not «…бизнеса100 MDL». */
+function spaced(el: Element | null | undefined): string {
+  if (!el) return '';
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const piece = node.textContent?.trim();
+    if (piece) parts.push(piece);
+  }
+  return parts.join(' ').replace(/\s+/g, ' ');
+}
+
 /** Why a cancelled order ended, for the manager answering the customer (2026-11-09). */
 describe('OrderDetailPanelComponent — a cancelled order', () => {
   async function render(order: AdminOrderDetail) {
@@ -276,6 +288,7 @@ describe('OrderDetailPanelComponent — a takeAway promo order', () => {
     fixture.componentRef.setInput('orderId', order.id);
     fixture.detectChanges();
     await fixture.whenStable();
+    fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
 
@@ -312,5 +325,89 @@ describe('OrderDetailPanelComponent — a takeAway promo order', () => {
     const el = await render({ ...PROMO_ORDER, takeawayPromo: null, couponCode: 'BRAND5' });
     expect(el.querySelector('[data-testid="order-takeaway-promo"]')).toBeNull();
     expect(text(el)).toContain('Скидка BRAND5');
+    // A brand's own promo code is the brand's: nothing for takeAway to compensate.
+    expect(el.querySelector('[data-testid="order-business-total"]')).toBeNull();
+  });
+
+  it('shows the full amount the business is credited with', async () => {
+    const el = await render(PROMO_ORDER);
+    expect(spaced(el.querySelector('[data-testid="order-business-total"]'))).toBe(
+      'Сумма для бизнеса 100 MDL гость оплатил 90 MDL · 10 MDL компенсирует takeAway',
+    );
+  });
+
+  it('has no full amount once the order was cancelled: takeAway compensates nothing then', async () => {
+    const el = await render({ ...PROMO_ORDER, status: 'CANCELLED' });
+    expect(el.querySelector('[data-testid="order-business-total"]')).toBeNull();
+  });
+});
+
+/**
+ * Loyalty points (2026-11-14): takeAway funds the programme, so the points
+ * are compensated to the business like a takeAway promo, and the panel shows
+ * the full amount. The detail does not carry the points yet: the list's
+ * `takeawayFundedCents` tells them apart from the brand's own discount.
+ */
+describe('OrderDetailPanelComponent — an order paid partly with points', () => {
+  beforeEach(() => TestBed.resetTestingModule());
+
+  async function render(order: AdminOrderDetail, takeawayFundedCents?: number) {
+    TestBed.configureTestingModule({
+      imports: [OrderDetailPanelComponent],
+      providers: [
+        provideTranslateService(),
+        { provide: AdminOrdersApi, useValue: { get: jest.fn().mockReturnValue(of(order)) } },
+      ],
+    });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
+    const fixture = TestBed.createComponent(OrderDetailPanelComponent);
+    fixture.componentRef.setInput('orderId', order.id);
+    if (takeawayFundedCents !== undefined) fixture.componentRef.setInput('takeawayFundedCents', takeawayFundedCents);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  /** 50 at the menu: a brand code −5, points −20, the guest paid 25. */
+  const POINTS_ORDER: AdminOrderDetail = {
+    ...ORDER,
+    status: 'PICKED_UP',
+    currency: 'MDL',
+    subtotalCents: 5000,
+    discountCents: 2500,
+    totalCents: 2500,
+    couponCode: 'BRAND5',
+    refundedCents: 0,
+    refundableCents: 2500,
+  };
+
+  it('splits the points out of the discount and says takeAway compensates them', async () => {
+    const el = await render(POINTS_ORDER, 2000);
+    expect(spaced(el)).toContain('Скидка BRAND5 − 5 MDL');
+    expect(spaced(el.querySelector('[data-testid="order-points"]'))).toBe('Баллы — компенсирует takeAway − 20 MDL');
+    expect(spaced(el.querySelector('[data-testid="order-business-total"]'))).toBe(
+      'Сумма для бизнеса 45 MDL гость оплатил 25 MDL · 20 MDL компенсирует takeAway',
+    );
+  });
+
+  it('takes the points from the detail once the API sends them', async () => {
+    const el = await render({ ...POINTS_ORDER, pointsDiscountCents: 2000 });
+    expect(spaced(el.querySelector('[data-testid="order-points"]'))).toBe('Баллы — компенсирует takeAway − 20 MDL');
+  });
+
+  it('shows one discount line when nobody says what takeAway funds (opened from reviews)', async () => {
+    const el = await render(POINTS_ORDER);
+    expect(el.querySelector('[data-testid="order-points"]')).toBeNull();
+    expect(el.querySelector('[data-testid="order-business-total"]')).toBeNull();
+    expect(spaced(el)).toContain('Скидка BRAND5 − 25 MDL');
+  });
+
+  it('has no points line on a cancelled order: the points went back to the guest', async () => {
+    const el = await render({ ...POINTS_ORDER, status: 'CANCELLED', pointsDiscountCents: 2000 }, 0);
+    expect(el.querySelector('[data-testid="order-points"]')).toBeNull();
+    expect(spaced(el)).toContain('Скидка BRAND5 − 25 MDL');
   });
 });
