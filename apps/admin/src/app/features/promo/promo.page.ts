@@ -74,26 +74,6 @@ interface PromoAction {
         </div>
       }
 
-      <!-- Loyalty tier cards (static — tiers come from M5 analytics) -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
-        @for (t of tiers; track t.name) {
-          <article
-            class="flex flex-col"
-            [style.background]="t.gradient"
-            style="border-radius: 20px; padding: 20px; gap: 8px; color: white"
-          >
-            <span
-              style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.8); letter-spacing: 1px"
-              >{{ t.name.toUpperCase() }}</span
-            >
-            <span style="font-family: var(--font-display); font-size: 28px; font-weight: 700">{{ t.members }}</span>
-            <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.8)"
-              >{{ t.threshold }} {{ 'admin.promo.tiers.pointsSuffix' | translate }} · {{ t.benefit | translate }}</span
-            >
-          </article>
-        }
-      </div>
-
       @if (error(); as e) {
         <p role="alert" style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
           {{ e }}
@@ -386,37 +366,6 @@ export class AdminPromoPage implements OnInit {
     ),
     { initialValue: null },
   );
-
-  readonly tiers = [
-    {
-      name: 'Silver',
-      members: '—',
-      threshold: '0',
-      benefit: 'admin.promo.tiers.silverBenefit',
-      gradient: 'linear-gradient(135deg, #A39888 0%, #6B5E54 100%)',
-    },
-    {
-      name: 'Gold',
-      members: '—',
-      threshold: '1,500',
-      benefit: 'admin.promo.tiers.goldBenefit',
-      gradient: 'linear-gradient(135deg, var(--color-caramel) 0%, #a0612a 100%)',
-    },
-    {
-      name: 'Platinum',
-      members: '—',
-      threshold: '3,000',
-      benefit: 'admin.promo.tiers.platinumBenefit',
-      gradient: 'linear-gradient(135deg, #8E5FB0 0%, #5B3D78 100%)',
-    },
-    {
-      name: 'Signature',
-      members: '—',
-      threshold: '10,000',
-      benefit: 'admin.promo.tiers.signatureBenefit',
-      gradient: 'linear-gradient(135deg, #1a1414 0%, #3a3430 100%)',
-    },
-  ];
 
   readonly filtered = computed<Promo[]>(() => {
     const all = this.promos();

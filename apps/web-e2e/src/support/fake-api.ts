@@ -349,6 +349,10 @@ export async function installFakeApi(
     product?: FakeProduct;
     /** The menu says what each category is, and has a bakery: the API with category kinds. */
     menuKinds?: boolean;
+    /** This many more drinks in the coffee category, so the menu is long enough to scroll. */
+    moreDrinks?: number;
+    /** This many more pastries after the croissant (with `menuKinds`), so the bakery fills a screen. */
+    morePastries?: number;
     /**
      * What the store's customers bought together with anything, best first
      * (`GET /stores/:id/suggestions` with `source: copurchase`). Without it
@@ -542,9 +546,34 @@ export async function installFakeApi(
         sortOrder: 0,
         availableFrom: null,
         availableTo: null,
-        products: [drink],
+        products: [
+          drink,
+          ...Array.from({ length: opts.moreDrinks ?? 0 }, (_, i) => ({
+            ...drink,
+            id: `${drink.id}-more-${i + 1}`,
+            slug: `${drink.slug}-more-${i + 1}`,
+            name: `${drink.name} ${i + 2}`,
+            sortOrder: i + 1,
+          })),
+        ],
       };
-      const bakery = { ...coffee, id: 'cat-2', slug: 'bakery', name: 'Bakery', sortOrder: 1, products: [CROISSANT] };
+      const bakery = {
+        ...coffee,
+        id: 'cat-2',
+        slug: 'bakery',
+        name: 'Bakery',
+        sortOrder: 1,
+        products: [
+          CROISSANT,
+          ...Array.from({ length: opts.morePastries ?? 0 }, (_, i) => ({
+            ...CROISSANT,
+            id: `${CROISSANT.id}-more-${i + 1}`,
+            slug: `${CROISSANT.slug}-more-${i + 1}`,
+            name: `Pastry ${i + 2}`,
+            sortOrder: i + 1,
+          })),
+        ],
+      };
       return json(route, {
         storeId: STORE.id,
         storeSlug: STORE.slug,

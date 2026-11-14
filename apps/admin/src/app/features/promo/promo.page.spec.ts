@@ -90,6 +90,14 @@ describe('AdminPromoPage', () => {
     ]);
   });
 
+  it('shows the promos only, without the loyalty tier cards', async () => {
+    const fixture = await render([promo({ id: 'live' })]);
+    const page = text(fixture.nativeElement as HTMLElement);
+    // The static Silver / Gold / Platinum / Signature cards are gone (Maxim's list 6.0, item 8).
+    for (const tier of ['SILVER', 'GOLD', 'PLATINUM', 'SIGNATURE', 'баллов']) expect(page).not.toContain(tier);
+    expect((fixture.nativeElement as HTMLElement).querySelectorAll('tbody tr')).toHaveLength(1);
+  });
+
   it('starts a draft at once and asks before ending a promo', async () => {
     const fixture = await render([promo({ id: 'draft', status: 'DRAFT' }), promo({ id: 'live' })]);
     const el = fixture.nativeElement as HTMLElement;

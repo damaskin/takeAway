@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, model, output, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
@@ -12,7 +12,7 @@ import {
 } from '../../core/analytics/analytics.service';
 import { CustomersApi } from '../../core/customers/customers.service';
 import {
-  INACTIVE_DAYS,
+  DEFAULT_INACTIVE_DAYS,
   INACTIVE_MIN_ORDERS,
   type InactiveSegment,
   campaignLink,
@@ -39,20 +39,6 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
   standalone: true,
   imports: [RouterLink, TranslatePipe],
   template: `
-    <div class="an-window" role="group" [attr.aria-label]="'admin.churn.windowLabel' | translate">
-      <span class="dash-hint">{{ 'admin.churn.windowLabel' | translate }}</span>
-      @for (w of windows; track w) {
-        <button
-          type="button"
-          [class.an-window-on]="window() === w"
-          [attr.aria-pressed]="window() === w"
-          (click)="window.set(w)"
-        >
-          {{ 'admin.churn.window' | translate: { days: w } }}
-        </button>
-      }
-    </div>
-
     <p class="rt-definition">
       <strong>{{ 'admin.churn.definition' | translate: { min: minOrders, days: window() } }}</strong>
       {{ 'admin.analytics.retention.periodNote' | translate }}
@@ -261,28 +247,6 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         gap: 20px;
         font-family: var(--font-sans);
       }
-      .an-window {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      .an-window button {
-        height: 30px;
-        padding: 0 12px;
-        border-radius: 9999px;
-        border: 1px solid var(--color-border-light);
-        background: var(--color-foam);
-        color: var(--color-text-secondary);
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      .an-window .an-window-on {
-        background: var(--color-espresso);
-        border-color: transparent;
-        color: white;
-      }
       .rt-definition {
         margin: 0;
         padding: 12px 16px;
@@ -451,12 +415,17 @@ export class RetentionTabComponent {
   readonly brandId = input.required<string>();
   readonly period = input.required<AnalyticsPeriod>();
   readonly currency = input<string | null | undefined>(null);
-  /** Days without an order that make a regular inactive; two-way so the page can open the tab on a window. */
-  readonly window = model<ChurnWindow>(14);
+  /**
+   * Days without an order that make a regular inactive. Not picked on this
+   * tab since 2026-11-14 (Maxim's list 6.0, item 5: the period on top already
+   * says over which days to look): 14, or the window of the dashboard's
+   * «Неактивные клиенты» card the tab was opened from (`?window=`), so the
+   * two show the same people. The definition above the tab states it.
+   */
+  readonly window = input<ChurnWindow>(DEFAULT_INACTIVE_DAYS);
   /** A store from «ещё N чел. перестали ходить в одну из точек» — the page narrows to it. */
   readonly storePicked = output<string>();
 
-  readonly windows: readonly ChurnWindow[] = INACTIVE_DAYS;
   readonly minOrders = INACTIVE_MIN_ORDERS;
   readonly winBack = signal<WinBackStats | null>(null);
   readonly churn = signal<ChurnStats | null>(null);

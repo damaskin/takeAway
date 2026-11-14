@@ -422,7 +422,7 @@ interface ChartBar {
               [brandId]="id"
               [period]="period()"
               [currency]="currency()"
-              [(window)]="churnWindow"
+              [window]="churnWindow"
               (storePicked)="storeId.set($event)"
             />
           }
@@ -656,7 +656,11 @@ export class AdminAnalyticsPage {
 
   readonly range = signal<DateRangeValue>(rangeFromQuery(this.opened) ?? { days: 14 });
   readonly storeId = signal<string | null>(this.opened.get('storeId'));
-  readonly churnWindow = signal<ChurnWindow>(parseInactiveDays(this.opened.get('window')) ?? DEFAULT_INACTIVE_DAYS);
+  /**
+   * The «Возврат клиентов» tab's inactivity threshold: 14 days, or the one of
+   * the dashboard card that opened it (`?window=`). The tab has no picker for it.
+   */
+  readonly churnWindow: ChurnWindow = parseInactiveDays(this.opened.get('window')) ?? DEFAULT_INACTIVE_DAYS;
   /** The currency picked when the brand's stores price in several. */
   private readonly currencyPick = signal<string | null>(null);
 

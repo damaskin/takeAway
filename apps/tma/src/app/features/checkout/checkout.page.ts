@@ -340,10 +340,21 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
 
         <!-- Order lines -->
         <div class="flex flex-col" style="gap: 12px">
-          <span
-            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-            >{{ 'tma.checkout.yourOrder' | translate }}</span
-          >
+          <div class="flex items-center justify-between" style="gap: 12px">
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ 'tma.checkout.yourOrder' | translate }}</span
+            >
+            <!-- Adding a product brings the customer straight here; this is the way back for one more. -->
+            @if (servingStore(); as shop) {
+              <a
+                [routerLink]="['/stores', shop.slug]"
+                data-testid="checkout-continue-shopping"
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel)"
+                >{{ 'tma.checkout.continueShopping' | translate }}</a
+              >
+            }
+          </div>
           @if (c.items.length === 0) {
             <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
               {{ 'tma.checkout.empty' | translate }}
