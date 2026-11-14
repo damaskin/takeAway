@@ -1,12 +1,14 @@
 import {
   commissionCents,
   computeSettlement,
+  directionOf,
   emptyTotals,
   periodFigures,
   planPayout,
   rateSpans,
   settleOrder,
   settlementBalance,
+  signedAmount,
   type LedgerPayout,
   type SettlementOrderRow,
 } from './settlement-math';
@@ -25,6 +27,7 @@ function order(overrides: Partial<SettlementOrderRow> = {}): SettlementOrderRow 
     pointsDiscountCents: 0,
     takeawayDiscountCents: 0,
     takeawayCompensationCents: 0,
+    pointsCompensationCents: 0,
     giftCardCents: 0,
     deliveryFeeCents: 0,
     totalCents: 0,
@@ -37,12 +40,12 @@ function order(overrides: Partial<SettlementOrderRow> = {}): SettlementOrderRow 
 
 /**
  * The worked example of docs/settlements.md, a PRO brand at 15 %, prices in
- * Transnistrian roubles (kopecks).
+ * Transnistrian roubles (kopecks). The guests pay the brand directly.
  */
 const EXAMPLE: SettlementOrderRow[] = [
   // A — latte and croissant, 75 руб., paid by card.
   order({ id: 'A', subtotalCents: 7500, totalCents: 7500, capturedCents: 7500, hasCapture: true }),
-  // B — a free coffee on a promo code: shows as 0 руб., no card payment at all.
+  // B — a free coffee on the brand's own promo code: 0 руб., no card payment at all.
   order({ id: 'B', subtotalCents: 4000, discountCents: 4000, totalCents: 0 }),
   // C — 120 руб., 50 of them from a gift card the brand sold, 70 by card.
   order({
@@ -53,12 +56,13 @@ const EXAMPLE: SettlementOrderRow[] = [
     capturedCents: 7000,
     hasCapture: true,
   }),
-  // D — 60 руб., 10 of them in loyalty points, 50 by card.
+  // D — 60 руб., 10 of them in loyalty points (takeAway's to fund), 50 by card.
   order({
     id: 'D',
     subtotalCents: 6000,
     discountCents: 1000,
     pointsDiscountCents: 1000,
+    pointsCompensationCents: 1000,
     totalCents: 5000,
     capturedCents: 5000,
     hasCapture: true,
@@ -70,6 +74,17 @@ const EXAMPLE: SettlementOrderRow[] = [
     totalCents: 3333,
     capturedCents: 3333,
     refundedCents: 1000,
+    hasCapture: true,
+  }),
+  // F — 100 руб. with a takeAway promo −10 %: the guest paid 90, takeAway owes 10.
+  order({
+    id: 'F',
+    subtotalCents: 10000,
+    discountCents: 1000,
+    takeawayDiscountCents: 1000,
+    takeawayCompensationCents: 1000,
+    totalCents: 9000,
+    capturedCents: 9000,
     hasCapture: true,
   }),
 ];
@@ -98,43 +113,57 @@ describe('commissionCents', () => {
 });
 
 describe('settleOrder', () => {
-  it('charges commission on the card money only', () => {
-    const [a, b, c, d, e] = EXAMPLE.map((row) => settleOrder(row, 1500));
-    expect(a).toMatchObject({ commissionBaseCents: 7500, commissionCents: 1125, payableCents: 6375 });
-    // A promo order the customer paid nothing for: nothing came in, nothing is owed.
+  it('charges commission on the card money plus what takeAway compensates', () => {
+    const [a, b, c, d, e, f] = EXAMPLE.map((row) => settleOrder(row, 1500));
+    expect(a).toMatchObject({ cardNetCents: 7500, commissionBaseCents: 7500, commissionCents: 1125, netCents: 1125 });
+    // The brand's own promo: the guest paid nothing, nothing is owed either way.
     expect(b).toMatchObject({
       cardOrders: 0,
       zeroTotalOrders: 1,
       salesCents: 4000,
       promoDiscountCents: 4000,
       commissionBaseCents: 0,
-      payableCents: 0,
+      netCents: 0,
     });
-    // The gift-card share was paid to the brand when it sold the card.
+    // The gift-card share was paid to the brand when it sold the card: no commission on it.
     expect(c).toMatchObject({
       giftCardCents: 5000,
       commissionBaseCents: 7000,
       commissionCents: 1050,
-      payableCents: 5950,
+      netCents: 1050,
     });
-    // Points are a discount of their own, not a promo.
+    // Points: takeAway owes the brand 10 and takes commission on the full 60.
     expect(d).toMatchObject({
       promoDiscountCents: 0,
       pointsDiscountCents: 1000,
-      commissionCents: 750,
-      payableCents: 4250,
+      cardNetCents: 5000,
+      pointsCompensationCents: 1000,
+      compensationCents: 1000,
+      commissionBaseCents: 6000,
+      commissionCents: 900,
+      netCents: -100,
     });
     expect(e).toMatchObject({
       refundedCents: 1000,
+      cardNetCents: 2333,
       commissionBaseCents: 2333,
       commissionCents: 350,
-      payableCents: 1983,
+      netCents: 350,
+    });
+    expect(f).toMatchObject({
+      cardNetCents: 9000,
+      takeawayCompensationCents: 1000,
+      pointsCompensationCents: 0,
+      compensationCents: 1000,
+      commissionBaseCents: 10000,
+      commissionCents: 1500,
+      netCents: 500,
     });
   });
 
-  it('counts an accepted order with nothing paid through the platform as unpaid', () => {
+  it('takes no commission on an accepted order paid at the counter', () => {
     const settled = settleOrder(order({ subtotalCents: 5000, totalCents: 5000 }), 1500);
-    expect(settled).toMatchObject({ unpaidOrders: 1, unpaidTotalCents: 5000, capturedCents: 0, payableCents: 0 });
+    expect(settled).toMatchObject({ unpaidOrders: 1, unpaidTotalCents: 5000, capturedCents: 0, netCents: 0 });
   });
 
   it('nets a full refund to nothing', () => {
@@ -142,61 +171,60 @@ describe('settleOrder', () => {
       order({ totalCents: 5000, capturedCents: 5000, refundedCents: 5000, hasCapture: true }),
       1500,
     );
-    expect(settled).toMatchObject({ cardOrders: 1, commissionBaseCents: 0, commissionCents: 0, payableCents: 0 });
+    expect(settled).toMatchObject({ cardOrders: 1, commissionBaseCents: 0, commissionCents: 0, netCents: 0 });
   });
 
   it('never lets a refund exceed the captured money', () => {
     const settled = settleOrder(order({ capturedCents: 1000, refundedCents: 1500, hasCapture: true }), 1500);
-    expect(settled).toMatchObject({ refundedCents: 1000, commissionBaseCents: 0 });
+    expect(settled).toMatchObject({ refundedCents: 1000, cardNetCents: 0, commissionBaseCents: 0 });
   });
 
   // «Учёт акций takeAway»: 100 at 10 % — the guest pays 90, takeAway owes 10.
-  it('pays a takeAway promo order exactly what a regular order of the same price brings', () => {
+  it('leaves the brand with what a regular order of the same price brings', () => {
     const regular = settleOrder(
       order({ subtotalCents: 10000, totalCents: 10000, capturedCents: 10000, hasCapture: true }),
       1500,
     );
-    const promo = settleOrder(
+    const promo = settleOrder(EXAMPLE[5] as SettlementOrderRow, 1500);
+    const points = settleOrder(
       order({
         subtotalCents: 10000,
-        discountCents: 1000,
-        takeawayDiscountCents: 1000,
-        takeawayCompensationCents: 1000,
-        totalCents: 9000,
-        capturedCents: 9000,
+        discountCents: 2500,
+        pointsDiscountCents: 2500,
+        pointsCompensationCents: 2500,
+        totalCents: 7500,
+        capturedCents: 7500,
         hasCapture: true,
       }),
       1500,
     );
-    expect(promo).toMatchObject({
-      capturedCents: 9000,
-      takeawayCompensationCents: 1000,
-      // Commission on the full menu price P, not on what the guest paid.
-      commissionBaseCents: 10000,
-      commissionCents: 1500,
-      // Not the brand's own promo code.
-      promoDiscountCents: 0,
-    });
-    expect(promo.payableCents).toBe(regular.payableCents);
-    expect(promo.payableCents).toBe(8500);
+    // What the brand keeps: the guest's card money − what it owes takeAway (net).
+    const keeps = (s: ReturnType<typeof settleOrder>) => s.cardNetCents - s.netCents;
+    expect(keeps(regular)).toBe(8500);
+    expect(keeps(promo)).toBe(8500);
+    expect(keeps(points)).toBe(8500);
+    // Points worth more than the commission: takeAway pays the brand the difference.
+    expect(points.netCents).toBe(1500 - 2500);
   });
 
-  it('owes nothing for the promo of an order that was cancelled and refunded', () => {
-    // The redemption is gone once the order is cancelled: the SQL reads 0.
+  it('owes nothing for the promo or the points of an order cancelled and refunded', () => {
+    // The redemption and the points are gone once the order is cancelled: the SQL reads 0.
     const settled = settleOrder(
       order({
         subtotalCents: 10000,
         discountCents: 1000,
         takeawayDiscountCents: 1000,
         takeawayCompensationCents: 0,
-        totalCents: 9000,
-        capturedCents: 9000,
-        refundedCents: 9000,
+        pointsDiscountCents: 500,
+        pointsCompensationCents: 0,
+        totalCents: 8500,
+        capturedCents: 8500,
+        refundedCents: 8500,
         hasCapture: true,
       }),
       1500,
     );
-    expect(settled).toMatchObject({ takeawayCompensationCents: 0, commissionBaseCents: 0, payableCents: 0 });
+    expect(settled).toMatchObject({ compensationCents: 0, commissionBaseCents: 0, netCents: 0 });
   });
 
   it('keeps the brand promo and the takeAway promo apart, with points beside them', () => {
@@ -219,18 +247,22 @@ describe('computeSettlement', () => {
     const result = computeSettlement(EXAMPLE, [], 1500, window, utcDay);
     expect(result.totals).toEqual({
       ...emptyTotals(),
-      orders: 5,
-      cardOrders: 4,
+      orders: 6,
+      cardOrders: 5,
       zeroTotalOrders: 1,
-      salesCents: 32833,
+      salesCents: 42833,
       promoDiscountCents: 4000,
       pointsDiscountCents: 1000,
       giftCardCents: 5000,
-      capturedCents: 22833,
+      capturedCents: 31833,
       refundedCents: 1000,
-      commissionBaseCents: 21833,
-      commissionCents: 3275,
-      payableCents: 18558,
+      cardNetCents: 30833,
+      takeawayCompensationCents: 1000,
+      pointsCompensationCents: 1000,
+      compensationCents: 2000,
+      commissionBaseCents: 32833,
+      commissionCents: 4925,
+      netCents: 2925,
     });
   });
 
@@ -265,14 +297,14 @@ describe('computeSettlement', () => {
     expect(result.days[1]?.commissionCents).toBe(1000);
   });
 
-  it('keeps what was settled before the period for the opening balance', () => {
+  it('keeps the net settled before the period for the opening balance', () => {
     const rows = [
       order({ id: 'old', settledAt: at('2026-09-20T10:00:00Z'), capturedCents: 10000, hasCapture: true }),
       order({ id: 'new', settledAt: at('2026-10-02T10:00:00Z'), capturedCents: 2000, hasCapture: true }),
     ];
     const result = computeSettlement(rows, [], 1500, window, utcDay);
-    expect(result.accruedBeforeCents).toBe(8500);
-    expect(result.accruedBeforeEndCents).toBe(8500 + 1700);
+    expect(result.accruedBeforeCents).toBe(1500);
+    expect(result.accruedBeforeEndCents).toBe(1500 + 300);
     expect(result.totals.orders).toBe(1);
     expect(result.firstSettledDay).toBe('2026-09-20');
   });
@@ -295,11 +327,12 @@ describe('periodFigures', () => {
     expect(periodFigures(rows, [], 1500, at('2026-10-01T00:00:00Z'), at('2026-10-02T00:00:00Z'))).toEqual({
       cardNetCents: 1500,
       compensationCents: 0,
+      pointsCompensationCents: 0,
       commissionCents: 225,
     });
   });
 
-  it('keeps the takeAway promo compensation out of the card money', () => {
+  it('keeps the promo and the points compensation out of the card money', () => {
     const rows = [
       order({
         capturedCents: 1555 - 156,
@@ -307,78 +340,102 @@ describe('periodFigures', () => {
         takeawayCompensationCents: 156,
         hasCapture: true,
       }),
+      order({ capturedCents: 800, pointsDiscountCents: 200, pointsCompensationCents: 200, hasCapture: true }),
     ];
     expect(periodFigures(rows, [], 1000, at('2026-10-02T00:00:00Z'), at('2026-10-03T00:00:00Z'))).toEqual({
-      cardNetCents: 1399,
+      cardNetCents: 1399 + 800,
       compensationCents: 156,
-      // 10 % of 15.55, half up.
-      commissionCents: 156,
+      pointsCompensationCents: 200,
+      // 10 % of 15.55 → 1.56, and 10 % of 10.00.
+      commissionCents: 156 + 100,
     });
+  });
+});
+
+describe('signedAmount and directionOf', () => {
+  it('signs a settlement the way the balance reads: + the brand pays, − takeAway pays', () => {
+    expect(signedAmount('BRAND_TO_TAKEAWAY', 500)).toBe(500);
+    expect(signedAmount('TAKEAWAY_TO_BRAND', 500)).toBe(-500);
+  });
+
+  it('turns a signed net into who pays and how much', () => {
+    expect(directionOf(2925)).toEqual({ direction: 'BRAND_TO_TAKEAWAY', amountCents: 2925 });
+    expect(directionOf(-1000)).toEqual({ direction: 'TAKEAWAY_TO_BRAND', amountCents: 1000 });
+    expect(directionOf(0)).toEqual({ direction: null, amountCents: 0 });
   });
 });
 
 describe('settlementBalance', () => {
   const start = at('2026-10-08T00:00:00Z');
   const end = at('2026-10-15T00:00:00Z');
-  const payout = (periodTo: string, amountCents: number, status: 'PENDING' | 'PAID'): LedgerPayout => ({
+  const settlement = (periodTo: string, signedCents: number, status: LedgerPayout['status']): LedgerPayout => ({
     periodTo,
     periodEnd: at(`${nextDay(periodTo)}T00:00:00Z`),
-    amountCents,
+    signedCents,
     status,
   });
 
   it('carries what is still owed into the next period', () => {
     const balance = settlementBalance({
-      accruedBeforeCents: 50_000,
-      payableCents: 20_000,
-      payouts: [payout('2026-09-30', 30_000, 'PAID'), payout('2026-10-07', 19_000, 'PAID')],
+      accruedBeforeCents: 5_000,
+      netCents: 2_000,
+      payouts: [settlement('2026-09-30', 3_000, 'CONFIRMED'), settlement('2026-10-07', 1_900, 'CONFIRMED')],
       start,
       end,
     });
-    // 50 000 earned by the 8th, 49 000 paid for periods up to the 7th: 1 000 carried in
-    // (a refund on an order paid out before shows up exactly like that, with the other sign).
+    // 5 000 owed by the 8th, 4 900 settled for periods up to the 7th: 100 carried in.
     expect(balance).toEqual({
-      openingCents: 1_000,
-      payableCents: 20_000,
-      paidCents: 0,
-      pendingCents: 0,
-      closingCents: 21_000,
-      closingPendingCents: 0,
+      openingCents: 100,
+      netCents: 2_000,
+      settledCents: 0,
+      openCents: 0,
+      closingCents: 2_100,
+      closingOpenCents: 0,
     });
   });
 
-  it('counts a payout against the period it settles, and a pending one as still owed', () => {
+  it('counts only a confirmed settlement as settled; paid, pending and disputed are still owed', () => {
     const balance = settlementBalance({
-      accruedBeforeCents: 10_000,
-      payableCents: 20_000,
-      payouts: [payout('2026-10-07', 10_000, 'PAID'), payout('2026-10-14', 20_000, 'PENDING')],
+      accruedBeforeCents: 1_000,
+      netCents: 2_000,
+      payouts: [
+        settlement('2026-10-07', 1_000, 'PAID'),
+        settlement('2026-10-10', 800, 'DISPUTED'),
+        settlement('2026-10-14', 1_200, 'PENDING'),
+      ],
       start,
       end,
     });
-    expect(balance).toMatchObject({ openingCents: 0, paidCents: 0, pendingCents: 20_000, closingCents: 20_000 });
-    expect(balance.closingPendingCents).toBe(20_000);
+    expect(balance).toMatchObject({ openingCents: 1_000, settledCents: 0, openCents: 2_000, closingCents: 3_000 });
+    expect(balance.closingOpenCents).toBe(3_000);
   });
 
-  it('subtracts a payout made within the period from the closing balance', () => {
+  it('subtracts a settlement confirmed within the period from the closing balance', () => {
     const balance = settlementBalance({
       accruedBeforeCents: 0,
-      payableCents: 20_000,
-      payouts: [payout('2026-10-10', 12_000, 'PAID'), payout('2026-10-20', 99_999, 'PAID')],
+      netCents: 2_000,
+      payouts: [settlement('2026-10-10', 1_200, 'CONFIRMED'), settlement('2026-10-20', 99_999, 'CONFIRMED')],
       start,
       end,
     });
-    expect(balance).toMatchObject({ paidCents: 12_000, closingCents: 8_000 });
+    expect(balance).toMatchObject({ settledCents: 1_200, closingCents: 800 });
   });
 
-  it('goes negative when refunds outweigh the money owed', () => {
+  it('nets settlements both ways: what takeAway paid the brand raises what the brand owes', () => {
+    // takeAway owed the brand 1 500 (points) and paid it; the brand's commission since is 400.
     const balance = settlementBalance({
-      accruedBeforeCents: 9_000,
-      payableCents: 0,
-      payouts: [payout('2026-10-07', 10_000, 'PAID')],
+      accruedBeforeCents: -1_500,
+      netCents: 400,
+      payouts: [settlement('2026-10-07', -1_500, 'CONFIRMED')],
       start,
       end,
     });
-    expect(balance.closingCents).toBe(-1_000);
+    expect(balance).toMatchObject({ openingCents: 0, closingCents: 400 });
+  });
+
+  it('goes negative when takeAway owes the brand', () => {
+    const balance = settlementBalance({ accruedBeforeCents: 0, netCents: -700, payouts: [], start, end });
+    expect(balance.closingCents).toBe(-700);
   });
 });
 
@@ -388,34 +445,58 @@ describe('planPayout', () => {
     today: '2026-10-10',
     lastSettledDay: null,
     firstSettledDay: '2026-10-02',
-    accruedBeforeEndCents: 18_558,
+    accruedBeforeEndCents: 2_925,
     committedCents: 0,
     nextDay,
   };
 
-  it('starts the first payout at the first counted order and pays the whole balance', () => {
-    expect(planPayout(base)).toEqual({ periodFrom: '2026-10-02', amountCents: 18_558, blocked: null });
-  });
-
-  it('picks up the day after the last payout and pays only what is not covered yet', () => {
-    expect(planPayout({ ...base, to: '2026-10-09', lastSettledDay: '2026-10-07', committedCents: 18_000 })).toEqual({
-      periodFrom: '2026-10-08',
-      amountCents: 558,
+  it('starts the first settlement at the first counted order and takes the whole balance', () => {
+    expect(planPayout(base)).toEqual({
+      periodFrom: '2026-10-02',
+      netCents: 2_925,
+      direction: 'BRAND_TO_TAKEAWAY',
+      amountCents: 2_925,
       blocked: null,
     });
   });
 
-  it('refuses a day an earlier payout already settles', () => {
-    expect(planPayout({ ...base, lastSettledDay: '2026-10-07', committedCents: 18_558 }).blocked).toBe('OVERLAP');
+  it('points the other way when the compensation outweighs the commission', () => {
+    expect(planPayout({ ...base, accruedBeforeEndCents: -1_000 })).toEqual({
+      periodFrom: '2026-10-02',
+      netCents: -1_000,
+      direction: 'TAKEAWAY_TO_BRAND',
+      amountCents: 1_000,
+      blocked: null,
+    });
+  });
+
+  it('picks up the day after the last settlement and takes only what is not fixed yet', () => {
+    expect(planPayout({ ...base, to: '2026-10-09', lastSettledDay: '2026-10-07', committedCents: 2_000 })).toEqual({
+      periodFrom: '2026-10-08',
+      netCents: 925,
+      direction: 'BRAND_TO_TAKEAWAY',
+      amountCents: 925,
+      blocked: null,
+    });
+    // A settlement takeAway paid (−) leaves more for the brand to pay.
+    expect(planPayout({ ...base, to: '2026-10-09', lastSettledDay: '2026-10-07', committedCents: -500 })).toMatchObject(
+      { netCents: 3_425, amountCents: 3_425 },
+    );
+  });
+
+  it('refuses a day an earlier settlement already covers', () => {
+    expect(planPayout({ ...base, lastSettledDay: '2026-10-07', committedCents: 2_925 }).blocked).toBe('OVERLAP');
   });
 
   it('refuses a period that has not ended yet', () => {
     expect(planPayout({ ...base, to: '2026-10-10' }).blocked).toBe('PERIOD_OPEN');
   });
 
-  it('refuses when nothing is owed — a negative balance is carried forward', () => {
-    expect(planPayout({ ...base, committedCents: 20_000 })).toMatchObject({
-      amountCents: -1_442,
+  it('refuses when commission and compensation cancel out', () => {
+    expect(planPayout({ ...base, committedCents: 2_925 })).toMatchObject({
+      netCents: 0,
+      direction: null,
+      amountCents: 0,
       blocked: 'NOTHING_DUE',
     });
     expect(planPayout({ ...base, firstSettledDay: null, accruedBeforeEndCents: 0 }).blocked).toBe('NOTHING_DUE');

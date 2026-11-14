@@ -155,7 +155,13 @@ const discount = (s: Seed) => (s.promo ?? 0) + (s.points ?? 0);
 /** The week's counted rouble orders, as `money.ts` sees them. */
 const WEEK_RUP = SEEDS.filter(
   (s) => s.storeId === CENTER && s.status !== 'CANCELLED' && s.createdAt >= '2026-09-27T21:00:00Z',
-).map((s) => ({ ...s, subtotalCents: subtotal(s), discountCents: discount(s), giftCardCents: s.giftCard ?? 0 }));
+).map((s) => ({
+  ...s,
+  subtotalCents: subtotal(s),
+  discountCents: discount(s),
+  pointsDiscountCents: s.points ?? 0,
+  giftCardCents: s.giftCard ?? 0,
+}));
 
 suite('analytics money on Postgres', () => {
   let prisma: PrismaClient;
@@ -235,7 +241,7 @@ suite('analytics money on Postgres', () => {
   it('sums revenue as sales less discounts, gift cards included', async () => {
     const r = await analytics.revenueSeries(roubles, WEEK);
     const expected = sumMoney(WEEK_RUP);
-    expect(expected).toEqual({ salesCents: 10_400, discountCents: 1_900, revenueCents: 8_500, giftCardCents: 1_400 });
+    expect(expected).toEqual({ salesCents: 10_400, discountCents: 1_400, revenueCents: 9_000, giftCardCents: 1_400 });
     expect(r).toMatchObject({
       totalRevenueCents: expected.revenueCents,
       salesCents: expected.salesCents,
@@ -255,7 +261,11 @@ suite('analytics money on Postgres', () => {
           name: l.name,
           quantity: l.quantity,
           totalCents: l.unitPriceCents * l.quantity,
-          order: { subtotalCents: o.subtotalCents, discountCents: o.discountCents },
+          order: {
+            subtotalCents: o.subtotalCents,
+            discountCents: o.discountCents,
+            pointsDiscountCents: o.pointsDiscountCents,
+          },
         })),
       ),
     );
@@ -270,7 +280,7 @@ suite('analytics money on Postgres', () => {
       newCustomers: 1,
       returningCustomers: 1,
       repeatRatePercent: 50,
-      avgBasketCents: 1_700,
+      avgBasketCents: 1_800,
     });
   });
 
@@ -281,22 +291,22 @@ suite('analytics money on Postgres', () => {
       { storeComparison: true, deep: true },
     );
     expect(all.current).toMatchObject({
-      revenueCents: 8_500,
+      revenueCents: 9_000,
       salesCents: 10_400,
-      discountCents: 1_900,
+      discountCents: 1_400,
       giftCardCents: 1_400,
       orders: 5,
       placed: 6,
       customers: 2,
       newCustomers: 1,
       returningCustomers: 1,
-      avgCheckCents: 1_700,
+      avgCheckCents: 1_800,
       // 15 % of the revenue less the 14 paid by gift card.
-      commissionCents: 1_065,
+      commissionCents: 1_140,
     });
-    expect(all.daily.reduce((sum, d) => sum + d.revenueCents, 0)).toBe(8_500);
+    expect(all.daily.reduce((sum, d) => sum + d.revenueCents, 0)).toBe(9_000);
     expect(all.byStore.map((s) => [s.id, s.revenueCents])).toEqual([
-      [CENTER, 8_500],
+      [CENTER, 9_000],
       [TEST2, 0],
     ]);
 
@@ -312,17 +322,17 @@ suite('analytics money on Postgres', () => {
       { ...ctx, scope: { brandIds: [BRAND], storeIds: [CENTER] }, parent: roubles, storeId: CENTER },
       { storeComparison: true, deep: false },
     );
-    expect(center.current).toMatchObject({ revenueCents: 8_500, orders: 5, customers: 2, activeUnits: 1 });
+    expect(center.current).toMatchObject({ revenueCents: 9_000, orders: 5, customers: 2, activeUnits: 1 });
   });
 
   it('runs every other money query on the same basis, one currency at a time', async () => {
     const stores = await analytics.storePerformance(roubles, WEEK, true);
     expect(stores.map((s) => [s.storeId, s.revenueCents, s.currency])).toEqual([
-      [CENTER, 8_500, 'RUP'],
+      [CENTER, 9_000, 'RUP'],
       [TEST2, 0, 'RUP'],
     ]);
     await expect(analytics.dashboardSummary(roubles, WEEK)).resolves.toMatchObject({
-      revenueCents: 8_500,
+      revenueCents: 9_000,
       orders: 5,
     });
     const now = new Date('2026-10-10T00:00:00Z');
@@ -332,12 +342,12 @@ suite('analytics money on Postgres', () => {
     await expect(analytics.churn(roubles, WEEK, 14, true, 20, now)).resolves.toMatchObject({ count: 0 });
 
     const p = await overview.platform({ from: WEEK.from, to: WEEK.to }, 'RUP');
-    expect(p.byBrand.find((b) => b.id === BRAND)).toMatchObject({ revenueCents: 8_500, commissionCents: 1_065 });
+    expect(p.byBrand.find((b) => b.id === BRAND)).toMatchObject({ revenueCents: 9_000, commissionCents: 1_140 });
 
     await prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW "mv_orders_daily"');
     const brands = await analytics.brandPerformance(3650);
     // Every counted rouble order, August's six too; the sale in lei stays out.
-    expect(brands.find((b) => b.brandId === BRAND)).toMatchObject({ revenueCents: 16_900, orders: 11 });
+    expect(brands.find((b) => b.brandId === BRAND)).toMatchObject({ revenueCents: 17_400, orders: 11 });
   });
 
   it('names who went quiet at one store but still orders at another', async () => {
@@ -352,8 +362,8 @@ suite('analytics money on Postgres', () => {
     const customers = new CustomersService(prisma as unknown as PrismaService);
     const page = await customers.list(roubles, { page: 1, pageSize: 10, sort: 'totalCents' } as CustomersQueryDto);
     const tester = page.items.find((c) => c.userId === 'it-tester');
-    // 28 + 0 + 14 + 29 roubles — the gift-card order counts, the cancelled one does not.
-    expect(tester).toMatchObject({ orders: 4, totalCents: 7_100, avgCheckCents: 1_775 });
+    // 28 + 0 + 14 + 34 roubles — the gift-card order counts, the points are takeAway's to pay, the cancelled one does not count.
+    expect(tester).toMatchObject({ orders: 4, totalCents: 7_600, avgCheckCents: 1_900 });
     const detail = await customers.detail(roubles, 'it-tester');
     const counted = detail.recentOrders.filter((o) => o.status !== 'CANCELLED');
     expect(counted.reduce((sum, o) => sum + o.totalCents, 0)).toBe(detail.totalCents);
