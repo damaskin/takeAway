@@ -429,6 +429,17 @@ export class OrderSummaryDto {
   cancelReason!: OrderCancelReason | null;
 }
 
+/** A row of the staff order list (`GET /admin/orders`). */
+export class AdminOrderSummaryDto extends OrderSummaryDto {
+  @ApiProperty({
+    description:
+      "The order's discounts takeAway funds — its own promo and loyalty points. The brand gets them as compensation " +
+      'and pays commission on them, so for the business the order is worth totalCents + takeawayFundedCents. ' +
+      '0 without either, and for a cancelled or expired order.',
+  })
+  takeawayFundedCents!: number;
+}
+
 /** A row of the customer's own order history (`GET /me/orders`). */
 export class CustomerOrderSummaryDto extends OrderSummaryDto {
   @ApiProperty({ description: 'See OrderDto.canReview.' })

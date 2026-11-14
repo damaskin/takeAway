@@ -210,6 +210,7 @@ export class AnalyticsService {
         subtotalCents: true,
         discountCents: true,
         takeawayDiscountCents: true,
+        pointsDiscountCents: true,
         giftCardCents: true,
         acceptedAt: true,
         readyAt: true,

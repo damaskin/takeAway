@@ -258,6 +258,28 @@ describe('ProductPage', () => {
     add.flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 3000 });
   });
 
+  it('once something is in the cart, offers checkout or going back to the product’s category in the menu', async () => {
+    const harness = await open('croissant', CROISSANT);
+    const el = harness.routeNativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="product-next"]')).toBeNull();
+
+    Array.from(el.querySelectorAll('button'))
+      .find((b) => text(b).includes('Добавить в корзину'))
+      ?.click();
+    http
+      .expectOne('/api/cart/items')
+      .flush({ id: 'cart-1', storeId: STORE.id, items: [{ id: 'line-1', quantity: 2 }], subtotalCents: 6000 });
+    await harness.fixture.whenStable();
+
+    const checkout = el.querySelector<HTMLAnchorElement>('[data-testid="product-go-to-checkout"]');
+    const more = el.querySelector<HTMLAnchorElement>('[data-testid="product-continue-shopping"]');
+    expect(text(checkout)).toBe('Перейти к оформлению · 2 в корзине');
+    expect(checkout?.getAttribute('href')).toBe('/checkout?store=centre');
+    expect(text(more)).toBe('Продолжить покупки');
+    // Back to the croissant's own category, where the customer came from.
+    expect(more?.getAttribute('href')).toBe('/stores/centre#cat-pastry');
+  });
+
   it('treats bakery as food: a plain order note, its own placeholder, nothing paired', async () => {
     const harness = await open('croissant', CROISSANT);
     const el = harness.routeNativeElement as HTMLElement;

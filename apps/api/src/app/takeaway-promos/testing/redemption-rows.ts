@@ -23,7 +23,7 @@ export interface RedemptionFixture {
   acceptedAt?: Date | null;
   /** Captured payments of the order (createdAt), in its currency. */
   capturedAt?: Date[];
-  payout?: { id: string; status: PayoutStatus; paidAt: Date | null } | null;
+  payout?: { id: string; status: PayoutStatus; confirmedAt: Date | null } | null;
 }
 
 let next = 1;
@@ -45,7 +45,7 @@ export function redemptionRow(f: RedemptionFixture = {}) {
     discountCents: f.discountCents ?? 1_000,
     payoutId: f.payout?.id ?? null,
     promo: { name: f.promoName ?? 'Осенняя акция' },
-    payout: f.payout ? { status: f.payout.status, paidAt: f.payout.paidAt } : null,
+    payout: f.payout ? { status: f.payout.status, confirmedAt: f.payout.confirmedAt } : null,
     order: {
       orderCode: f.orderCode ?? String(1000 + n),
       status: f.orderStatus ?? 'PICKED_UP',

@@ -12,8 +12,8 @@ const NOW = new Date('2026-11-20T09:00:00Z');
 const admin: AuthenticatedUser = { id: 'sa', role: Role.SUPER_ADMIN, email: null, phone: null, name: null };
 const owner: AuthenticatedUser = { id: 'owner', role: Role.BRAND_ADMIN, email: null, phone: null, name: null };
 
-const paid = { id: 'payout-1', status: 'PAID' as const, paidAt: new Date('2026-11-12T10:00:00Z') };
-const pending = { id: 'payout-2', status: 'PENDING' as const, paidAt: null };
+const paid = { id: 'payout-1', status: 'CONFIRMED' as const, confirmedAt: new Date('2026-11-12T10:00:00Z') };
+const pending = { id: 'payout-2', status: 'PENDING' as const, confirmedAt: null };
 
 /** brand-1's promo orders in RUP, Chișinău time (UTC+2 in November). */
 const ROWS = [

@@ -3,6 +3,8 @@ import { Injectable, inject } from '@angular/core';
 import type {
   BrandTakeawayPromoReport,
   CommissionRateHistory,
+  ConfirmSettlementInput,
+  MarkSettlementPaidInput,
   SettlementPayout,
   SettlementReport,
 } from '@takeaway/shared-types';
@@ -31,13 +33,17 @@ export interface SetCommissionRateRequest {
 export interface CreatePayoutRequest {
   brandId: string;
   currency: string;
-  /** Last day the payout settles. */
+  /** Last day the settlement covers. */
   to: string;
   reference?: string;
   comment?: string;
 }
 
-/** `/admin/settlements` — «Расчёты с брендами». Writes are SUPER_ADMIN only. */
+/**
+ * `/admin/settlements` — «Расчёты с брендами». The platform admin fixes a
+ * settlement and changes rates; paying and confirming one is each side's
+ * own step (the API checks the side). The routes keep the old `payout` names.
+ */
 @Injectable({ providedIn: 'root' })
 export class SettlementsApi {
   private readonly http = inject(HttpClient);
@@ -76,8 +82,14 @@ export class SettlementsApi {
     return this.http.post<SettlementPayout>(`${this.base}/payouts`, body);
   }
 
-  markPaid(id: string, body: { reference?: string; comment?: string }): Observable<SettlementPayout> {
+  /** «Отметить оплату» — the payer. */
+  markPaid(id: string, body: MarkSettlementPaidInput): Observable<SettlementPayout> {
     return this.http.patch<SettlementPayout>(`${this.base}/payouts/${encodeURIComponent(id)}/paid`, body);
+  }
+
+  /** «Получено» / «Не получено» — the receiver. */
+  confirm(id: string, body: ConfirmSettlementInput): Observable<SettlementPayout> {
+    return this.http.patch<SettlementPayout>(`${this.base}/payouts/${encodeURIComponent(id)}/confirm`, body);
   }
 
   deletePayout(id: string): Observable<void> {

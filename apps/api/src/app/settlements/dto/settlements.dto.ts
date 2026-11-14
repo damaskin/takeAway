@@ -4,9 +4,12 @@ import type {
   CommissionRateEntry,
   CommissionRateHistory,
   CommissionRateSource,
+  ConfirmSettlementInput,
+  MarkSettlementPaidInput,
   PayoutBlockReason,
   PayoutStatus,
   SettlementBalance,
+  SettlementDirection,
   SettlementDay,
   SettlementPayout,
   SettlementPayoutPreview,
@@ -16,6 +19,7 @@ import type {
 } from '@takeaway/shared-types';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -141,7 +145,7 @@ export class CreatePayoutDto {
   comment?: string;
 }
 
-export class MarkPayoutPaidDto {
+export class MarkPayoutPaidDto implements MarkSettlementPaidInput {
   @ApiPropertyOptional({ maxLength: 200, description: 'Bank transfer number.' })
   @Transform(trimOrDrop)
   @IsOptional()
@@ -162,10 +166,24 @@ export class MarkPayoutPaidDto {
   paidAt?: string;
 }
 
+export class ConfirmPayoutDto implements ConfirmSettlementInput {
+  @ApiProperty({ description: 'true — «получено»; false — «не получено» (only once the payer marked it paid).' })
+  @IsBoolean()
+  received!: boolean;
+
+  @ApiPropertyOptional({ maxLength: 500, description: 'Why it was not received.' })
+  @Transform(trimOrDrop)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
+}
+
 // ── Responses ───────────────────────────────────────────────────────────────
 
 const BLOCK_REASONS: PayoutBlockReason[] = ['PERIOD_OPEN', 'OVERLAP', 'NOTHING_DUE'];
-const PAYOUT_STATUSES: PayoutStatus[] = ['PENDING', 'PAID'];
+const PAYOUT_STATUSES: PayoutStatus[] = ['PENDING', 'PAID', 'CONFIRMED', 'DISPUTED'];
+const DIRECTIONS: SettlementDirection[] = ['BRAND_TO_TAKEAWAY', 'TAKEAWAY_TO_BRAND'];
 const RATE_SOURCES: CommissionRateSource[] = ['PLAN', 'INDIVIDUAL'];
 
 export class SettlementTotalsDto implements SettlementTotals {
@@ -181,11 +199,17 @@ export class SettlementTotalsDto implements SettlementTotals {
   @ApiProperty() deliveryFeeCents!: number;
   @ApiProperty() capturedCents!: number;
   @ApiProperty() refundedCents!: number;
+  @ApiProperty({ description: '«Всего оплачено картами»: captured − refunded.' }) cardNetCents!: number;
   @ApiProperty({ description: '«Компенсация takeAway по акциям»: Σ D of takeAway promos (docs/takeaway-promos.md).' })
   takeawayCompensationCents!: number;
-  @ApiProperty({ description: 'captured − refunded + takeaway compensation' }) commissionBaseCents!: number;
+  @ApiProperty({ description: '«Компенсация takeAway по баллам»: loyalty points spent.' })
+  pointsCompensationCents!: number;
+  @ApiProperty({ description: 'What takeAway owes the brand: promo + points compensation.' })
+  compensationCents!: number;
+  @ApiProperty({ description: 'card net + compensation' }) commissionBaseCents!: number;
   @ApiProperty({ description: 'Rounded half up per order.' }) commissionCents!: number;
-  @ApiProperty({ description: 'base − commission' }) payableCents!: number;
+  @ApiProperty({ description: 'commission − compensation; + the brand owes takeAway, − takeAway owes the brand' })
+  netCents!: number;
 }
 
 export class SettlementDayDto extends SettlementTotalsDto implements SettlementDay {
@@ -199,22 +223,26 @@ export class SettlementRateSpanDto implements SettlementRateSpan {
   @ApiProperty() to!: string;
 }
 
+/** Signed: + the brand owes takeAway, − takeAway owes the brand. */
 export class SettlementBalanceDto implements SettlementBalance {
   @ApiProperty() openingCents!: number;
-  @ApiProperty() payableCents!: number;
-  @ApiProperty() paidCents!: number;
-  @ApiProperty() pendingCents!: number;
+  @ApiProperty() netCents!: number;
+  @ApiProperty({ description: 'Confirmed settlements for periods ending inside this one.' }) settledCents!: number;
+  @ApiProperty({ description: 'Not confirmed yet, for periods ending inside this one.' }) openCents!: number;
   @ApiProperty() closingCents!: number;
-  @ApiProperty() closingPendingCents!: number;
+  @ApiProperty() closingOpenCents!: number;
 }
 
 export class SettlementPayoutPreviewDto implements SettlementPayoutPreview {
   @ApiProperty({ type: String, nullable: true }) periodFrom!: string | null;
   @ApiProperty() periodTo!: string;
-  @ApiProperty() amountCents!: number;
+  @ApiProperty({ enum: DIRECTIONS, nullable: true }) direction!: SettlementDirection | null;
+  @ApiProperty({ description: 'Never negative.' }) amountCents!: number;
+  @ApiProperty({ description: 'Signed: + the brand pays, − takeAway pays.' }) netCents!: number;
   @ApiProperty() cardNetCents!: number;
   @ApiProperty() commissionCents!: number;
   @ApiProperty({ description: 'The period’s takeAway promo compensation.' }) compensationCents!: number;
+  @ApiProperty({ description: 'The period’s loyalty points compensation.' }) pointsCompensationCents!: number;
   @ApiProperty({ enum: BLOCK_REASONS, nullable: true }) blocked!: PayoutBlockReason | null;
   @ApiProperty({ type: String, nullable: true }) lastSettledDay!: string | null;
 }
@@ -226,13 +254,19 @@ export class SettlementPayoutDto implements SettlementPayout {
   @ApiProperty() periodFrom!: string;
   @ApiProperty() periodTo!: string;
   @ApiProperty() timeZone!: string;
-  @ApiProperty() amountCents!: number;
+  @ApiProperty({ enum: DIRECTIONS }) direction!: SettlementDirection;
+  @ApiProperty({ description: 'What the payer pays, never negative.' }) amountCents!: number;
   @ApiProperty() cardNetCents!: number;
   @ApiProperty() commissionCents!: number;
-  @ApiProperty({ description: '«Компенсация takeAway по акциям» settled by the payout; 0 before 2026-11-10.' })
+  @ApiProperty({ description: '«Компенсация takeAway по акциям» of the period; 0 before 2026-11-10.' })
   compensationCents!: number;
+  @ApiProperty({ description: '«Компенсация takeAway по баллам» of the period; 0 before 2026-11-14.' })
+  pointsCompensationCents!: number;
   @ApiProperty({ enum: PAYOUT_STATUSES }) status!: PayoutStatus;
   @ApiProperty({ type: String, nullable: true }) paidAt!: string | null;
+  @ApiProperty({ type: String, nullable: true }) confirmedAt!: string | null;
+  @ApiProperty({ type: String, nullable: true }) disputedAt!: string | null;
+  @ApiProperty({ type: String, nullable: true }) disputeComment!: string | null;
   @ApiProperty({ type: String, nullable: true }) reference!: string | null;
   @ApiProperty({ type: String, nullable: true }) comment!: string | null;
   @ApiProperty() createdAt!: string;

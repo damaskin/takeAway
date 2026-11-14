@@ -396,8 +396,32 @@ export const TAKEAWAY_PROMO_ORDER = {
   },
 };
 
-/** What the order detail panel reads for a reviewed order, or for the takeAway promo order. */
+/**
+ * An order paid partly with loyalty points: 50 at the menu, 20 in points that
+ * takeAway compensates to the brand, 30 by card. The list says what takeAway
+ * funds (`takeawayFundedCents`); the detail does not carry the points yet.
+ */
+export const POINTS_ORDER = {
+  id: 'order-points',
+  orderCode: '1050',
+  totalCents: 3_000,
+  pointsCents: 2_000,
+};
+
+/** What the order detail panel reads for a reviewed order, the takeAway promo order or the points order. */
 function adminOrderDetail(id: string): Record<string, unknown> {
+  if (id === POINTS_ORDER.id) {
+    return {
+      ...adminOrderDetail('order-plain'),
+      id,
+      orderCode: POINTS_ORDER.orderCode,
+      status: 'ACCEPTED',
+      subtotalCents: 5_000,
+      discountCents: POINTS_ORDER.pointsCents,
+      totalCents: POINTS_ORDER.totalCents,
+      refundableCents: POINTS_ORDER.totalCents,
+    };
+  }
   if (id === TAKEAWAY_PROMO_ORDER.id) {
     return {
       ...adminOrderDetail('order-plain'),
@@ -728,62 +752,235 @@ function optionsCatalog() {
   };
 }
 
-// ─── «Акции takeAway» and settlements (docs/takeaway-promos.md) ──────────────
+// ─── «Акции takeAway» and settlements (docs/settlements.md) ──────────────────
 
-/** A week of settlements with one takeAway promo order: 90 by card + 10 from takeAway − 15 % of 100. */
+/**
+ * A week of settlements (since 2026-11-14 guests pay the brand directly): a
+ * takeAway promo order — 90 by card + 10 takeAway compensates — and a points
+ * order — 30 by card + 20 in points. Commission 15 % of the full 150 is 22,50,
+ * compensation 30: takeAway owes the brand 7,50.
+ */
 function settlementTotals() {
   return {
-    orders: 1,
-    cardOrders: 1,
+    orders: 2,
+    cardOrders: 2,
     zeroTotalOrders: 0,
     unpaidOrders: 0,
     unpaidTotalCents: 0,
-    salesCents: 10_000,
+    salesCents: 15_000,
     promoDiscountCents: 0,
-    pointsDiscountCents: 0,
+    pointsDiscountCents: 2_000,
     giftCardCents: 0,
     deliveryFeeCents: 0,
-    capturedCents: 9_000,
+    capturedCents: 12_000,
     refundedCents: 0,
+    cardNetCents: 12_000,
     takeawayCompensationCents: 1_000,
-    commissionBaseCents: 10_000,
-    commissionCents: 1_500,
-    payableCents: 8_500,
+    pointsCompensationCents: 2_000,
+    compensationCents: 3_000,
+    commissionBaseCents: 15_000,
+    commissionCents: 2_250,
+    netCents: -750,
   };
 }
 
-function settlementReport(params: URLSearchParams) {
-  const from = params.get('from') ?? '2026-11-02';
-  const to = params.get('to') ?? '2026-11-08';
-  const totals = settlementTotals();
-  return {
-    brand: { id: BRAND.id, name: BRAND.name, plan: 'PRO', currentBps: 1500, planBps: 1500 },
-    currency: 'RUP',
-    currencies: ['RUP'],
-    period: { from, to, days: 7, timeZone: STORE.timezone },
-    totals,
-    days: [{ date: from, ...totals }],
-    rates: [{ bps: 1500, source: 'PLAN', from, to }],
-    balance: {
-      openingCents: 0,
-      payableCents: 8_500,
-      paidCents: 0,
-      pendingCents: 0,
-      closingCents: 8_500,
-      closingPendingCents: 0,
-    },
-    nextPayout: {
-      periodFrom: from,
-      periodTo: to,
-      amountCents: 8_500,
-      cardNetCents: 9_000,
-      commissionCents: 1_500,
-      compensationCents: 1_000,
-      blocked: null,
-      lastSettledDay: null,
-    },
-    payouts: [],
+/** What every period before the one on screen left: the brand was owed 12,00. */
+const SETTLED_BEFORE_CENTS = -1_200;
+
+type FakeSettlementStatus = 'PENDING' | 'PAID' | 'CONFIRMED' | 'DISPUTED';
+type FakeDirection = 'BRAND_TO_TAKEAWAY' | 'TAKEAWAY_TO_BRAND';
+
+interface FakeSettlement {
+  id: string;
+  brandId: string;
+  currency: string;
+  periodFrom: string;
+  periodTo: string;
+  timeZone: string;
+  direction: FakeDirection;
+  amountCents: number;
+  cardNetCents: number;
+  commissionCents: number;
+  compensationCents: number;
+  pointsCompensationCents: number;
+  status: FakeSettlementStatus;
+  paidAt: string | null;
+  confirmedAt: string | null;
+  disputedAt: string | null;
+  disputeComment: string | null;
+  reference: string | null;
+  comment: string | null;
+  createdAt: string;
+}
+
+/** The earlier settlement: takeAway paid the brand 12,00 for 26.10–01.11, and the brand has yet to confirm it. */
+export const EARLIER_SETTLEMENT: FakeSettlement = {
+  id: 'settlement-1',
+  brandId: BRAND.id,
+  currency: 'RUP',
+  periodFrom: '2026-10-26',
+  periodTo: '2026-11-01',
+  timeZone: STORE.timezone,
+  direction: 'TAKEAWAY_TO_BRAND',
+  amountCents: 1_200,
+  cardNetCents: 16_000,
+  commissionCents: 3_000,
+  compensationCents: 3_000,
+  pointsCompensationCents: 1_200,
+  status: 'PAID',
+  paidAt: '2026-11-03T09:00:00.000Z',
+  confirmedAt: null,
+  disputedAt: null,
+  disputeComment: null,
+  reference: 'ПП-31',
+  comment: null,
+  createdAt: '2026-11-02T09:00:00.000Z',
+};
+
+/** Positive — the brand pays takeAway. */
+const signedOf = (s: FakeSettlement) => (s.direction === 'BRAND_TO_TAKEAWAY' ? s.amountCents : -s.amountCents);
+const sum = (list: FakeSettlement[]) => list.reduce((total, s) => total + signedOf(s), 0);
+
+/**
+ * `/admin/settlements` and its settlement routes over one in-memory list per
+ * browser context, with the API's rules kept simple: a new settlement takes
+ * the balance not fixed yet, the payer marks it paid, the receiver confirms
+ * it or says it did not arrive, only the latest pending one can be removed.
+ * Answers null for a path it does not own.
+ */
+function settlements() {
+  const list: FakeSettlement[] = [{ ...EARLIER_SETTLEMENT }];
+  let nextId = 2;
+
+  const report = (params: URLSearchParams) => {
+    const from = params.get('from') ?? '2026-11-02';
+    const to = params.get('to') ?? '2026-11-08';
+    const totals = settlementTotals();
+    const confirmed = (s: FakeSettlement) => s.status === 'CONFIRMED';
+    const inPeriod = (s: FakeSettlement) => s.periodTo >= from && s.periodTo <= to;
+    const before = (s: FakeSettlement) => s.periodTo < from;
+    const opening = SETTLED_BEFORE_CENTS - sum(list.filter((s) => before(s) && confirmed(s)));
+    const settled = sum(list.filter((s) => inPeriod(s) && confirmed(s)));
+    const last = list.reduce<FakeSettlement | null>((l, s) => (!l || s.periodTo > l.periodTo ? s : l), null);
+    const net = SETTLED_BEFORE_CENTS + totals.netCents - sum(list);
+    return {
+      brand: { id: BRAND.id, name: BRAND.name, plan: 'PRO', currentBps: 1500, planBps: 1500 },
+      currency: 'RUP',
+      currencies: ['RUP'],
+      period: { from, to, days: 7, timeZone: STORE.timezone },
+      totals,
+      days: [{ date: from, ...totals }],
+      rates: [{ bps: 1500, source: 'PLAN', from, to }],
+      balance: {
+        openingCents: opening,
+        netCents: totals.netCents,
+        settledCents: settled,
+        openCents: sum(list.filter((s) => inPeriod(s) && !confirmed(s))),
+        closingCents: opening + totals.netCents - settled,
+        closingOpenCents: sum(list.filter((s) => (before(s) || inPeriod(s)) && !confirmed(s))),
+      },
+      nextPayout: {
+        periodFrom: last ? dayAfter(last.periodTo) : from,
+        periodTo: to,
+        direction: net > 0 ? 'BRAND_TO_TAKEAWAY' : net < 0 ? 'TAKEAWAY_TO_BRAND' : null,
+        amountCents: Math.abs(net),
+        netCents: net,
+        cardNetCents: totals.cardNetCents,
+        commissionCents: totals.commissionCents,
+        compensationCents: totals.takeawayCompensationCents,
+        pointsCompensationCents: totals.pointsCompensationCents,
+        blocked: last && to <= last.periodTo ? 'OVERLAP' : net === 0 ? 'NOTHING_DUE' : null,
+        lastSettledDay: last?.periodTo ?? null,
+      },
+      // Newest period first.
+      payouts: [...list].sort((a, b) => b.periodTo.localeCompare(a.periodTo)),
+    };
   };
+
+  return async (route: Route, path: string, params: URLSearchParams): Promise<void | null> => {
+    const method = route.request().method();
+    const body = () => (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+    const refuse = (code: string, status = 409) =>
+      json(route, { statusCode: status, error: 'Conflict', code, message: code }, status);
+    let m: RegExpExecArray | null;
+
+    if (path === '/admin/settlements') return json(route, report(params));
+    if (path === '/admin/settlements/payouts' && method === 'POST') {
+      const input = body();
+      const preview = report(new URLSearchParams({ to: String(input['to'] ?? '') })).nextPayout;
+      if (preview.blocked || !preview.direction) return refuse(`PAYOUT_${preview.blocked ?? 'NOTHING_DUE'}`);
+      const created: FakeSettlement = {
+        id: `settlement-${nextId++}`,
+        brandId: BRAND.id,
+        currency: 'RUP',
+        periodFrom: preview.periodFrom,
+        periodTo: preview.periodTo,
+        timeZone: STORE.timezone,
+        direction: preview.direction as FakeDirection,
+        amountCents: preview.amountCents,
+        cardNetCents: preview.cardNetCents,
+        commissionCents: preview.commissionCents,
+        compensationCents: preview.compensationCents,
+        pointsCompensationCents: preview.pointsCompensationCents,
+        status: 'PENDING',
+        paidAt: null,
+        confirmedAt: null,
+        disputedAt: null,
+        disputeComment: null,
+        reference: typeof input['reference'] === 'string' ? input['reference'] : null,
+        comment: typeof input['comment'] === 'string' ? input['comment'] : null,
+        createdAt: new Date().toISOString(),
+      };
+      list.push(created);
+      return json(route, created, 201);
+    }
+    if ((m = /^\/admin\/settlements\/payouts\/([^/]+)\/paid$/.exec(path)) && method === 'PATCH') {
+      const found = list.find((s) => s.id === m?.[1]);
+      if (!found) return json(route, { statusCode: 404, message: 'Payout not found' }, 404);
+      if (found.status !== 'PENDING' && found.status !== 'DISPUTED') return refuse('PAYOUT_STATUS');
+      const input = body();
+      Object.assign(found, {
+        status: 'PAID',
+        paidAt: new Date().toISOString(),
+        disputedAt: null,
+        disputeComment: null,
+        ...(typeof input['reference'] === 'string' ? { reference: input['reference'] } : {}),
+      });
+      return json(route, found);
+    }
+    if ((m = /^\/admin\/settlements\/payouts\/([^/]+)\/confirm$/.exec(path)) && method === 'PATCH') {
+      const found = list.find((s) => s.id === m?.[1]);
+      if (!found) return json(route, { statusCode: 404, message: 'Payout not found' }, 404);
+      const input = body();
+      if (input['received'] === true) {
+        if (found.status === 'CONFIRMED') return refuse('PAYOUT_STATUS');
+        Object.assign(found, { status: 'CONFIRMED', confirmedAt: new Date().toISOString() });
+      } else {
+        if (found.status !== 'PAID') return refuse('PAYOUT_STATUS');
+        Object.assign(found, {
+          status: 'DISPUTED',
+          disputedAt: new Date().toISOString(),
+          disputeComment: typeof input['comment'] === 'string' ? input['comment'] : null,
+        });
+      }
+      return json(route, found);
+    }
+    if ((m = /^\/admin\/settlements\/payouts\/([^/]+)$/.exec(path)) && method === 'DELETE') {
+      const index = list.findIndex((s) => s.id === m?.[1]);
+      if (index < 0) return json(route, { statusCode: 404, message: 'Payout not found' }, 404);
+      if (list[index]?.status !== 'PENDING') return refuse('PAYOUT_PAID');
+      list.splice(index, 1);
+      return route.fulfill({ status: 204 });
+    }
+    return null;
+  };
+}
+
+/** `YYYY-MM-DD` of the next calendar day. */
+function dayAfter(day: string): string {
+  const next = new Date(`${day}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
 }
 
 function brandTakeawayPromos(params: URLSearchParams) {
@@ -969,6 +1166,7 @@ function takeawayPromos() {
 export async function installFakeApi(context: BrowserContext, role: FakeRole = 'SUPER_ADMIN'): Promise<void> {
   const options = optionsCatalog();
   const promos = takeawayPromos();
+  const settled = settlements();
   await context.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api/, '');
@@ -978,7 +1176,8 @@ export async function installFakeApi(context: BrowserContext, role: FakeRole = '
     const promoHandled = await promos(route, path);
     if (promoHandled !== null) return promoHandled;
 
-    if (path === '/admin/settlements') return json(route, settlementReport(url.searchParams));
+    const settlementHandled = await settled(route, path, url.searchParams);
+    if (settlementHandled !== null) return settlementHandled;
     if (path === '/admin/settlements/rates') return json(route, COMMISSION_HISTORY);
     if (path === '/admin/settlements/takeaway-promos') return json(route, brandTakeawayPromos(url.searchParams));
 

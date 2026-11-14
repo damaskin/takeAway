@@ -61,6 +61,7 @@ import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import type {
+  AdminOrderSummaryDto,
   CustomerOrderSummaryDto,
   OrderDto,
   OrderItemDto,
@@ -642,7 +643,7 @@ export class OrdersService {
      * ?storeId= in a URL can't see stores they shouldn't.
      */
     scopeStoreIds?: string[];
-  }): Promise<OrderSummaryDto[]> {
+  }): Promise<AdminOrderSummaryDto[]> {
     const where: Prisma.OrderWhereInput = {};
     if (params.scopeStoreIds) {
       if (params.scopeStoreIds.length === 0) return [];
@@ -677,7 +678,7 @@ export class OrdersService {
       take: Math.min(200, Math.max(1, params.take ?? 50)),
       include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
-    return orders.map((o) => this.toSummary(o));
+    return orders.map((o) => ({ ...this.toSummary(o), takeawayFundedCents: takeawayFundedCents(o) }));
   }
 
   /**
@@ -730,6 +731,7 @@ export class OrdersService {
       taxCents: order.taxCents,
       deliveryFeeCents: order.deliveryFeeCents,
       giftCardCents: order.giftCardCents,
+      pointsDiscountCents: order.pointsDiscountCents,
       totalCents: order.totalCents,
       couponCode: order.couponCode,
       giftCardCode: order.giftCardCode,
@@ -1585,4 +1587,18 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   const dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * The order's discounts takeAway pays the brand for — its own promo (D) and
+ * loyalty points — as docs/settlements.md counts them: nothing once the order
+ * was cancelled or expired, since the promo and the points went back then.
+ */
+export function takeawayFundedCents(o: {
+  status: string;
+  takeawayDiscountCents: number;
+  pointsDiscountCents: number;
+}): number {
+  if (o.status === 'CANCELLED' || o.status === 'EXPIRED') return 0;
+  return Math.max(0, o.takeawayDiscountCents) + Math.max(0, o.pointsDiscountCents);
 }

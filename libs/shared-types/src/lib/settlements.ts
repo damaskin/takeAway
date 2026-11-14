@@ -1,27 +1,57 @@
 /**
  * Settlements with brands: `GET /admin/settlements` and its neighbours.
  *
- * Customers pay by card through the platform's acquiring, so the platform
- * holds the money and pays each brand out minus its commission. One report
- * covers one brand, one currency (never summed across currencies) and a
- * period of calendar days in the brand's time zone. Definitions and a worked
- * example: docs/settlements.md.
+ * Since 2026-11-14 a guest pays the brand directly — takeAway does not hold
+ * the brand's money and pays nothing out of it. Two debts meet instead:
  *
- * All amounts are integer minor units (cents / kopecks).
+ * - the brand owes takeAway its **commission**, taken on the order's full
+ *   price (card money + what takeAway compensates);
+ * - takeAway owes the brand **compensation** for the discounts it funds:
+ *   its own promos («Акции takeAway») and loyalty points spent.
+ *
+ * A period is closed by one netted sum («взаимозачёт»): commission −
+ * compensation. Positive — the brand pays takeAway; negative — takeAway pays
+ * the brand. The payer marks it paid, the other side confirms «получено».
+ *
+ * One report covers one brand, one currency (never summed across currencies)
+ * and a period of calendar days in the brand's time zone. Definitions and a
+ * worked example: docs/settlements.md.
+ *
+ * All amounts are integer minor units (cents / kopecks). A signed amount is
+ * positive when the brand owes takeAway and negative when takeAway owes the
+ * brand.
  */
 
 import type { BrandPlan } from './plan';
 
-/** Why a payout cannot be fixed for the period on screen. */
+/** Why a settlement cannot be fixed for the period on screen. */
 export type PayoutBlockReason =
   /** The last day has not ended yet in the brand's time zone. */
   | 'PERIOD_OPEN'
-  /** An earlier payout already settles that day. */
+  /** An earlier settlement already covers that day. */
   | 'OVERLAP'
-  /** Nothing is owed at the end of the period (a negative balance is carried forward). */
+  /** Commission and compensation cancel out: nobody owes anything. */
   | 'NOTHING_DUE';
 
-export type PayoutStatus = 'PENDING' | 'PAID';
+/** Who pays whom when a period is settled. */
+export type SettlementDirection =
+  /** Commission exceeds compensation: the brand pays takeAway. */
+  | 'BRAND_TO_TAKEAWAY'
+  /** Compensation exceeds commission: takeAway pays the brand. */
+  | 'TAKEAWAY_TO_BRAND';
+
+/** A side of a settlement. */
+export type SettlementSide = 'TAKEAWAY' | 'BRAND';
+
+/**
+ * - `PENDING` — fixed by the platform admin, not paid yet («ждёт оплаты»);
+ * - `PAID` — the payer says the money went out («оплачено, ждёт подтверждения»);
+ * - `CONFIRMED` — the receiver confirmed it arrived («получено»), final;
+ * - `DISPUTED` — the receiver says it did not arrive («не получено»).
+ *
+ * Only a confirmed settlement reduces the balance.
+ */
+export type PayoutStatus = 'PENDING' | 'PAID' | 'CONFIRMED' | 'DISPUTED';
 
 export type CommissionRateSource = 'PLAN' | 'INDIVIDUAL';
 
@@ -29,43 +59,54 @@ export type CommissionRateSource = 'PLAN' | 'INDIVIDUAL';
 export interface SettlementTotals {
   /** Orders that count: a card payment was captured, or the store accepted the order. */
   orders: number;
-  /** Of them, orders with card money captured by the platform. */
+  /** Of them, orders paid by card (or the mobile payment). */
   cardOrders: number;
   /** Accepted orders with nothing to pay — promo, points or a gift card covered all of it. */
   zeroTotalOrders: number;
-  /** Accepted orders with something to pay but no card payment through the platform. */
+  /** Accepted orders with something to pay but no card payment (paid at the counter, if at all). */
   unpaidOrders: number;
-  /** What those unpaid orders came to — money the brand took itself, if at all. */
+  /** What those unpaid orders came to. No commission is taken on them. */
   unpaidTotalCents: number;
   /** «Продажи»: line items before any discount. */
   salesCents: number;
   /** Discounts of the brand's own promo codes (the brand pays for them). */
   promoDiscountCents: number;
-  /** Loyalty points spent. */
+  /** Loyalty points spent (as the orders recorded them, cancelled ones included). */
   pointsDiscountCents: number;
   /** Gift-card balance redeemed — money the brand already took when it sold the card. */
   giftCardCents: number;
   /** Delivery fees charged to customers (part of the card money). */
   deliveryFeeCents: number;
-  /** Card money the platform captured. */
+  /** Card money guests paid (to the brand). */
   capturedCents: number;
-  /** Of it, given back to customers. */
+  /** Of it, given back to guests. */
   refundedCents: number;
+  /** «Всего оплачено картами»: captured − refunded. */
+  cardNetCents: number;
   /**
    * «Компенсация takeAway по акциям»: the discounts of takeAway promos on
-   * these orders (Σ D), which takeAway owes the brand on top of the card
-   * money. Not in `promoDiscountCents`. Absent from older API builds.
+   * these orders (Σ D). 0 for a cancelled or expired order.
    */
   takeawayCompensationCents: number;
   /**
-   * Commission base: captured − refunded + takeAway compensation — the
-   * commission of a takeAway promo order is taken on its full menu price.
+   * «Компенсация takeAway по баллам»: loyalty points spent on these orders —
+   * takeAway funds the loyalty programme. 0 for a cancelled or expired order.
+   */
+  pointsCompensationCents: number;
+  /** What takeAway owes the brand: promo + points compensation. */
+  compensationCents: number;
+  /**
+   * Commission base: card net + compensation — the commission of an order
+   * with takeAway's promo or points is taken on its full price.
    */
   commissionBaseCents: number;
-  /** takeAway's commission, rounded per order (half up). */
+  /** «Комиссия takeAway», rounded per order (half up). */
   commissionCents: number;
-  /** Owed to the brand for these orders: base − commission (the compensation is in the base). */
-  payableCents: number;
+  /**
+   * «К взаиморасчёту»: commission − compensation. Positive — the brand owes
+   * takeAway; negative — takeAway owes the brand.
+   */
+  netCents: number;
 }
 
 export interface SettlementDay extends SettlementTotals {
@@ -82,43 +123,51 @@ export interface SettlementRateSpan {
 }
 
 /**
- * What is owed and what has been paid, around the period. Payouts are matched
- * on the end of the period they settle, not on the day the money went out.
+ * What is owed around a period, signed (positive — the brand owes takeAway).
+ * Settlements are matched on the end of the period they cover, not on the day
+ * the money moved.
  *
- * closing = opening + payable − paid
+ * closing = opening + net − settled
  */
 export interface SettlementBalance {
-  /** Owed to the brand when the period opened. Negative: the brand owes the platform. */
+  /** Owed when the period opened. */
   openingCents: number;
-  /** Earned by the brand during the period (= totals.payableCents). */
-  payableCents: number;
-  /** Paid out for periods that end inside this one. */
-  paidCents: number;
-  /** Fixed for periods that end inside this one, not transferred yet. */
-  pendingCents: number;
+  /** The period's own net (= totals.netCents). */
+  netCents: number;
+  /** Confirmed settlements for periods that end inside this one. */
+  settledCents: number;
+  /** Settlements fixed for periods that end inside this one, not confirmed yet. */
+  openCents: number;
   /** «Остаток»: still owed when the period closes, fixed or not. */
   closingCents: number;
-  /** Of the closing balance, already fixed as pending payouts. */
-  closingPendingCents: number;
+  /** Of the closing balance, already fixed in settlements not confirmed yet. */
+  closingOpenCents: number;
 }
 
-/** What «Зафиксировать выплату» would create for the period on screen. */
+/** What «Зафиксировать взаиморасчёт» would create for the period on screen. */
 export interface SettlementPayoutPreview {
-  /** Picks up the day after the last payout (or at the first settled order). */
+  /** Picks up the day after the last settlement (or at the first settled order). */
   periodFrom: string | null;
   periodTo: string;
-  /** The balance owed at the end of `periodTo`. */
+  /** Who would pay; null when nothing is owed. */
+  direction: SettlementDirection | null;
+  /** What would be paid, never negative. */
   amountCents: number;
-  /** The period's own card money and commission. */
+  /** The same, signed: the balance at the end of `periodTo` not fixed yet. */
+  netCents: number;
+  /** The period's own figures. */
   cardNetCents: number;
   commissionCents: number;
-  /** The period's own takeAway promo compensation (the debts this payout settles). */
+  /** takeAway PROMO compensation only (the promo debts this settlement covers) — unlike `SettlementTotals.compensationCents`, the total. */
   compensationCents: number;
+  /** Loyalty points compensation. */
+  pointsCompensationCents: number;
   blocked: PayoutBlockReason | null;
-  /** Last day already settled by a payout, if any. */
+  /** Last day already covered by a settlement, if any. */
   lastSettledDay: string | null;
 }
 
+/** One period's settlement («взаиморасчёт»). The API keeps the old `payout` names. */
 export interface SettlementPayout {
   id: string;
   brandId: string;
@@ -126,13 +175,26 @@ export interface SettlementPayout {
   periodFrom: string;
   periodTo: string;
   timeZone: string;
+  direction: SettlementDirection;
+  /** What the payer pays, never negative. */
   amountCents: number;
+  /** The period's figures as they were when it was fixed. */
   cardNetCents: number;
   commissionCents: number;
-  /** «Компенсация takeAway по акциям» of the period; 0 on payouts fixed before 2026-11-10. */
+  /** «Компенсация takeAway по акциям» of the period — PROMO only, unlike `SettlementTotals.compensationCents` (the total). */
   compensationCents: number;
+  /** «Компенсация takeAway по баллам» of the period. */
+  pointsCompensationCents: number;
   status: PayoutStatus;
+  /** When the payer said the money went out. */
   paidAt: string | null;
+  /** When the receiver confirmed it arrived. */
+  confirmedAt: string | null;
+  /** When the receiver said it did not arrive (cleared once paid again). */
+  disputedAt: string | null;
+  /** The receiver's words on a dispute. */
+  disputeComment: string | null;
+  /** Bank transfer number or any other handle on the payment. */
   reference: string | null;
   comment: string | null;
   createdAt: string;
@@ -159,7 +221,7 @@ export interface SettlementReport {
   rates: SettlementRateSpan[];
   balance: SettlementBalance;
   nextPayout: SettlementPayoutPreview;
-  /** Every payout in this currency, newest period first. */
+  /** Every settlement in this currency, newest period first. */
   payouts: SettlementPayout[];
 }
 
@@ -184,3 +246,65 @@ export interface CommissionRateHistory {
   /** Oldest first. Empty when the brand has only ever had its plan's rate. */
   rates: CommissionRateEntry[];
 }
+
+/** `PATCH /admin/settlements/payouts/:id/paid` — the payer says the money went out. */
+export interface MarkSettlementPaidInput {
+  reference?: string;
+  comment?: string;
+  /** When it went out; now when omitted. */
+  paidAt?: string;
+}
+
+/** `PATCH /admin/settlements/payouts/:id/confirm` — the receiver's answer. */
+export interface ConfirmSettlementInput {
+  /** true — «получено»; false — «не получено» (only after the payer marked it paid). */
+  received: boolean;
+  /** Why it was not received; kept on the settlement. */
+  comment?: string;
+}
+
+/** The side that pays a settlement in `direction`. */
+export function settlementPayer(direction: SettlementDirection): SettlementSide {
+  return direction === 'BRAND_TO_TAKEAWAY' ? 'BRAND' : 'TAKEAWAY';
+}
+
+/** The side that receives a settlement in `direction`. */
+export function settlementReceiver(direction: SettlementDirection): SettlementSide {
+  return direction === 'BRAND_TO_TAKEAWAY' ? 'TAKEAWAY' : 'BRAND';
+}
+
+/** What a side may do with a settlement now. The API enforces the same rules. */
+export interface SettlementActions {
+  /** «Отметить оплату»: the payer, while it is pending or disputed. */
+  markPaid: boolean;
+  /** «Получено»: the receiver, until it is confirmed. */
+  confirm: boolean;
+  /** «Не получено»: the receiver, once the payer marked it paid. */
+  dispute: boolean;
+}
+
+export function settlementActions(
+  payout: Pick<SettlementPayout, 'direction' | 'status'>,
+  side: SettlementSide,
+): SettlementActions {
+  const payer = settlementPayer(payout.direction) === side;
+  const receiver = settlementReceiver(payout.direction) === side;
+  return {
+    markPaid: payer && (payout.status === 'PENDING' || payout.status === 'DISPUTED'),
+    confirm: receiver && payout.status !== 'CONFIRMED',
+    dispute: receiver && payout.status === 'PAID',
+  };
+}
+
+/** Error codes of the settlement routes (409 unless noted). */
+export type SettlementErrorCode =
+  | 'PAYOUT_OVERLAP'
+  | 'PAYOUT_PERIOD_OPEN'
+  | 'PAYOUT_NOTHING_DUE'
+  /** The settlement is not in a state that allows this step. */
+  | 'PAYOUT_STATUS'
+  /** 403: the other side takes this step. */
+  | 'PAYOUT_NOT_YOUR_SIDE'
+  /** Only a pending settlement can be removed. */
+  | 'PAYOUT_PAID'
+  | 'PAYOUT_NOT_LATEST';

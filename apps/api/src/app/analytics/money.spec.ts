@@ -33,7 +33,15 @@ function order(
     taxRateBps: 0,
     taxIncludedInPrice: true,
   });
-  return { status, subtotalCents, discountCents, giftCardCents, totalCents, lines };
+  return {
+    status,
+    subtotalCents,
+    discountCents,
+    pointsDiscountCents: discounts.points ?? 0,
+    giftCardCents,
+    totalCents,
+    lines,
+  };
 }
 
 const WEEK: TestOrder[] = [
@@ -62,7 +70,11 @@ function lines(orders: readonly TestOrder[]): SoldLine[] {
       name: l.name,
       quantity: l.quantity,
       totalCents: l.unitPriceCents * l.quantity,
-      order: { subtotalCents: o.subtotalCents, discountCents: o.discountCents },
+      order: {
+        subtotalCents: o.subtotalCents,
+        discountCents: o.discountCents,
+        pointsDiscountCents: o.pointsDiscountCents,
+      },
     })),
   );
 }
@@ -83,16 +95,20 @@ describe('money definitions', () => {
     const money = sumMoney(counted);
     expect(money).toEqual({
       salesCents: 9_000,
-      // The promo code (14) and the points (5) — the business gave those away.
-      discountCents: 1_900,
+      // The promo code (14) — the business gave that away. The points (5) are
+      // takeAway's to pay the venue since 2026-11-14, so they are not.
+      discountCents: 1_400,
       // The gift-card order counts in full: the café was paid when the card was sold.
-      revenueCents: 7_100,
+      revenueCents: 7_600,
       giftCardCents: 1_400,
     });
     expect(money.revenueCents).toBe(money.salesCents - money.discountCents);
     expect(money.giftCardCents).toBeLessThanOrEqual(money.revenueCents);
-    // Card charges plus gift cards are the revenue when nothing is added on top.
-    expect(counted.reduce((sum, o) => sum + o.totalCents + o.giftCardCents, 0)).toBe(money.revenueCents);
+    // Card charges, gift cards and takeAway's points compensation are the
+    // revenue when nothing is added on top.
+    expect(counted.reduce((sum, o) => sum + o.totalCents + o.giftCardCents + (o.pointsDiscountCents ?? 0), 0)).toBe(
+      money.revenueCents,
+    );
   });
 
   it('counts a fully discounted order as an order with no revenue', () => {
@@ -118,10 +134,17 @@ describe('money definitions', () => {
     expect(
       orderMoney({ subtotalCents: 10000, discountCents: 1000, takeawayDiscountCents: 1000, giftCardCents: 0 }),
     ).toEqual({ salesCents: 10000, discountCents: 0, revenueCents: 10000, giftCardCents: 0 });
-    // Points beside a brand promo still are the business's own discount.
+    // The rest — the brand's own promo code — still is the business's discount.
     expect(
       orderMoney({ subtotalCents: 10000, discountCents: 1500, takeawayDiscountCents: 1000, giftCardCents: 0 }),
     ).toEqual({ salesCents: 10000, discountCents: 500, revenueCents: 9500, giftCardCents: 0 });
+  });
+
+  it('counts loyalty points at the full price too — takeAway pays the venue for them', () => {
+    // 60, of which 10 in points and 5 off the brand's own promo code.
+    expect(
+      orderMoney({ subtotalCents: 6000, discountCents: 1500, pointsDiscountCents: 1000, giftCardCents: 0 }),
+    ).toEqual({ salesCents: 6000, discountCents: 500, revenueCents: 5500, giftCardCents: 0 });
   });
 });
 
@@ -129,9 +152,9 @@ describe('productRevenue', () => {
   it('ranks products on the revenue basis, adding up to no more than the revenue', () => {
     const products = productRevenue(lines(counted));
     expect(products).toEqual([
-      // 28 + 0 + 14 + 14 × 29/34 (the points spread by price), rounded down.
-      { name: 'Американо', unitsSold: 5, salesCents: 7_000, revenueCents: 5_394 },
-      { name: 'Круассан', unitsSold: 1, salesCents: 2_000, revenueCents: 1_705 },
+      // 28 + 0 + 14 + 14: the points are takeAway's, so that order keeps its menu price.
+      { name: 'Американо', unitsSold: 5, salesCents: 7_000, revenueCents: 5_600 },
+      { name: 'Круассан', unitsSold: 1, salesCents: 2_000, revenueCents: 2_000 },
     ]);
     const revenue = sumMoney(counted).revenueCents;
     const total = products.reduce((sum, p) => sum + p.revenueCents, 0);

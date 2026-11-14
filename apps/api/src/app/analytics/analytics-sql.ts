@@ -21,12 +21,13 @@ export const COUNTED = Prisma.sql`o."status" NOT IN ('CANCELLED', 'EXPIRED')`;
 export const SALES = Prisma.sql`o."subtotalCents"`;
 
 /**
- * What the business itself took off: promo codes and loyalty points, but not
- * a takeAway promo — takeAway pays the venue that one.
+ * What the business itself took off: its own promo codes — not a takeAway
+ * promo and, since 2026-11-14, not loyalty points: takeAway pays the venue
+ * for both (docs/settlements.md).
  */
-const BUSINESS_DISCOUNT = Prisma.sql`GREATEST(o."discountCents" - o."takeawayDiscountCents", 0)`;
+const BUSINESS_DISCOUNT = Prisma.sql`GREATEST(o."discountCents" - o."takeawayDiscountCents" - o."pointsDiscountCents", 0)`;
 
-/** «Скидки»: promo codes and loyalty points, never more than the sales. */
+/** «Скидки»: the business's own promo codes, never more than the sales. */
 export const DISCOUNTS = Prisma.sql`LEAST(${BUSINESS_DISCOUNT}, o."subtotalCents")`;
 
 /** «Выручка»: sales less discounts, however the customer paid. */

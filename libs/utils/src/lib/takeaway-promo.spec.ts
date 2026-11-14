@@ -60,7 +60,9 @@ describe('takeaway promo money', () => {
   it('reads the debt status off the payout it went into', () => {
     expect(takeawayDebtStatus(null)).toBe('ACCRUED');
     expect(takeawayDebtStatus({ status: 'PENDING' })).toBe('IN_PAYOUT');
-    expect(takeawayDebtStatus({ status: 'PAID' })).toBe('REPAID');
+    expect(takeawayDebtStatus({ status: 'PAID' })).toBe('IN_PAYOUT');
+    expect(takeawayDebtStatus({ status: 'DISPUTED' })).toBe('IN_PAYOUT');
+    expect(takeawayDebtStatus({ status: 'CONFIRMED' })).toBe('REPAID');
   });
 
   it('puts the promo percent into the welcome text', () => {

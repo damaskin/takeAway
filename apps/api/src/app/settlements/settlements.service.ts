@@ -3,11 +3,13 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, type BrandPayout, type Currency } from '@prisma/client';
 import {
   DEFAULT_COMMISSION_BPS,
+  settlementActions,
   type BrandTakeawayPromoReport,
   type CommissionRateHistory,
   type SettlementPayout,
   type SettlementPayoutPreview,
   type SettlementReport,
+  type SettlementSide,
 } from '@takeaway/shared-types';
 
 import { addDays, localDay, resolveDateRange, startOfDay } from '../analytics/analytics-range';
@@ -25,6 +27,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { brandPromoSummary, countedRedemptions } from '../takeaway-promos/takeaway-debt';
 import type {
+  ConfirmPayoutDto,
   CreatePayoutDto,
   MarkPayoutPaidDto,
   SetCommissionRateDto,
@@ -36,6 +39,7 @@ import {
   planPayout,
   rateSpans,
   settlementBalance,
+  signedAmount,
   type LedgerPayout,
   type SettlementOrderRow,
 } from './settlement-math';
@@ -64,6 +68,7 @@ interface RawOrderRow {
   pointsDiscountCents: number;
   takeawayDiscountCents: number;
   takeawayCompensationCents: number;
+  pointsCompensationCents: number;
   giftCardCents: number;
   deliveryFeeCents: number;
   totalCents: number;
@@ -73,10 +78,11 @@ interface RawOrderRow {
 }
 
 /**
- * «Расчёты с брендами»: what the platform collected by card for a brand's
- * orders, its commission, what it owes the brand and what it has paid.
- * Definitions live in `settlement-math.ts` and docs/settlements.md; this
- * service reads the database and keeps the rate history and payouts.
+ * «Расчёты с брендами»: what guests paid a brand by card, takeAway's
+ * commission on it, what takeAway owes the brand for its promos and points,
+ * and the netted settlements between the two. Definitions live in
+ * `settlement-math.ts` and docs/settlements.md; this service reads the
+ * database and keeps the rate history and the settlements.
  */
 @Injectable()
 export class SettlementsService {
@@ -115,9 +121,9 @@ export class SettlementsService {
     );
     const ledger = payouts.map(toLedger);
 
-    // «Выплата бренду» proposes a period that has ended. A report reaching
+    // «Взаиморасчёт» proposes a period that has ended. A report reaching
     // today would only offer «the period has not ended» — which is how the
-    // button went unnoticed — so the payout stops at yesterday instead.
+    // button went unnoticed — so the settlement stops at yesterday instead.
     const today = dayOf(now);
     const payoutTo = range.to < today ? range.to : addDays(today, -1);
     const payoutEnd = payoutTo === range.to ? range.end : startOfDay(addDays(payoutTo, 1), timeZone);
@@ -149,7 +155,7 @@ export class SettlementsService {
       ),
       balance: settlementBalance({
         accruedBeforeCents: computed.accruedBeforeCents,
-        payableCents: computed.totals.payableCents,
+        netCents: computed.totals.netCents,
         payouts: ledger,
         start: range.start,
         end: range.end,
@@ -279,9 +285,10 @@ export class SettlementsService {
   // ── Payouts ───────────────────────────────────────────────────────────────
 
   /**
-   * «Зафиксировать выплату»: fixes the balance owed at the end of `to` as a
-   * PENDING payout. Serialised per brand and currency, so two clicks cannot
-   * fix the same money twice.
+   * «Зафиксировать взаиморасчёт»: fixes the balance at the end of `to` not
+   * fixed before as a PENDING settlement, paid whichever way it points.
+   * Serialised per brand and currency, so two clicks cannot fix the same
+   * money twice.
    */
   async createPayout(user: AuthenticatedUser, dto: CreatePayoutDto, now: Date = new Date()): Promise<SettlementPayout> {
     const brand = await this.brandTerms(this.prisma, dto.brandId);
@@ -319,8 +326,8 @@ export class SettlementsService {
         if (preview.blocked === 'PERIOD_OPEN') {
           throw codedConflict('PAYOUT_PERIOD_OPEN', `${to} has not ended yet in ${timeZone}`);
         }
-        if (preview.blocked === 'NOTHING_DUE' || preview.periodFrom === null) {
-          throw codedConflict('PAYOUT_NOTHING_DUE', 'Nothing is owed to the brand at the end of the period');
+        if (preview.blocked === 'NOTHING_DUE' || preview.periodFrom === null || preview.direction === null) {
+          throw codedConflict('PAYOUT_NOTHING_DUE', 'Commission and compensation cancel out: nothing to settle');
         }
         const payout = await tx.brandPayout.create({
           data: {
@@ -330,19 +337,21 @@ export class SettlementsService {
             periodTo: dateOnly(to),
             timeZone,
             periodEnd: end,
+            direction: preview.direction,
             amountCents: preview.amountCents,
             cardNetCents: preview.cardNetCents,
             commissionCents: preview.commissionCents,
             compensationCents: preview.compensationCents,
+            pointsCompensationCents: preview.pointsCompensationCents,
             reference: dto.reference ?? null,
             comment: dto.comment ?? null,
             createdById: user.id,
           },
         });
-        // The takeAway promo debts this payout settles: every counted promo
-        // order up to the period's end not in a payout yet — a late one from
-        // an earlier period included, as its money is in `amountCents` too.
-        // Removing the (pending) payout clears the stamp (FK SET NULL).
+        // The takeAway promo debts this settlement covers: every counted
+        // promo order up to the period's end not in a settlement yet — a late
+        // one from an earlier period included, as its money is in the amount
+        // too. Removing the (pending) settlement clears the stamp (FK SET NULL).
         const owed = rows.filter((r) => r.takeawayCompensationCents > 0).map((r) => r.id);
         if (owed.length > 0) {
           await tx.takeawayPromoRedemption.updateMany({
@@ -355,42 +364,120 @@ export class SettlementsService {
       { timeout: 20_000 },
     );
     this.logger.log(
-      `payout fixed brand=${brand.id} ${created.currency} ${toDay(created.periodFrom)}..${toDay(created.periodTo)} amount=${created.amountCents}`,
+      `settlement fixed brand=${brand.id} ${created.currency} ${toDay(created.periodFrom)}..${toDay(created.periodTo)} ${created.direction} amount=${created.amountCents}`,
     );
     return toPayoutDto(created);
   }
 
+  /**
+   * «Отметить оплату»: the payer says the money went out — takeAway's
+   * platform admin when takeAway pays, the brand's owner when the brand
+   * pays. From pending, or again after the receiver said it did not arrive.
+   */
   async markPaid(
     user: AuthenticatedUser,
     id: string,
     dto: MarkPayoutPaidDto,
     now: Date = new Date(),
   ): Promise<SettlementPayout> {
+    const payout = await this.settlementFor(user, id);
+    const side = await this.sideOf(user, payout.brandId);
+    if (!settlementActions(payout, side).markPaid) this.refuseStep(payout, side, 'markPaid');
     const result = await this.prisma.brandPayout.updateMany({
-      where: { id, status: 'PENDING' },
+      where: { id, status: { in: ['PENDING', 'DISPUTED'] } },
       data: {
         status: 'PAID',
         paidAt: dto.paidAt ? new Date(dto.paidAt) : now,
         paidById: user.id,
+        disputedAt: null,
+        disputeComment: null,
         ...(dto.reference !== undefined ? { reference: dto.reference } : {}),
         ...(dto.comment !== undefined ? { comment: dto.comment } : {}),
       },
     });
-    const payout = await this.prisma.brandPayout.findUnique({ where: { id } });
-    if (!payout) throw new NotFoundException('Payout not found');
-    if (result.count === 0) throw codedConflict('PAYOUT_ALREADY_PAID', 'This payout is already marked as paid');
-    return toPayoutDto(payout);
+    if (result.count === 0) throw codedConflict('PAYOUT_STATUS', 'The settlement changed meanwhile; reload it');
+    return toPayoutDto(await this.prisma.brandPayout.findUniqueOrThrow({ where: { id } }));
   }
 
   /**
-   * Takes back a payout fixed by mistake. Only a pending one, and only the
-   * latest: payouts follow each other, and a hole in the middle would leave
-   * days nobody settles.
+   * The receiver's answer: «Получено» closes the settlement (from any state
+   * but confirmed — the money may arrive before the payer marks it), «Не
+   * получено» sends a paid one back to the payer.
+   */
+  async confirm(
+    user: AuthenticatedUser,
+    id: string,
+    dto: ConfirmPayoutDto,
+    now: Date = new Date(),
+  ): Promise<SettlementPayout> {
+    const payout = await this.settlementFor(user, id);
+    const side = await this.sideOf(user, payout.brandId);
+    const actions = settlementActions(payout, side);
+    if (dto.received) {
+      if (!actions.confirm) this.refuseStep(payout, side, 'confirm');
+      const result = await this.prisma.brandPayout.updateMany({
+        where: { id, status: { not: 'CONFIRMED' } },
+        data: { status: 'CONFIRMED', confirmedAt: now, confirmedById: user.id },
+      });
+      if (result.count === 0) throw codedConflict('PAYOUT_STATUS', 'The settlement is already confirmed');
+    } else {
+      if (!actions.dispute) this.refuseStep(payout, side, 'dispute');
+      const result = await this.prisma.brandPayout.updateMany({
+        where: { id, status: 'PAID' },
+        data: { status: 'DISPUTED', disputedAt: now, disputeComment: dto.comment ?? null },
+      });
+      if (result.count === 0) throw codedConflict('PAYOUT_STATUS', 'The settlement changed meanwhile; reload it');
+    }
+    this.logger.log(`settlement ${id} ${dto.received ? 'confirmed' : 'disputed'} by ${side}`);
+    return toPayoutDto(await this.prisma.brandPayout.findUniqueOrThrow({ where: { id } }));
+  }
+
+  /** A settlement the user may see: any for the platform admin, their own brand's for an owner. */
+  private async settlementFor(user: AuthenticatedUser, id: string): Promise<BrandPayout> {
+    const payout = await this.prisma.brandPayout.findUnique({ where: { id } });
+    if (!payout) throw new NotFoundException('Payout not found');
+    const scope = await this.brandScope.resolveBrandIds(user);
+    if (scope !== null && !scope.includes(payout.brandId)) throw new NotFoundException('Payout not found');
+    return payout;
+  }
+
+  /** The side a user speaks for: the platform admin for takeAway, a brand owner for their brand. */
+  private async sideOf(user: AuthenticatedUser, brandId: string): Promise<SettlementSide> {
+    const scope = await this.brandScope.resolveBrandIds(user);
+    if (scope === null) return 'TAKEAWAY';
+    if (scope.includes(brandId)) return 'BRAND';
+    throw new NotFoundException('Payout not found');
+  }
+
+  /**
+   * Why a step is refused: the other side takes it (403), or the settlement
+   * is past it (409).
+   */
+  private refuseStep(payout: BrandPayout, side: SettlementSide, step: 'markPaid' | 'confirm' | 'dispute'): never {
+    const other: SettlementSide = side === 'TAKEAWAY' ? 'BRAND' : 'TAKEAWAY';
+    if (settlementActions(payout, other)[step]) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: 'PAYOUT_NOT_YOUR_SIDE',
+        message:
+          step === 'markPaid' ? 'The other side pays this settlement' : 'The other side receives this settlement',
+      });
+    }
+    throw codedConflict('PAYOUT_STATUS', `The settlement is ${payout.status.toLowerCase()}; this step is not open`);
+  }
+
+  /**
+   * Takes back a settlement fixed by mistake. Only a pending one, and only
+   * the latest: settlements follow each other, and a hole in the middle would
+   * leave days nobody settles.
    */
   async deletePayout(id: string): Promise<void> {
     const payout = await this.prisma.brandPayout.findUnique({ where: { id } });
     if (!payout) throw new NotFoundException('Payout not found');
-    if (payout.status !== 'PENDING') throw codedConflict('PAYOUT_PAID', 'A paid payout cannot be removed');
+    if (payout.status !== 'PENDING') {
+      throw codedConflict('PAYOUT_PAID', 'Only a settlement nobody has paid or confirmed can be removed');
+    }
     const latest = await this.prisma.brandPayout.findFirst({
       where: { brandId: payout.brandId, currency: payout.currency },
       orderBy: { periodEnd: 'desc' },
@@ -419,6 +506,8 @@ export class SettlementsService {
              o."takeawayDiscountCents" AS "takeawayDiscountCents",
              CASE WHEN o."status" IN ('CANCELLED', 'EXPIRED') THEN 0
                   ELSE COALESCE(tr."discountCents", 0) END AS "takeawayCompensationCents",
+             CASE WHEN o."status" IN ('CANCELLED', 'EXPIRED') THEN 0
+                  ELSE o."pointsDiscountCents" END AS "pointsCompensationCents",
              o."giftCardCents" AS "giftCardCents",
              o."deliveryFeeCents" AS "deliveryFeeCents",
              o."totalCents" AS "totalCents",
@@ -454,6 +543,7 @@ export class SettlementsService {
       pointsDiscountCents: r.pointsDiscountCents,
       takeawayDiscountCents: r.takeawayDiscountCents,
       takeawayCompensationCents: r.takeawayCompensationCents,
+      pointsCompensationCents: r.pointsCompensationCents,
       giftCardCents: r.giftCardCents,
       deliveryFeeCents: r.deliveryFeeCents,
       totalCents: r.totalCents,
@@ -546,7 +636,7 @@ export class SettlementsService {
       lastSettledDay: last?.periodTo ?? null,
       firstSettledDay: input.firstSettledDay,
       accruedBeforeEndCents: input.accruedBeforeEndCents,
-      committedCents: input.payouts.reduce((sum, p) => sum + p.amountCents, 0),
+      committedCents: input.payouts.reduce((sum, p) => sum + p.signedCents, 0),
       nextDay: (day) => addDays(day, 1),
     });
     const figures =
@@ -558,14 +648,17 @@ export class SettlementsService {
             startOfDay(plan.periodFrom, input.timeZone),
             input.end,
           )
-        : { cardNetCents: 0, compensationCents: 0, commissionCents: 0 };
+        : { cardNetCents: 0, compensationCents: 0, pointsCompensationCents: 0, commissionCents: 0 };
     return {
       periodFrom: plan.periodFrom,
       periodTo: input.to,
+      direction: plan.direction,
       amountCents: plan.amountCents,
+      netCents: plan.netCents,
       cardNetCents: figures.cardNetCents,
       commissionCents: figures.commissionCents,
       compensationCents: figures.compensationCents,
+      pointsCompensationCents: figures.pointsCompensationCents,
       blocked: plan.blocked,
       lastSettledDay: last?.periodTo ?? null,
     };
@@ -609,7 +702,12 @@ export class SettlementsService {
 }
 
 function toLedger(p: BrandPayout): LedgerPayout {
-  return { periodEnd: p.periodEnd, periodTo: toDay(p.periodTo), amountCents: p.amountCents, status: p.status };
+  return {
+    periodEnd: p.periodEnd,
+    periodTo: toDay(p.periodTo),
+    signedCents: signedAmount(p.direction, p.amountCents),
+    status: p.status,
+  };
 }
 
 function toPayoutDto(p: BrandPayout): SettlementPayout {
@@ -620,12 +718,17 @@ function toPayoutDto(p: BrandPayout): SettlementPayout {
     periodFrom: toDay(p.periodFrom),
     periodTo: toDay(p.periodTo),
     timeZone: p.timeZone,
+    direction: p.direction,
     amountCents: p.amountCents,
     cardNetCents: p.cardNetCents,
     commissionCents: p.commissionCents,
     compensationCents: p.compensationCents,
+    pointsCompensationCents: p.pointsCompensationCents,
     status: p.status,
     paidAt: p.paidAt?.toISOString() ?? null,
+    confirmedAt: p.confirmedAt?.toISOString() ?? null,
+    disputedAt: p.disputedAt?.toISOString() ?? null,
+    disputeComment: p.disputeComment,
     reference: p.reference,
     comment: p.comment,
     createdAt: p.createdAt.toISOString(),

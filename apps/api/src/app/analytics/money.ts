@@ -3,11 +3,12 @@
  * on — the dashboard, analytics, customers, the platform view.
  *
  *   sales («Продажи»)     the items at menu price — `subtotalCents`
- *   discounts («Скидки»)  promo codes and loyalty points: the business gives
- *                         that money away, so it is not revenue. A takeAway
- *                         promo is not among them: takeAway pays the venue
- *                         that discount (docs/takeaway-promos.md), so for the
- *                         business the order is worth its full menu price
+ *   discounts («Скидки»)  the business's own promo codes: it gives that money
+ *                         away, so it is not revenue. A takeAway promo and
+ *                         loyalty points (since 2026-11-14) are not among
+ *                         them: takeAway pays the venue those discounts
+ *                         (docs/settlements.md), so for the business the
+ *                         order is worth its full menu price
  *   revenue («Выручка»)   sales − discounts: what the goods earned, whether the
  *                         customer paid by card or with a gift card
  *   gift cards            the part of the revenue a gift card paid for
@@ -29,6 +30,8 @@ export interface OrderAmounts {
   discountCents: number;
   /** Of it, the takeAway promo — paid to the venue by takeAway. Absent: 0. */
   takeawayDiscountCents?: number;
+  /** Of it, loyalty points — paid to the venue by takeAway since 2026-11-14. Absent: 0. */
+  pointsDiscountCents?: number;
   giftCardCents: number;
 }
 
@@ -43,7 +46,10 @@ export const NO_MONEY: Money = { salesCents: 0, discountCents: 0, revenueCents: 
 
 /** One order's money; a discount never takes the order below zero. */
 export function orderMoney(order: OrderAmounts): Money {
-  const discount = Math.max(order.discountCents - (order.takeawayDiscountCents ?? 0), 0);
+  const discount = Math.max(
+    order.discountCents - (order.takeawayDiscountCents ?? 0) - (order.pointsDiscountCents ?? 0),
+    0,
+  );
   const revenue = Math.max(order.subtotalCents - discount, 0);
   return {
     salesCents: order.subtotalCents,
@@ -72,7 +78,7 @@ export interface SoldLine {
   quantity: number;
   /** The line at menu price: unit price × quantity. */
   totalCents: number;
-  order: Pick<OrderAmounts, 'subtotalCents' | 'discountCents' | 'takeawayDiscountCents'>;
+  order: Pick<OrderAmounts, 'subtotalCents' | 'discountCents' | 'takeawayDiscountCents' | 'pointsDiscountCents'>;
 }
 
 export interface ProductMoney {

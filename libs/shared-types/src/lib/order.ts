@@ -256,6 +256,14 @@ export interface OrderSummary {
   canReview?: boolean;
   /** The stars the customer gave it; null before a review. `GET /me/orders` only. */
   reviewRating?: number | null;
+  /**
+   * The order's discounts takeAway funds — its own promo and loyalty points
+   * (docs/settlements.md): the brand gets them as compensation and pays
+   * commission on them, so for the business the order is worth
+   * `totalCents + takeawayFundedCents`. 0 without either. Staff lists only
+   * (`GET /admin/orders`); optional for older API builds.
+   */
+  takeawayFundedCents?: number;
 }
 
 // The snapshot shapes below are type aliases rather than interfaces so they

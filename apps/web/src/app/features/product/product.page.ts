@@ -261,13 +261,23 @@ import { ProductOptionsComponent } from './product-options.component';
               {{ 'web.product.cta.signInPrompt' | translate }}
             </p>
           } @else if (cartItemCount() > 0) {
-            <a
-              routerLink="/checkout"
-              [queryParams]="{ store: resolvedStore()?.slug }"
-              class="flex items-center justify-center"
-              style="margin-top: 4px; height: 48px; background: var(--color-espresso); color: var(--color-foam); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-              >{{ 'web.product.cta.goToCheckout' | translate: { count: cartItemCount() } }}</a
-            >
+            <!-- Something is in the cart: on to checkout, or back to the menu for one more thing. -->
+            <div class="pdp-next" data-testid="product-next">
+              <a
+                routerLink="/checkout"
+                [queryParams]="{ store: resolvedStore()?.slug }"
+                class="pdp-next-btn pdp-next-checkout"
+                data-testid="product-go-to-checkout"
+                >{{ 'web.product.cta.goToCheckout' | translate: { count: cartItemCount() } }}</a
+              >
+              <a
+                [routerLink]="menuLink()"
+                [fragment]="categoryFragment()"
+                class="pdp-next-btn pdp-next-continue"
+                data-testid="product-continue-shopping"
+                >{{ 'web.product.cta.continueShopping' | translate }}</a
+              >
+            </div>
           }
           @if (addError() && !storeClosed()) {
             <p
@@ -349,6 +359,40 @@ import { ProductOptionsComponent } from './product-options.component';
       .pdp-missing {
         font-weight: 600;
         color: var(--color-caramel);
+      }
+      /*
+       * «Перейти к оформлению» and «Продолжить покупки» side by side, each on
+       * one line, sized by its words; one under the other once they do not fit.
+       */
+      .pdp-next {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 4px;
+      }
+      .pdp-next-btn {
+        flex: 1 1 auto;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 0 16px;
+        border-radius: var(--radius-button);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+      }
+      .pdp-next-checkout {
+        background: var(--color-espresso);
+        color: var(--color-foam);
+      }
+      .pdp-next-continue {
+        background: var(--color-foam);
+        color: var(--color-espresso);
+        border: 1px solid var(--color-border);
       }
       @media (max-width: 900px) {
         .pdp {
@@ -466,6 +510,15 @@ export class ProductPage implements OnInit {
   readonly category = computed(() => {
     const product = this.product();
     return (product && this.menu()?.categories.find((c) => c.id === product.categoryId)) ?? null;
+  });
+
+  /**
+   * Where «Продолжить покупки» lands in the menu: the product's own category
+   * (`#cat-…`, the menu scrolls to it), or the top while the category is unknown.
+   */
+  readonly categoryFragment = computed(() => {
+    const category = this.category();
+    return category ? `cat-${category.id}` : undefined;
   });
 
   /** What the product is — picks the placeholder and the note's wording. */

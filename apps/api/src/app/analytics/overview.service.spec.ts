@@ -197,7 +197,7 @@ describe('OverviewService.business', () => {
     expect(money.length).toBeGreaterThanOrEqual(3);
     for (const q of money) {
       expect(q.sql).toContain(
-        'GREATEST(o."subtotalCents" - GREATEST(o."discountCents" - o."takeawayDiscountCents", 0), 0)',
+        'GREATEST(o."subtotalCents" - GREATEST(o."discountCents" - o."takeawayDiscountCents" - o."pointsDiscountCents", 0), 0)',
       );
       expect(q.sql).not.toContain('o."totalCents"');
     }

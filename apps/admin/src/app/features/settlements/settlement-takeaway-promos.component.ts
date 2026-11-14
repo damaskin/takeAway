@@ -13,11 +13,14 @@ import { OVERVIEW_STYLES } from '../../shared/overview/overview.styles';
  * «Акции takeAway» on the settlements page: the brand's promo orders of the
  * period on screen and what takeAway owes for them (docs/takeaway-promos.md
  * §4.2). The summary and the list follow the page's brand, currency and
- * period; «Долг takeAway к ближайшей выплате» is always now — the figure the
+ * period; «Долг takeAway по акциям» is always now — the figure the
  * platform's debt report shows for this brand.
  *
- * It reads the report the page loaded, so a payout fixed or marked paid on
- * the page (a new report) re-reads the statuses too.
+ * An order's compensation is «начислена» until a settlement takes it in,
+ * «во взаиморасчёте» while that settlement waits, and «погашена» once the
+ * brand confirmed the settlement «Получено». It reads the report the page
+ * loaded, so a settlement fixed, paid or confirmed on the page (a new report)
+ * re-reads the statuses too.
  */
 @Component({
   selector: 'app-settlement-takeaway-promos',
@@ -197,7 +200,7 @@ export class SettlementTakeawayPromosComponent {
     return `${this.fmt.shortDay(iso, tz)} ${this.fmt.time(iso, tz)}`;
   }
 
-  /** «начислена», «в выплате», «погашена 27.10». */
+  /** «начислена», «во взаиморасчёте», «погашена 27.10» (the day the brand confirmed the settlement). */
   status(order: BrandTakeawayPromoOrder): string {
     if (order.status === 'REPAID' && order.repaidAt) {
       const tz = this.data()?.period.timeZone ?? this.report().period.timeZone;

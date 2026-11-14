@@ -16,8 +16,10 @@ promo's currency. takeAway pays for it:
 | D      | discount = P × s / 100, to the cent, **half up**               |
 
 - The guest pays **P − D**; that card money goes to the venue as usual.
-- takeAway owes the venue **D** (a «задолженность takeAway»), repaid in the
-  next payout as its own line «Компенсация takeAway по акциям».
+- takeAway owes the venue **D** (a «задолженность takeAway»), shown as its own
+  line «Компенсация takeAway по акциям» and netted against the commission in
+  the period's settlement («взаимозачёт», docs/settlements.md, since
+  2026-11-14).
 - The commission is taken on **P**, not on P − D: a promo order pays the venue
   exactly what a regular order of the same menu price would.
 - Money is integer minor units everywhere; `takeawayPromoDiscountCents` in
@@ -79,12 +81,13 @@ answer №11: takeAway never pays for those).
    their own snapshot).
 8. **Debt status.** A promo order's debt is
    - `ACCRUED` («начислена») once the order counts (paid by card or accepted,
-     the same «counts» as settlements) and no payout covers it yet;
-   - `IN_PAYOUT` once «Зафиксировать выплату» created a payout that includes
-     it (the redemption's `payoutId` is stamped then; deleting that pending
-     payout clears it);
-   - `REPAID` («погашена», with the payout's `paidAt`) once that payout is
-     marked paid.
+     the same «counts» as settlements) and no settlement covers it yet;
+   - `IN_PAYOUT` («во взаиморасчёте») once «Зафиксировать взаиморасчёт»
+     created a settlement that includes it (the redemption's `payoutId` is
+     stamped then; deleting that pending settlement clears it);
+   - `REPAID` («погашена», with the settlement's `confirmedAt`) once the
+     receiver confirmed that settlement (since 2026-11-14; before, once the
+     payout was marked paid).
      The current debt is accrued − repaid, per brand and in total.
 9. **Welcome bonus** (answer №16: yes; push + profile banner; auto-applied to
    the first order; removable in the cart):
@@ -128,8 +131,8 @@ expiresAt, orderId? (unique; the order holding it), notifiedAt`.
 - `Order.takeawayDiscountCents` — D, snapshotted; **also included in
   `discountCents`**, so totals, tax and every receipt keep working.
   `couponCode` keeps the code.
-- `BrandPayout.compensationCents` — Σ D the payout settles (already inside
-  `amountCents`).
+- `BrandPayout.compensationCents` — Σ D the settlement covers (netted into
+  `amountCents` against the commission since 2026-11-14).
 
 ## 4. API
 
@@ -164,11 +167,11 @@ settlements report); the summary and the list cover orders that counted in
 the period; `currentDebtCents` is all time, now, and equals the brand's row
 of `GET /admin/takeaway-promos/debt`.
 
-`GET /admin/settlements` (the report) gains `totals.takeawayCompensationCents`
-(and per day); `commissionBaseCents` = captured − refunded + compensation;
-`payableCents` = base − commission. `nextPayout.compensationCents` and every
-`payouts[].compensationCents` say what part of the payout is the
-compensation.
+`GET /admin/settlements` (the report) carries `totals.takeawayCompensationCents`
+(and per day); `commissionBaseCents` = captured − refunded + compensation
+(points included since 2026-11-14); `netCents` = commission − compensation.
+`nextPayout.compensationCents` and every `payouts[].compensationCents` say
+what part of the settlement is this compensation (docs/settlements.md).
 
 ### 4.3 Customers
 
@@ -213,11 +216,10 @@ budget, spent, left; tables by brand, by store, by day) and «Долг takeAway�
 
 **Admin, brand cabinet** — «Взаиморасчёты»: the totals get «Компенсация
 takeAway по акциям» and the commission note says it is taken on the full
-price; payouts show their compensation; a new block «Акции takeAway» with the
-summary of §4.2 (period = the page's period; «Долг takeAway к ближайшей
-выплате» always now) and the list of promo orders (date, №, promo, по меню,
-оплатил гость, компенсация, status «начислена» / «в выплате» / «погашена
-dd.mm»). The order detail and the kitchen board card show the line of §4.4.
+price; settlements show their compensation; a block «Акции takeAway» with the
+summary of §4.2 (period = the page's period; takeAway's current debt always
+now) and the list of promo orders (date, №, promo, по меню, оплатил гость,
+компенсация, status «начислена» / «во взаиморасчёте» / «погашена dd.mm»). The order detail and the kitchen board card show the line of §4.4.
 
 **Web, Mini App, mobile app**
 
@@ -242,8 +244,8 @@ dd.mm»). The order detail and the kitchen board card show the line of §4.4.
 - Σ accrued debts of all brands = Σ `spentCents` of all promos, once no promo
   order is waiting for its payment (held orders are in `spentCents` already).
 - A failed / cancelled / expired order: promo not used, `spentCents` back.
-- The payout has «Компенсация takeAway по акциям» = Σ D; after it is marked
-  paid its debts read «погашена» with the date.
+- The settlement has «Компенсация takeAway по акциям» = Σ D; once the
+  receiver confirms it, its debts read «погашена» with the date.
 - Current debt = accrued − repaid, per brand and in total; the brand cabinet
   and the platform report agree.
 - One use per customer; exhausted promos stop by themselves; concurrent

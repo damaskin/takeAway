@@ -43,7 +43,7 @@ export const COUNTED_REDEMPTION_SELECT = {
   discountCents: true,
   payoutId: true,
   promo: { select: { name: true } },
-  payout: { select: { status: true, paidAt: true } },
+  payout: { select: { status: true, confirmedAt: true } },
   order: {
     select: {
       orderCode: true,
@@ -81,7 +81,7 @@ export interface CountedRedemption {
   /** When the order counted (accepted, or first captured). */
   settledAt: Date;
   status: TakeawayDebtStatus;
-  /** REPAID: when the payout was marked paid. */
+  /** REPAID: when the brand confirmed the settlement. */
   repaidAt: Date | null;
 }
 
@@ -130,7 +130,7 @@ export function toCountedRedemption(row: RedemptionRead): CountedRedemption | nu
     payoutId: row.payoutId,
     settledAt,
     status,
-    repaidAt: status === 'REPAID' ? (row.payout?.paidAt ?? null) : null,
+    repaidAt: status === 'REPAID' ? (row.payout?.confirmedAt ?? null) : null,
   };
 }
 

@@ -19,6 +19,7 @@ function raw(overrides: Record<string, unknown>) {
     pointsDiscountCents: 0,
     takeawayDiscountCents: 0,
     takeawayCompensationCents: 0,
+    pointsCompensationCents: 0,
     giftCardCents: 0,
     deliveryFeeCents: 0,
     totalCents: 0,
@@ -59,6 +60,7 @@ const ROWS = [
   raw({ id: 'free', settledAt: new Date('2026-10-03T08:00:00Z'), subtotalCents: 4000, discountCents: 4000 }),
 ];
 
+/** The September settlement: 15 % of 100 — the brand paid takeAway 15 and takeAway confirmed it. */
 function payout(overrides: Partial<BrandPayout> = {}): BrandPayout {
   return {
     id: 'p1',
@@ -68,16 +70,22 @@ function payout(overrides: Partial<BrandPayout> = {}): BrandPayout {
     periodTo: new Date('2026-09-30T00:00:00Z'),
     timeZone: 'Europe/Chisinau',
     periodEnd: new Date('2026-09-30T21:00:00Z'),
-    amountCents: 8500,
+    direction: 'BRAND_TO_TAKEAWAY',
+    amountCents: 1500,
     cardNetCents: 10000,
     commissionCents: 1500,
     compensationCents: 0,
-    status: 'PAID',
+    pointsCompensationCents: 0,
+    status: 'CONFIRMED',
     paidAt: new Date('2026-10-01T10:00:00Z'),
+    confirmedAt: new Date('2026-10-01T12:00:00Z'),
+    disputedAt: null,
+    disputeComment: null,
     reference: 'PP-1',
     comment: null,
     createdById: 'sa',
-    paidById: 'sa',
+    paidById: 'owner',
+    confirmedById: 'sa',
     createdAt: new Date('2026-10-01T09:00:00Z'),
     updatedAt: new Date('2026-10-01T10:00:00Z'),
     ...overrides,
@@ -117,11 +125,12 @@ function setup(options: { payouts?: BrandPayout[]; rows?: unknown[]; scope?: str
           args.distinct ? [{ currency: 'RUP' }] : [...payouts].sort((a, b) => +b.periodEnd - +a.periodEnd),
         ),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       findFirst: jest.fn(),
       create: jest
         .fn()
         .mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
-          payout({ id: 'p-new', status: 'PENDING', paidAt: null, ...data }),
+          payout({ id: 'p-new', status: 'PENDING', paidAt: null, confirmedAt: null, ...data }),
         ),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -180,33 +189,38 @@ describe('SettlementsService.report', () => {
       orders: 3,
       cardOrders: 2,
       capturedCents: 5000,
+      cardNetCents: 5000,
+      compensationCents: 0,
       commissionBaseCents: 5000,
       commissionCents: 750,
-      payableCents: 4250,
+      netCents: 750,
     });
     expect(report.rates).toEqual([{ bps: 1500, source: 'PLAN', from: '2026-10-01', to: '2026-10-07' }]);
   });
 
-  it('carries the September balance and previews the next payout from the day after the last one', async () => {
+  it('carries the September balance and previews the next settlement from the day after the last one', async () => {
     const { svc } = setup({ payouts: [payout()] });
     const report = await svc.report(admin, { brandId: 'b1', from: '2026-10-01', to: '2026-10-07' }, NOW);
 
-    // September: 8 500 earned and paid out.
+    // September: 15 of commission owed, paid and confirmed.
     expect(report.balance).toEqual({
       openingCents: 0,
-      payableCents: 4250,
-      paidCents: 0,
-      pendingCents: 0,
-      closingCents: 4250,
-      closingPendingCents: 0,
+      netCents: 750,
+      settledCents: 0,
+      openCents: 0,
+      closingCents: 750,
+      closingOpenCents: 0,
     });
     expect(report.nextPayout).toEqual({
       periodFrom: '2026-10-01',
       periodTo: '2026-10-07',
-      amountCents: 4250,
+      direction: 'BRAND_TO_TAKEAWAY',
+      amountCents: 750,
+      netCents: 750,
       cardNetCents: 5000,
       commissionCents: 750,
       compensationCents: 0,
+      pointsCompensationCents: 0,
       blocked: null,
       lastSettledDay: '2026-09-30',
     });
@@ -214,11 +228,21 @@ describe('SettlementsService.report', () => {
       id: 'p1',
       periodFrom: '2026-09-28',
       periodTo: '2026-09-30',
-      status: 'PAID',
+      direction: 'BRAND_TO_TAKEAWAY',
+      status: 'CONFIRMED',
+      confirmedAt: '2026-10-01T12:00:00.000Z',
     });
   });
 
-  it('proposes the payout up to yesterday when the report reaches today, instead of a blocked card', async () => {
+  it('keeps a settlement that is paid but not confirmed in the balance', async () => {
+    const { svc } = setup({ payouts: [payout({ status: 'PAID', confirmedAt: null })] });
+    const report = await svc.report(admin, { brandId: 'b1', from: '2026-10-01', to: '2026-10-07' }, NOW);
+    expect(report.balance).toMatchObject({ openingCents: 1500, closingCents: 2250, closingOpenCents: 1500 });
+    // Fixed already: the next settlement takes only October.
+    expect(report.nextPayout).toMatchObject({ amountCents: 750 });
+  });
+
+  it('proposes the settlement up to yesterday when the report reaches today, instead of a blocked card', async () => {
     const { svc } = setup({
       payouts: [payout()],
       rows: [
@@ -236,21 +260,20 @@ describe('SettlementsService.report', () => {
     const report = await svc.report(admin, { brandId: 'b1', from: '2026-10-01', to: '2026-10-10' }, NOW);
 
     expect(report.period.to).toBe('2026-10-10');
-    expect(report.nextPayout).toEqual({
+    expect(report.nextPayout).toMatchObject({
       periodFrom: '2026-10-01',
       periodTo: '2026-10-09',
-      // Today's order is in the report but not in the payout: the day is not over.
-      amountCents: 4250,
+      // Today's order is in the report but not in the settlement: the day is not over.
+      amountCents: 750,
       cardNetCents: 5000,
       commissionCents: 750,
-      compensationCents: 0,
       blocked: null,
       lastSettledDay: '2026-09-30',
     });
     expect(report.totals.capturedCents).toBe(6000);
   });
 
-  it('says the closed days are settled already when the last payout reached yesterday', async () => {
+  it('says the closed days are settled already when the last settlement reached yesterday', async () => {
     const { svc } = setup({
       payouts: [payout({ periodTo: new Date('2026-10-09T00:00:00Z'), periodEnd: new Date('2026-10-09T21:00:00Z') })],
     });
@@ -265,7 +288,7 @@ describe('SettlementsService.report', () => {
 });
 
 describe('SettlementsService.createPayout', () => {
-  it('fixes the balance owed at the end of the period, starting at the first counted order', async () => {
+  it('fixes the balance at the end of the period, starting at the first counted order', async () => {
     const { svc, prisma } = setup();
     const created = await svc.createPayout(
       admin,
@@ -283,9 +306,12 @@ describe('SettlementsService.createPayout', () => {
         timeZone: 'Europe/Chisinau',
         // Local midnight after 7 October.
         periodEnd: new Date('2026-10-07T21:00:00.000Z'),
-        amountCents: 8500 + 4250,
+        direction: 'BRAND_TO_TAKEAWAY',
+        amountCents: 1500 + 750,
         cardNetCents: 15000,
         commissionCents: 2250,
+        compensationCents: 0,
+        pointsCompensationCents: 0,
         reference: 'X',
         createdById: 'sa',
       }),
@@ -293,7 +319,7 @@ describe('SettlementsService.createPayout', () => {
     expect(created).toMatchObject({ id: 'p-new', status: 'PENDING', periodFrom: '2026-09-28', periodTo: '2026-10-07' });
   });
 
-  it('carries the takeAway promo compensation and stamps the debts it settles', async () => {
+  it('nets the takeAway promo compensation against the commission and stamps the debts it covers', async () => {
     const rows = [
       ...ROWS,
       raw({
@@ -313,8 +339,9 @@ describe('SettlementsService.createPayout', () => {
 
     expect(prisma.brandPayout.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        // 100 at 15 %: 85 more than without the promo order, as a regular order of 100 would add.
-        amountCents: 8500 + 4250 + 8500,
+        // 15 on the full 100, minus the 10 takeAway owes: 5 more for the brand to pay.
+        direction: 'BRAND_TO_TAKEAWAY',
+        amountCents: 2250 + 500,
         cardNetCents: 15000 + 9000,
         compensationCents: 1000,
         commissionCents: 2250 + 1500,
@@ -323,6 +350,34 @@ describe('SettlementsService.createPayout', () => {
     expect(prisma.takeawayPromoRedemption.updateMany).toHaveBeenCalledWith({
       where: { orderId: { in: ['promo'] }, payoutId: null },
       data: { payoutId: 'p-new' },
+    });
+  });
+
+  it('points the settlement at the brand when the points it took outweigh the commission', async () => {
+    const rows = [
+      raw({
+        id: 'points',
+        settledAt: new Date('2026-10-06T09:00:00Z'),
+        subtotalCents: 5000,
+        discountCents: 3000,
+        pointsDiscountCents: 3000,
+        pointsCompensationCents: 3000,
+        totalCents: 2000,
+        capturedCents: 2000n,
+        hasCapture: true,
+      }),
+    ];
+    const { svc, prisma } = setup({ rows });
+    await svc.createPayout(admin, { brandId: 'b1', currency: 'RUP', to: '2026-10-07' }, NOW);
+    expect(prisma.brandPayout.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        // 15 % of 50 = 7.50 owed by the brand, 30 of points owed by takeAway.
+        direction: 'TAKEAWAY_TO_BRAND',
+        amountCents: 3000 - 750,
+        cardNetCents: 2000,
+        commissionCents: 750,
+        pointsCompensationCents: 3000,
+      }),
     });
   });
 
@@ -336,7 +391,7 @@ describe('SettlementsService.createPayout', () => {
     expect(prisma.brandPayout.create).not.toHaveBeenCalled();
   });
 
-  it('refuses days an earlier payout already settles', async () => {
+  it('refuses days an earlier settlement already covers', async () => {
     const { svc } = setup({
       payouts: [payout({ periodTo: new Date('2026-10-07T00:00:00Z'), periodEnd: new Date('2026-10-07T21:00:00Z') })],
     });
@@ -347,7 +402,7 @@ describe('SettlementsService.createPayout', () => {
     });
   });
 
-  it('refuses when nothing is owed', async () => {
+  it('refuses when nothing is owed either way', async () => {
     const { svc } = setup({ rows: [] });
     const attempt = svc.createPayout(admin, { brandId: 'b1', currency: 'RUP', to: '2026-10-07' }, NOW);
     await expect(attempt).rejects.toBeInstanceOf(ConflictException);
@@ -363,36 +418,137 @@ describe('SettlementsService.createPayout', () => {
 });
 
 describe('SettlementsService.markPaid', () => {
-  it('marks a pending payout paid, now by default', async () => {
-    const { svc, prisma } = setup();
-    prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PAID', paidAt: NOW }));
-    const paid = await svc.markPaid(admin, 'p1', { reference: 'PP-77' }, NOW);
+  it('lets the brand owner mark what the brand pays, now by default', async () => {
+    const { svc, prisma } = setup({ scope: ['b1'] });
+    prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING', paidAt: null, confirmedAt: null }));
+    prisma.brandPayout.findUniqueOrThrow.mockResolvedValue(payout({ status: 'PAID', paidAt: NOW, confirmedAt: null }));
+    const paid = await svc.markPaid(owner, 'p1', { reference: 'PP-77' }, NOW);
     expect(prisma.brandPayout.updateMany).toHaveBeenCalledWith({
-      where: { id: 'p1', status: 'PENDING' },
-      data: { status: 'PAID', paidAt: NOW, paidById: 'sa', reference: 'PP-77' },
+      where: { id: 'p1', status: { in: ['PENDING', 'DISPUTED'] } },
+      data: {
+        status: 'PAID',
+        paidAt: NOW,
+        paidById: 'owner',
+        disputedAt: null,
+        disputeComment: null,
+        reference: 'PP-77',
+      },
     });
     expect(paid.status).toBe('PAID');
   });
 
-  it('refuses to pay the same payout twice', async () => {
+  it('lets the platform admin mark what takeAway pays, and pay again after «не получено»', async () => {
     const { svc, prisma } = setup();
-    prisma.brandPayout.updateMany.mockResolvedValue({ count: 0 });
-    prisma.brandPayout.findUnique.mockResolvedValue(payout());
+    prisma.brandPayout.findUnique.mockResolvedValue(
+      payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'DISPUTED', disputedAt: NOW, confirmedAt: null }),
+    );
+    prisma.brandPayout.findUniqueOrThrow.mockResolvedValue(payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'PAID' }));
+    await svc.markPaid(admin, 'p1', {}, NOW);
+    expect(prisma.brandPayout.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'PAID', paidById: 'sa', disputedAt: null }) }),
+    );
+  });
+
+  it("refuses the platform admin the brand's payment with 403", async () => {
+    const { svc, prisma } = setup();
+    prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING', confirmedAt: null }));
     await expect(svc.markPaid(admin, 'p1', {}, NOW)).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'PAYOUT_ALREADY_PAID' }),
+      response: expect.objectContaining({ code: 'PAYOUT_NOT_YOUR_SIDE' }),
+    });
+    expect(prisma.brandPayout.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses to pay a confirmed settlement again', async () => {
+    const { svc, prisma } = setup({ scope: ['b1'] });
+    prisma.brandPayout.findUnique.mockResolvedValue(payout());
+    await expect(svc.markPaid(owner, 'p1', {}, NOW)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYOUT_STATUS' }),
     });
   });
 
-  it('is a 404 for an unknown payout', async () => {
-    const { svc, prisma } = setup();
+  it('answers 409 when the settlement moved on meanwhile', async () => {
+    const { svc, prisma } = setup({ scope: ['b1'] });
+    prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING', confirmedAt: null }));
     prisma.brandPayout.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.markPaid(owner, 'p1', {}, NOW)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYOUT_STATUS' }),
+    });
+  });
+
+  it("is a 404 for an unknown settlement and for another brand's", async () => {
+    const { svc, prisma } = setup({ scope: ['b2'] });
     prisma.brandPayout.findUnique.mockResolvedValue(null);
-    await expect(svc.markPaid(admin, 'nope', {}, NOW)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.markPaid(owner, 'nope', {}, NOW)).rejects.toBeInstanceOf(NotFoundException);
+    prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING' }));
+    await expect(svc.markPaid(owner, 'p1', {}, NOW)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('SettlementsService.confirm', () => {
+  it('lets the brand confirm what takeAway paid', async () => {
+    const { svc, prisma } = setup({ scope: ['b1'] });
+    prisma.brandPayout.findUnique.mockResolvedValue(
+      payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'PAID', confirmedAt: null }),
+    );
+    prisma.brandPayout.findUniqueOrThrow.mockResolvedValue(payout({ direction: 'TAKEAWAY_TO_BRAND' }));
+    const confirmed = await svc.confirm(owner, 'p1', { received: true }, NOW);
+    expect(prisma.brandPayout.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p1', status: { not: 'CONFIRMED' } },
+      data: { status: 'CONFIRMED', confirmedAt: NOW, confirmedById: 'owner' },
+    });
+    expect(confirmed.status).toBe('CONFIRMED');
+  });
+
+  it('lets the platform admin confirm the money arrived before the brand marked it', async () => {
+    const { svc, prisma } = setup();
+    prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING', paidAt: null, confirmedAt: null }));
+    prisma.brandPayout.findUniqueOrThrow.mockResolvedValue(payout());
+    await svc.confirm(admin, 'p1', { received: true }, NOW);
+    expect(prisma.brandPayout.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'CONFIRMED', confirmedById: 'sa' }) }),
+    );
+  });
+
+  it('sends a paid settlement back to the payer with «не получено» and the reason', async () => {
+    const { svc, prisma } = setup({ scope: ['b1'] });
+    prisma.brandPayout.findUnique.mockResolvedValue(
+      payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'PAID', confirmedAt: null }),
+    );
+    prisma.brandPayout.findUniqueOrThrow.mockResolvedValue(
+      payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'DISPUTED', disputedAt: NOW, disputeComment: 'Нет на счёте' }),
+    );
+    const disputed = await svc.confirm(owner, 'p1', { received: false, comment: 'Нет на счёте' }, NOW);
+    expect(prisma.brandPayout.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p1', status: 'PAID' },
+      data: { status: 'DISPUTED', disputedAt: NOW, disputeComment: 'Нет на счёте' },
+    });
+    expect(disputed).toMatchObject({ status: 'DISPUTED', disputeComment: 'Нет на счёте' });
+  });
+
+  it('refuses «не получено» before the payer said it paid', async () => {
+    const { svc, prisma } = setup({ scope: ['b1'] });
+    prisma.brandPayout.findUnique.mockResolvedValue(
+      payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'PENDING', confirmedAt: null }),
+    );
+    await expect(svc.confirm(owner, 'p1', { received: false }, NOW)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYOUT_STATUS' }),
+    });
+  });
+
+  it('refuses the payer its own confirmation with 403', async () => {
+    const { svc, prisma } = setup();
+    prisma.brandPayout.findUnique.mockResolvedValue(
+      payout({ direction: 'TAKEAWAY_TO_BRAND', status: 'PAID', confirmedAt: null }),
+    );
+    await expect(svc.confirm(admin, 'p1', { received: true }, NOW)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYOUT_NOT_YOUR_SIDE' }),
+    });
+    expect(prisma.brandPayout.updateMany).not.toHaveBeenCalled();
   });
 });
 
 describe('SettlementsService.deletePayout', () => {
-  it('removes the latest pending payout', async () => {
+  it('removes the latest pending settlement', async () => {
     const { svc, prisma } = setup();
     prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING' }));
     prisma.brandPayout.findFirst.mockResolvedValue({ id: 'p1' });
@@ -400,7 +556,7 @@ describe('SettlementsService.deletePayout', () => {
     expect(prisma.brandPayout.deleteMany).toHaveBeenCalledWith({ where: { id: 'p1', status: 'PENDING' } });
   });
 
-  it('keeps a paid payout', async () => {
+  it('keeps a paid one', async () => {
     const { svc, prisma } = setup();
     prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PAID' }));
     await expect(svc.deletePayout('p1')).rejects.toMatchObject({
@@ -408,7 +564,7 @@ describe('SettlementsService.deletePayout', () => {
     });
   });
 
-  it('keeps a payout a later one follows', async () => {
+  it('keeps one a later settlement follows', async () => {
     const { svc, prisma } = setup();
     prisma.brandPayout.findUnique.mockResolvedValue(payout({ status: 'PENDING' }));
     prisma.brandPayout.findFirst.mockResolvedValue({ id: 'p2' });

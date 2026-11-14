@@ -134,9 +134,9 @@ export interface TakeawayDebtRow {
   currency: string;
   /** Σ D of counted promo orders. */
   accruedCents: number;
-  /** Of it, in payouts already marked paid. */
+  /** Of it, in settlements the receiver confirmed. */
   repaidCents: number;
-  /** Of it, in payouts fixed but not transferred yet. */
+  /** Of it, in settlements fixed but not confirmed yet. */
   inPayoutCents: number;
   /** What takeAway owes the brand now: accrued − repaid. */
   debtCents: number;
@@ -173,7 +173,7 @@ export interface BrandTakeawayPromoOrder {
   compensationCents: number;
   status: TakeawayDebtStatus;
   payoutId: string | null;
-  /** REPAID: when the payout was marked paid. */
+  /** REPAID: when the settlement covering it was confirmed. */
   repaidAt: string | null;
 }
 

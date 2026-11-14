@@ -18,7 +18,7 @@ function settlement(from = '2026-10-26', to = '2026-11-01'): SettlementReport {
   } as SettlementReport;
 }
 
-/** The spec's example: 100 at −10 % accrued, 45 at −10 % repaid on 27.10. */
+/** The spec's example: 100 at −10 % accrued, 15 in a settlement, 45 repaid — the brand confirmed it on 27.10. */
 const PROMOS: BrandTakeawayPromoReport = {
   brandId: 'b1',
   currency: 'RUP',
@@ -127,9 +127,14 @@ describe('SettlementTakeawayPromosComponent', () => {
       'Оплачено гостями: 144 руб.',
       'Компенсация начислена: 16 руб.',
       'Компенсация погашена: 4,50 руб.',
-      'Долг takeAway к ближайшей выплате: 21,50 руб.',
+      'Долг takeAway по акциям: 21,50 руб.',
     ]);
-    expect(text(el().querySelector('.stp-debt span'))).toBe('на сейчас, за всё время');
+    expect(text(el().querySelector('.stp-debt span'))).toBe(
+      'на сейчас, за всё время; гасится подтверждённым взаиморасчётом',
+    );
+    // Guests pay the brand directly now: no word of payouts.
+    expect(text(el())).toContain('takeAway компенсирует бренду во взаиморасчёте');
+    expect(text(el())).not.toMatch(/выплат/i);
   });
 
   it('lists each promo order with its date on the brand clock and where its compensation stands', async () => {
@@ -146,7 +151,7 @@ describe('SettlementTakeawayPromosComponent', () => {
       '10 руб.',
       'начислена',
     ]);
-    expect(rows[1]?.[6]).toBe('в выплате');
+    expect(rows[1]?.[6]).toBe('во взаиморасчёте');
     expect(rows[2]?.slice(3)).toEqual(['45 руб.', '40,50 руб.', '4,50 руб.', 'погашена 27.10']);
   });
 

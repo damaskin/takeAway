@@ -70,6 +70,7 @@ describe('RetentionTabComponent', () => {
   async function render(
     features: PlanFeature[] = ['winBack', 'customers', 'campaigns', 'promo'],
     stats: ChurnStats = CHURN,
+    window: 3 | 7 | 14 | null = 7,
   ) {
     list = jest.fn().mockReturnValue(of({ items: [], total: 17, page: 1, pageSize: 1 }));
     churn = jest.fn().mockReturnValue(of(stats));
@@ -90,7 +91,7 @@ describe('RetentionTabComponent', () => {
     fixture.componentRef.setInput('brandId', 'b1');
     fixture.componentRef.setInput('period', { days: 14, storeId: 's1' });
     fixture.componentRef.setInput('currency', 'MDL');
-    fixture.componentRef.setInput('window', 7);
+    if (window !== null) fixture.componentRef.setInput('window', window);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -206,15 +207,21 @@ describe('RetentionTabComponent', () => {
     expect(new URL(row.href).pathname).toBe('/customers/u1');
   });
 
-  it('switches the window to 3 days', async () => {
+  it('has no threshold picker of its own and states the threshold it counts by', async () => {
     const fixture = await render();
-    const three = [...(fixture.nativeElement as HTMLElement).querySelectorAll('.an-window button')].find(
-      (b) => text(b) === '3 дн.',
-    ) as HTMLButtonElement;
-    three.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    expect(churn).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 3, 50);
+    const el = fixture.nativeElement as HTMLElement;
+    // The period on top of the page is the only picker (Maxim's list 6.0, item 5).
+    expect(el.querySelectorAll('button[aria-pressed]')).toHaveLength(0);
+    expect(text(el.querySelector('.rt-definition strong'))).toContain('последние 7 дн.');
+    expect(churn).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 7, 50);
+  });
+
+  it('counts by 14 days when the page does not pass a threshold', async () => {
+    const fixture = await render(undefined, undefined, null);
+    expect(churn).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 14, 50);
+    expect(text((fixture.nativeElement as HTMLElement).querySelector('.rt-definition strong'))).toContain(
+      'последние 14 дн.',
+    );
   });
 
   it('leaves out what the plan does not include', async () => {

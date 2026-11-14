@@ -12,7 +12,7 @@ import { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import { CartChangedErrorDto } from './dto/cart-changed.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
-import { CustomerOrderSummaryDto, OrderDto, OrderSummaryDto } from './dto/order.dto';
+import { AdminOrderSummaryDto, CustomerOrderSummaryDto, OrderDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 
 // Per account. A customer places one order and retries a few times at most
@@ -107,14 +107,14 @@ export class OrdersController {
   @ApiQuery({ name: 'storeId', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'take', required: false, type: Number })
-  @ApiOkResponse({ type: OrderSummaryDto, isArray: true })
+  @ApiOkResponse({ type: AdminOrderSummaryDto, isArray: true })
   async listAdmin(
     @CurrentUser() user: AuthenticatedUser,
     @Query('brandId') brandId?: string,
     @Query('storeId') storeId?: string,
     @Query('status') status?: string,
     @Query('take') take?: string,
-  ): Promise<OrderSummaryDto[]> {
+  ): Promise<AdminOrderSummaryDto[]> {
     const scope = await this.scope.getScope(user.id, user.role);
     // BRAND_ADMIN must only see orders from their own brands — resolve and enforce.
     const brandIds =
