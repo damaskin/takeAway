@@ -731,6 +731,7 @@ export class OrdersService {
       taxCents: order.taxCents,
       deliveryFeeCents: order.deliveryFeeCents,
       giftCardCents: order.giftCardCents,
+      pointsDiscountCents: order.pointsDiscountCents,
       totalCents: order.totalCents,
       couponCode: order.couponCode,
       giftCardCode: order.giftCardCode,

@@ -114,8 +114,8 @@ export interface AdminOrderDetail {
   takeawayPromo?: TakeawayPromoLine | null;
   /**
    * Loyalty points spent on the order (part of `discountCents`); takeAway
-   * compensates them to the brand. The API does not send it yet — the panel
-   * then takes it from the list's `takeawayFundedCents`.
+   * compensates them to the brand. Sent since 2026-11-14; with an older API
+   * the panel takes it from the list's `takeawayFundedCents`.
    */
   pointsDiscountCents?: number;
   /**

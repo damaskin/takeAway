@@ -74,6 +74,12 @@ export class AdminOrderDetailDto {
   @ApiProperty() taxCents!: number;
   @ApiProperty() deliveryFeeCents!: number;
   @ApiProperty() giftCardCents!: number;
+  @ApiProperty({
+    description:
+      'Loyalty points spent (part of discountCents). takeAway compensates them to the brand (docs/settlements.md), ' +
+      'so the panel shows them apart from the brand’s own discount.',
+  })
+  pointsDiscountCents!: number;
   @ApiProperty() totalCents!: number;
   @ApiPropertyOptional({ type: String, nullable: true }) couponCode!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) giftCardCode!: string | null;

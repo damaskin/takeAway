@@ -486,8 +486,8 @@ export class OrderDetailPanelComponent {
 
   /**
    * What takeAway funds on the order as the orders list knows it
-   * (`takeawayFundedCents`). The detail does not carry the points yet, so
-   * this is how the panel tells them apart from the brand's own discount.
+   * (`takeawayFundedCents`): the fallback for an API older than the detail's
+   * own `pointsDiscountCents`.
    */
   readonly takeawayFundedCents = input<number | null | undefined>(undefined);
 
@@ -508,9 +508,9 @@ export class OrderDetailPanelComponent {
 
   /**
    * Loyalty points spent on the order, which takeAway compensates to the
-   * business. A takeAway promo and points never combine, so without the
-   * figure on the detail it is what the list says takeAway funds minus the
-   * promo's discount. None once the order was cancelled or expired: the
+   * business. The detail carries it; from an older API — a takeAway promo
+   * and points never combine — it is what the list says takeAway funds
+   * minus the promo's discount. None once the order was cancelled or expired: the
    * points went back to the guest.
    */
   readonly pointsCents = computed(() => {

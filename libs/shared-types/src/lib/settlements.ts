@@ -158,7 +158,7 @@ export interface SettlementPayoutPreview {
   /** The period's own figures. */
   cardNetCents: number;
   commissionCents: number;
-  /** takeAway promo compensation (the promo debts this settlement covers). */
+  /** takeAway PROMO compensation only (the promo debts this settlement covers) — unlike `SettlementTotals.compensationCents`, the total. */
   compensationCents: number;
   /** Loyalty points compensation. */
   pointsCompensationCents: number;
@@ -181,7 +181,7 @@ export interface SettlementPayout {
   /** The period's figures as they were when it was fixed. */
   cardNetCents: number;
   commissionCents: number;
-  /** «Компенсация takeAway по акциям» of the period. */
+  /** «Компенсация takeAway по акциям» of the period — PROMO only, unlike `SettlementTotals.compensationCents` (the total). */
   compensationCents: number;
   /** «Компенсация takeAway по баллам» of the period. */
   pointsCompensationCents: number;
