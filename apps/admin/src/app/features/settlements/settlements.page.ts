@@ -1,14 +1,21 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
-import type { SettlementPayout, SettlementReport, SettlementTotals } from '@takeaway/shared-types';
+import {
+  type SettlementActions,
+  type SettlementDirection,
+  type SettlementPayout,
+  type SettlementReport,
+  type SettlementSide,
+  type SettlementTotals,
+  settlementActions,
+} from '@takeaway/shared-types';
 import type { Subscription } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { SettlementsApi } from '../../core/settlements/settlements.service';
-import { KpiCardComponent } from '../../shared/charts/kpi-card.component';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 import { OVERVIEW_STYLES } from '../../shared/overview/overview.styles';
 import { settlementCsv } from './settlement-csv';
@@ -16,44 +23,57 @@ import { type DayRange, SETTLEMENT_PRESETS, type SettlementPreset, presetRange, 
 import { SettlementRatesComponent } from './settlement-rates.component';
 import { SettlementTakeawayPromosComponent } from './settlement-takeaway-promos.component';
 
-/** Columns of the daily table, in order; the first is the day. */
+/** Columns of the daily table, in order; the first is the day. The CSV carries every figure. */
 const DAY_COLUMNS: ReadonlyArray<keyof SettlementTotals> = [
   'orders',
   'salesCents',
   'promoDiscountCents',
-  'pointsDiscountCents',
   'giftCardCents',
   'deliveryFeeCents',
-  'capturedCents',
-  'refundedCents',
+  'cardNetCents',
   'takeawayCompensationCents',
-  'commissionBaseCents',
+  'pointsCompensationCents',
   'commissionCents',
-  'payableCents',
+  'netCents',
 ];
 
 const ERROR_CODES = {
   PAYOUT_PERIOD_OPEN: 'admin.settlements.errors.PAYOUT_PERIOD_OPEN',
   PAYOUT_OVERLAP: 'admin.settlements.errors.PAYOUT_OVERLAP',
   PAYOUT_NOTHING_DUE: 'admin.settlements.errors.PAYOUT_NOTHING_DUE',
-  PAYOUT_ALREADY_PAID: 'admin.settlements.errors.PAYOUT_ALREADY_PAID',
+  PAYOUT_STATUS: 'admin.settlements.errors.PAYOUT_STATUS',
+  PAYOUT_NOT_YOUR_SIDE: 'admin.settlements.errors.PAYOUT_NOT_YOUR_SIDE',
   PAYOUT_PAID: 'admin.settlements.errors.PAYOUT_PAID',
   PAYOUT_NOT_LATEST: 'admin.settlements.errors.PAYOUT_NOT_LATEST',
 };
 
+/** The wording set of a viewer: «Вы должны takeAway» or «Бренд должен takeAway». */
+type Viewer = 'brand' | 'platform';
+
+/** A line of the «Ждёт вас» banner: a translation key and its parameters. */
+interface WaitingLine {
+  id: string;
+  key: string;
+  params: Record<string, string>;
+}
+
 /**
  * «Расчёты с брендами» for the platform admin, «Расчёты» for a brand owner.
  *
- * One brand, one currency, a closed period: what its guests paid by card
- * through the platform, the commission, what the platform owes the brand,
- * what has been paid out and what is left. The platform admin fixes a payout
- * for the period and marks it paid once the transfer went out; the owner
- * sees the same figures for their brand only. Definitions: docs/settlements.md.
+ * Since 2026-11-14 guests pay the brand directly. One brand, one currency, a
+ * period: what guests paid by card (the brand has that money), what takeAway
+ * compensates for the discounts it funds (its promos and loyalty points), the
+ * commission on the full price, and the net of the two — «К взаиморасчёту»,
+ * worded by sign and by who is looking. The platform admin fixes a settlement
+ * for a closed period; the payer marks it paid, the receiver answers
+ * «Получено» or «Не получено». Only a confirmed settlement reduces the
+ * balance. Both sides see the same page; what each may do comes from
+ * `settlementActions`. Definitions: docs/settlements.md.
  */
 @Component({
   selector: 'app-settlements',
   standalone: true,
-  imports: [TranslatePipe, KpiCardComponent, SettlementRatesComponent, SettlementTakeawayPromosComponent],
+  imports: [TranslatePipe, SettlementRatesComponent, SettlementTakeawayPromosComponent],
   template: `
     <section class="ov" [attr.aria-busy]="loading()">
       <header class="st-head">
@@ -157,57 +177,75 @@ const ERROR_CODES = {
           <p class="dash-error">{{ error() }}</p>
         </article>
       } @else if (report(); as r) {
-        <div class="st-kpis">
-          <app-kpi-card
-            [label]="'admin.settlements.kpi.captured' | translate"
-            [value]="money(r.totals.capturedCents)"
-            [footLeft]="'admin.settlements.foot.refunded' | translate: { value: money(r.totals.refundedCents) }"
-            [footRight]="'admin.settlements.foot.cardOrders' | translate: { count: r.totals.cardOrders }"
-          />
-          <!-- What takeAway owes for its promo orders: paid on top of the card money; the commission is on the full price. -->
-          @if (r.totals.takeawayCompensationCents) {
-            <app-kpi-card
-              data-testid="settlement-compensation"
-              [label]="'admin.settlements.kpi.compensation' | translate"
-              [value]="money(r.totals.takeawayCompensationCents)"
-              [footLeft]="'admin.settlements.foot.compensation' | translate"
-              [footRight]="'admin.settlements.foot.fullPrice' | translate"
-            />
-          }
-          <app-kpi-card
-            [label]="'admin.settlements.kpi.commission' | translate: { rate: rateLabel() }"
-            [value]="money(r.totals.commissionCents)"
-            [footLeft]="'admin.settlements.foot.base' | translate: { value: money(r.totals.commissionBaseCents) }"
-            [footRight]="'admin.settlements.foot.rounding' | translate"
-          />
-          <app-kpi-card
-            [label]="
-              (isPlatformAdmin() ? 'admin.settlements.kpi.payable' : 'admin.settlements.kpi.payableOwn') | translate
-            "
-            [value]="money(r.totals.payableCents)"
-            [footLeft]="'admin.settlements.foot.sales' | translate: { value: money(r.totals.salesCents) }"
-          />
-          <app-kpi-card
-            [label]="'admin.settlements.kpi.paid' | translate"
-            [value]="money(r.balance.paidCents)"
-            [footLeft]="
-              r.balance.pendingCents
-                ? ('admin.settlements.foot.pending' | translate: { value: money(r.balance.pendingCents) })
-                : ''
-            "
-          />
-          <app-kpi-card
-            [label]="'admin.settlements.kpi.closing' | translate"
-            [value]="money(r.balance.closingCents)"
-            [footLeft]="'admin.settlements.foot.opening' | translate: { value: money(r.balance.openingCents) }"
-            [footRight]="
-              r.balance.closingPendingCents
-                ? ('admin.settlements.foot.closingPending' | translate: { value: money(r.balance.closingPendingCents) })
-                : ''
-            "
-          />
+        <!-- What waits on the viewer: a settlement to pay or to confirm. -->
+        @if (waiting().length) {
+          <aside class="st-waiting" role="status" data-testid="settlement-waiting">
+            <strong>{{ 'admin.settlements.waiting.title' | translate }}</strong>
+            <ul>
+              @for (w of waiting(); track w.id) {
+                <li>{{ w.key | translate: w.params }}</li>
+              }
+            </ul>
+          </aside>
+        }
+
+        <!-- Maxim's three figures and the result, for both sides alike. -->
+        <div class="st-figures" data-testid="settlement-figures">
+          <article class="st-fig" data-testid="figure-card">
+            <span class="st-fig-label">{{ 'admin.settlements.figures.cardNet' | translate }}</span>
+            <span class="st-fig-value">{{ money(r.totals.cardNetCents) }}</span>
+            <span class="st-fig-note">{{
+              'admin.settlements.figures.cardNetNote'
+                | translate: { count: r.totals.cardOrders, refunded: money(r.totals.refundedCents) }
+            }}</span>
+            <span class="st-fig-note">{{ 'admin.settlements.figures.cardNetWhere.' + viewer() | translate }}</span>
+          </article>
+          <article class="st-fig" data-testid="figure-compensation">
+            <span class="st-fig-label">{{ 'admin.settlements.figures.compensation' | translate }}</span>
+            <span class="st-fig-value">{{ money(r.totals.compensationCents) }}</span>
+            <dl class="st-fig-lines">
+              <div data-testid="figure-compensation-promo">
+                <dt>{{ 'admin.settlements.figures.compensationPromo' | translate }}</dt>
+                <dd>{{ money(r.totals.takeawayCompensationCents) }}</dd>
+              </div>
+              <div data-testid="figure-compensation-points">
+                <dt>{{ 'admin.settlements.figures.compensationPoints' | translate }}</dt>
+                <dd>{{ money(r.totals.pointsCompensationCents) }}</dd>
+              </div>
+            </dl>
+            <span class="st-fig-note">{{ 'admin.settlements.figures.compensationNote' | translate }}</span>
+          </article>
+          <article class="st-fig" data-testid="figure-commission">
+            <span class="st-fig-label">{{
+              'admin.settlements.figures.commission' | translate: { rate: rateLabel() }
+            }}</span>
+            <span class="st-fig-value">{{ money(r.totals.commissionCents) }}</span>
+            <span class="st-fig-note">{{
+              'admin.settlements.figures.commissionNote' | translate: { base: money(r.totals.commissionBaseCents) }
+            }}</span>
+          </article>
+          <article class="st-fig st-fig-result" data-testid="figure-net" [attr.data-sign]="sign(r.totals.netCents)">
+            <span class="st-fig-label">{{ 'admin.settlements.figures.net' | translate }}</span>
+            <span class="st-fig-owes">{{ owes(r.totals.netCents) }}</span>
+            <span class="st-fig-note">{{
+              'admin.settlements.figures.netNote'
+                | translate
+                  : { commission: money(r.totals.commissionCents), compensation: money(r.totals.compensationCents) }
+            }}</span>
+          </article>
         </div>
 
+        <p class="dash-hint" data-testid="settlement-breakdown">
+          @for (part of breakdownParts(); track part.key; let last = $last) {
+            {{ 'admin.settlements.breakdownParts.' + part.key | translate: { amount: money(part.cents) } }}
+            @if (!last) {
+              ·
+            }
+          }
+        </p>
+        @if (r.totals.promoDiscountCents || r.totals.giftCardCents) {
+          <p class="dash-hint">{{ 'admin.settlements.breakdownHint' | translate }}</p>
+        }
         @if (r.totals.zeroTotalOrders) {
           <p class="dash-hint">{{ 'admin.settlements.zeroTotal' | translate: { count: r.totals.zeroTotalOrders } }}</p>
         }
@@ -226,8 +264,8 @@ const ERROR_CODES = {
           <p class="st-notice" role="status">{{ notice() }}</p>
         }
 
-        @if (isPlatformAdmin()) {
-          <article class="dash-card">
+        <div class="st-pair">
+          <article class="dash-card" data-testid="settlement-payout">
             <header class="dash-card-head">
               <h2>{{ 'admin.settlements.payout.title' | translate }}</h2>
             </header>
@@ -244,40 +282,34 @@ const ERROR_CODES = {
                     | translate: { day: day(r.nextPayout.lastSettledDay) }
                 }}
               </p>
-            } @else {
-              <p class="st-payout-sum">
+            } @else if (r.nextPayout.direction; as direction) {
+              <p class="st-payout-period">
                 {{
-                  'admin.settlements.payout.summary'
-                    | translate
-                      : {
-                          from: day(r.nextPayout.periodFrom),
-                          to: day(r.nextPayout.periodTo),
-                          amount: money(r.nextPayout.amountCents),
-                        }
+                  'admin.settlements.payout.period'
+                    | translate: { from: day(r.nextPayout.periodFrom), to: day(r.nextPayout.periodTo) }
                 }}
               </p>
+              <p class="st-payout-sum" data-testid="payout-summary">
+                {{ paysText(direction, r.nextPayout.amountCents) }}
+              </p>
+            }
+            @if (payoutBreakdown(); as b) {
               <p class="dash-hint" data-testid="payout-breakdown">
-                @if (r.nextPayout.compensationCents) {
-                  {{
-                    'admin.settlements.payout.breakdownCompensation'
-                      | translate
-                        : {
-                            card: money(r.nextPayout.cardNetCents),
-                            compensation: money(r.nextPayout.compensationCents),
-                            commission: money(r.nextPayout.commissionCents),
-                          }
-                  }}
-                } @else {
-                  {{
-                    'admin.settlements.payout.breakdown'
-                      | translate
-                        : { card: money(r.nextPayout.cardNetCents), commission: money(r.nextPayout.commissionCents) }
-                  }}
-                }
-                @if (carried(); as c) {
-                  · {{ 'admin.settlements.payout.carried' | translate: { amount: money(c) } }}
+                {{
+                  'admin.settlements.payout.breakdown'
+                    | translate: { commission: b.commission, promo: b.promo, points: b.points, result: b.result }
+                }}
+                @if (b.carried) {
+                  · {{ 'admin.settlements.payout.carried' | translate: { amount: b.carried } }}
                 }
               </p>
+              <p class="dash-hint">{{ 'admin.settlements.payout.cardNet' | translate: { amount: b.cardNet } }}</p>
+            }
+            @if (!isPlatformAdmin()) {
+              <p class="dash-muted" data-testid="payout-owner-hint">
+                {{ 'admin.settlements.payout.ownerHint' | translate }}
+              </p>
+            } @else if (!r.nextPayout.blocked && r.nextPayout.direction) {
               <form class="st-payout-form" (submit)="$event.preventDefault(); fixPayout()">
                 <input
                   type="text"
@@ -302,7 +334,175 @@ const ERROR_CODES = {
               </form>
             }
           </article>
-        }
+
+          <article class="dash-card" data-testid="settlement-balance">
+            <header class="dash-card-head">
+              <h2>{{ 'admin.settlements.balance.title' | translate }}</h2>
+            </header>
+            <dl class="st-balance">
+              <div>
+                <dt>{{ 'admin.settlements.balance.opening' | translate }}</dt>
+                <dd data-testid="balance-opening">{{ owes(r.balance.openingCents) }}</dd>
+              </div>
+              <div>
+                <dt>{{ 'admin.settlements.balance.net' | translate }}</dt>
+                <dd data-testid="balance-net">{{ owes(r.balance.netCents) }}</dd>
+              </div>
+              <div>
+                <dt>{{ 'admin.settlements.balance.settled' | translate }}</dt>
+                <dd data-testid="balance-settled">{{ flow(r.balance.settledCents) }}</dd>
+              </div>
+              <div>
+                <dt>{{ 'admin.settlements.balance.open' | translate }}</dt>
+                <dd data-testid="balance-open">{{ flow(r.balance.openCents) }}</dd>
+              </div>
+              <div class="st-balance-total" [attr.data-sign]="sign(r.balance.closingCents)">
+                <dt>{{ 'admin.settlements.balance.closing' | translate }}</dt>
+                <dd data-testid="balance-closing">{{ owes(r.balance.closingCents) }}</dd>
+              </div>
+            </dl>
+            @if (r.balance.closingOpenCents) {
+              <p class="dash-hint" data-testid="balance-closing-open">
+                {{ 'admin.settlements.balance.closingOpen' | translate: { flow: flow(r.balance.closingOpenCents) } }}
+              </p>
+            }
+            <p class="dash-hint">{{ 'admin.settlements.balance.hint' | translate }}</p>
+          </article>
+        </div>
+
+        <article class="dash-card" data-testid="settlement-payouts">
+          <header class="dash-card-head">
+            <h2>{{ 'admin.settlements.payouts.title' | translate }}</h2>
+          </header>
+          @if (r.payouts.length === 0) {
+            <p class="dash-muted" data-testid="payouts-empty">
+              {{ 'admin.settlements.payouts.empty' | translate }}
+              {{
+                (isPlatformAdmin() ? 'admin.settlements.payouts.emptyAdmin' : 'admin.settlements.payouts.emptyOwner')
+                  | translate
+              }}
+            </p>
+          } @else {
+            <div class="ov-table-wrap">
+              <table class="ov-table st-table st-payouts">
+                <thead>
+                  <tr>
+                    <th scope="col">{{ 'admin.settlements.payouts.period' | translate }}</th>
+                    <th scope="col" class="st-left">{{ 'admin.settlements.payouts.direction' | translate }}</th>
+                    <th scope="col">{{ 'admin.settlements.payouts.amount' | translate }}</th>
+                    <th scope="col" class="st-left">{{ 'admin.settlements.payouts.breakdown' | translate }}</th>
+                    <th scope="col" class="st-left">{{ 'admin.settlements.payouts.status' | translate }}</th>
+                    <th scope="col" class="st-left">{{ 'admin.settlements.payouts.reference' | translate }}</th>
+                    <th scope="col">
+                      <span class="st-sr">{{ 'admin.settlements.payouts.status' | translate }}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (p of r.payouts; track p.id; let first = $first) {
+                    <tr data-testid="settlement-row" [attr.data-status]="p.status">
+                      <td>{{ day(p.periodFrom) }} – {{ day(p.periodTo) }}</td>
+                      <td class="st-left">{{ 'admin.settlements.direction.' + p.direction | translate }}</td>
+                      <td class="st-strong">{{ money(p.amountCents) }}</td>
+                      <td class="st-left st-small">
+                        {{
+                          'admin.settlements.payouts.breakdownLine'
+                            | translate
+                              : {
+                                  commission: money(p.commissionCents),
+                                  promo: money(p.compensationCents),
+                                  points: money(p.pointsCompensationCents),
+                                }
+                        }}
+                      </td>
+                      <td class="st-left">
+                        <span class="st-status" [attr.data-status]="p.status" data-testid="settlement-status">{{
+                          statusText(p)
+                        }}</span>
+                        @if (p.status === 'PAID' && p.paidAt) {
+                          <span class="st-under">{{
+                            'admin.settlements.payouts.paidOn' | translate: { date: shortDay(p.paidAt) }
+                          }}</span>
+                        }
+                        @if (p.status === 'DISPUTED' && p.disputeComment) {
+                          <span class="st-under st-dispute" data-testid="settlement-dispute"
+                            >“{{ p.disputeComment }}”</span
+                          >
+                        }
+                      </td>
+                      <td class="st-left st-ref">{{ refText(p) }}</td>
+                      <td class="st-actions-cell">
+                        <div class="st-actions">
+                          @if (paying() === p.id) {
+                            <form class="st-inline" (submit)="$event.preventDefault(); confirmPaid(p)">
+                              <input
+                                type="text"
+                                maxlength="200"
+                                [placeholder]="'admin.settlements.payout.reference' | translate"
+                                [attr.aria-label]="'admin.settlements.payout.reference' | translate"
+                                [value]="paidReference()"
+                                (input)="paidReference.set($any($event.target).value)"
+                              />
+                              <button type="submit" class="st-primary" [disabled]="busy()">
+                                {{ 'admin.settlements.payouts.confirmPaid' | translate }}
+                              </button>
+                              <button type="button" class="st-ghost" (click)="paying.set(null)">
+                                {{ 'admin.settlements.payouts.cancel' | translate }}
+                              </button>
+                            </form>
+                          } @else if (disputing() === p.id) {
+                            <form class="st-inline" (submit)="$event.preventDefault(); sendDispute(p)">
+                              <input
+                                type="text"
+                                maxlength="500"
+                                [placeholder]="'admin.settlements.payouts.disputeComment' | translate"
+                                [attr.aria-label]="'admin.settlements.payouts.disputeComment' | translate"
+                                [value]="disputeComment()"
+                                (input)="disputeComment.set($any($event.target).value)"
+                              />
+                              <button
+                                type="submit"
+                                class="st-danger-solid"
+                                [disabled]="busy() || !disputeComment().trim()"
+                              >
+                                {{ 'admin.settlements.payouts.disputeSend' | translate }}
+                              </button>
+                              <button type="button" class="st-ghost" (click)="disputing.set(null)">
+                                {{ 'admin.settlements.payouts.cancel' | translate }}
+                              </button>
+                            </form>
+                          } @else {
+                            @let can = actions(p);
+                            @if (can.markPaid) {
+                              <button type="button" class="st-primary" [disabled]="busy()" (click)="startPaid(p)">
+                                {{ 'admin.settlements.payouts.markPaid' | translate }}
+                              </button>
+                            }
+                            @if (can.confirm) {
+                              <button type="button" class="st-primary" [disabled]="busy()" (click)="received(p)">
+                                {{ 'admin.settlements.payouts.received' | translate }}
+                              </button>
+                            }
+                            @if (can.dispute) {
+                              <button type="button" class="st-ghost" [disabled]="busy()" (click)="startDispute(p)">
+                                {{ 'admin.settlements.payouts.notReceived' | translate }}
+                              </button>
+                            }
+                            @if (isPlatformAdmin() && first && p.status === 'PENDING') {
+                              <button type="button" class="st-danger" [disabled]="busy()" (click)="removePayout(p)">
+                                {{ 'admin.settlements.payouts.remove' | translate }}
+                              </button>
+                            }
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </article>
 
         <article class="dash-card">
           <header class="dash-card-head">
@@ -311,8 +511,9 @@ const ERROR_CODES = {
               'admin.settlements.daily.hint' | translate: { timeZone: r.period.timeZone }
             }}</span>
           </header>
+          <p class="dash-hint">{{ 'admin.settlements.daily.sign.' + viewer() | translate }}</p>
           <div class="ov-table-wrap">
-            <table class="ov-table st-table">
+            <table class="ov-table st-table" data-testid="settlement-days">
               <thead>
                 <tr>
                   <th scope="col">{{ 'admin.settlements.cols.date' | translate }}</th>
@@ -343,92 +544,6 @@ const ERROR_CODES = {
           </div>
         </article>
 
-        <article class="dash-card">
-          <header class="dash-card-head">
-            <h2>{{ 'admin.settlements.payouts.title' | translate }}</h2>
-          </header>
-          @if (r.payouts.length === 0) {
-            <p class="dash-muted" data-testid="payouts-empty">
-              {{ 'admin.settlements.payouts.empty' | translate }}
-              {{
-                (isPlatformAdmin() ? 'admin.settlements.payouts.emptyAdmin' : 'admin.settlements.payouts.emptyOwner')
-                  | translate
-              }}
-            </p>
-          } @else {
-            <div class="ov-table-wrap">
-              <table class="ov-table st-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{{ 'admin.settlements.payouts.period' | translate }}</th>
-                    <th scope="col">{{ 'admin.settlements.payouts.amount' | translate }}</th>
-                    <th scope="col">{{ 'admin.settlements.payouts.commission' | translate }}</th>
-                    <th scope="col">{{ 'admin.settlements.payouts.compensation' | translate }}</th>
-                    <th scope="col">{{ 'admin.settlements.payouts.status' | translate }}</th>
-                    <th scope="col">{{ 'admin.settlements.payouts.paidAt' | translate }}</th>
-                    <th scope="col">{{ 'admin.settlements.payouts.reference' | translate }}</th>
-                    @if (isPlatformAdmin()) {
-                      <th scope="col">
-                        <span class="st-sr">{{ 'admin.settlements.payouts.markPaid' | translate }}</span>
-                      </th>
-                    }
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (p of r.payouts; track p.id; let first = $first) {
-                    <tr>
-                      <td>{{ day(p.periodFrom) }} – {{ day(p.periodTo) }}</td>
-                      <td>{{ money(p.amountCents) }}</td>
-                      <td>{{ money(p.commissionCents) }}</td>
-                      <td>{{ money(p.compensationCents) }}</td>
-                      <td>
-                        <span class="st-status" [attr.data-status]="p.status">{{
-                          'admin.settlements.payouts.statuses.' + p.status | translate
-                        }}</span>
-                      </td>
-                      <td>{{ p.paidAt ? fmt.date(p.paidAt, r.period.timeZone) : '—' }}</td>
-                      <td class="st-ref">{{ refText(p) }}</td>
-                      @if (isPlatformAdmin()) {
-                        <td class="st-actions">
-                          @if (p.status === 'PENDING') {
-                            @if (paying() === p.id) {
-                              <form class="st-inline" (submit)="$event.preventDefault(); confirmPaid(p)">
-                                <input
-                                  type="text"
-                                  maxlength="200"
-                                  [placeholder]="'admin.settlements.payout.reference' | translate"
-                                  [attr.aria-label]="'admin.settlements.payout.reference' | translate"
-                                  [value]="paidReference()"
-                                  (input)="paidReference.set($any($event.target).value)"
-                                />
-                                <button type="submit" class="st-primary" [disabled]="busy()">
-                                  {{ 'admin.settlements.payouts.confirmPaid' | translate }}
-                                </button>
-                                <button type="button" class="st-ghost" (click)="paying.set(null)">
-                                  {{ 'admin.settlements.payouts.cancel' | translate }}
-                                </button>
-                              </form>
-                            } @else {
-                              <button type="button" class="st-ghost" [disabled]="busy()" (click)="startPaid(p)">
-                                {{ 'admin.settlements.payouts.markPaid' | translate }}
-                              </button>
-                              @if (first) {
-                                <button type="button" class="st-danger" [disabled]="busy()" (click)="removePayout(p)">
-                                  {{ 'admin.settlements.payouts.remove' | translate }}
-                                </button>
-                              }
-                            }
-                          }
-                        </td>
-                      }
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          }
-        </article>
-
         <app-settlement-takeaway-promos [report]="r" />
 
         <app-settlement-rates [brandId]="brandId()" [canEdit]="isPlatformAdmin()" (changed)="reload()" />
@@ -438,11 +553,10 @@ const ERROR_CODES = {
             <h2>{{ 'admin.settlements.formula.title' | translate }}</h2>
           </header>
           <ul class="st-formula">
-            <li>{{ 'admin.settlements.formula.captured' | translate }}</li>
-            <li>{{ 'admin.settlements.formula.base' | translate }}</li>
+            <li>{{ 'admin.settlements.formula.cardNet' | translate }}</li>
             <li>{{ 'admin.settlements.formula.compensation' | translate }}</li>
             <li>{{ 'admin.settlements.formula.commission' | translate }}</li>
-            <li>{{ 'admin.settlements.formula.payable' | translate }}</li>
+            <li>{{ 'admin.settlements.formula.net' | translate }}</li>
             <li>{{ 'admin.settlements.formula.balance' | translate }}</li>
           </ul>
         </article>
@@ -463,6 +577,9 @@ const ERROR_CODES = {
         align-items: flex-end;
         justify-content: space-between;
         gap: 12px 16px;
+      }
+      .st-titles {
+        max-width: 760px;
       }
       .st-titles h1 {
         margin: 0;
@@ -512,6 +629,7 @@ const ERROR_CODES = {
       .st-payout-form input,
       .st-inline input {
         height: 34px;
+        min-width: 0;
         padding: 0 8px;
         border: 1px solid var(--color-border);
         border-radius: var(--radius-input);
@@ -519,12 +637,16 @@ const ERROR_CODES = {
         font-size: 13px;
         color: var(--color-text-primary);
       }
+      .st-inline input {
+        width: 200px;
+      }
       .st-grow {
         flex: 1 1 220px;
       }
       .st-primary,
       .st-ghost,
-      .st-danger {
+      .st-danger,
+      .st-danger-solid {
         height: 34px;
         padding: 0 14px;
         border-radius: var(--radius-button);
@@ -548,22 +670,157 @@ const ERROR_CODES = {
         background: transparent;
         color: var(--color-berry);
       }
+      .st-danger-solid {
+        border: 0;
+        background: var(--color-berry);
+        color: white;
+      }
       .st-primary:disabled,
       .st-ghost:disabled,
-      .st-danger:disabled {
+      .st-danger:disabled,
+      .st-danger-solid:disabled {
         opacity: 0.5;
         cursor: default;
       }
-      .st-kpis {
+      .st-waiting {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 14px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--color-caramel);
+        background: var(--color-caramel-light);
+        color: var(--color-espresso);
+        font-size: 14px;
+      }
+      .st-waiting ul {
+        margin: 0;
+        padding-left: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .st-figures {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 12px;
+      }
+      .st-fig {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        padding: 18px 20px;
+        background: var(--color-foam);
+        border: 1px solid var(--color-border-light);
+        border-radius: 20px;
+      }
+      .st-fig-label {
+        font-size: 12px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--color-text-tertiary);
+      }
+      .st-fig-value {
+        font-family: var(--font-display);
+        font-size: 28px;
+        line-height: 1.15;
+        font-weight: 700;
+        color: var(--color-espresso);
+        font-variant-numeric: tabular-nums;
+      }
+      .st-fig-owes {
+        font-family: var(--font-display);
+        font-size: 22px;
+        line-height: 1.2;
+        font-weight: 700;
+        color: var(--color-espresso);
+        font-variant-numeric: tabular-nums;
+      }
+      .st-fig-note {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+      }
+      .st-fig-lines {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .st-fig-lines > div {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 13px;
+      }
+      .st-fig-lines dt {
+        color: var(--color-text-secondary);
+      }
+      .st-fig-lines dd {
+        margin: 0;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        font-variant-numeric: tabular-nums;
+      }
+      .st-fig-result {
+        background: var(--color-cream);
+      }
+      .st-fig-result[data-sign='negative'] {
+        border-color: color-mix(in srgb, var(--color-positive) 40%, transparent);
+      }
+      .st-fig-result[data-sign='positive'] {
+        border-color: var(--color-caramel);
+      }
+      .st-pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+        gap: 16px;
+        align-items: start;
+      }
+      .st-payout-period {
+        margin: 0;
+        font-size: 13px;
+        color: var(--color-text-secondary);
       }
       .st-payout-sum {
         margin: 0;
-        font-size: 18px;
+        font-size: 20px;
         font-weight: 700;
         color: var(--color-text-primary);
+      }
+      .st-balance {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .st-balance > div {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 4px 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--color-border-light);
+        font-size: 13px;
+      }
+      .st-balance dt {
+        color: var(--color-text-secondary);
+      }
+      .st-balance dd {
+        margin: 0;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        font-variant-numeric: tabular-nums;
+      }
+      .st-balance .st-balance-total {
+        border-bottom: 0;
+        font-size: 15px;
+      }
+      .st-balance-total dt {
+        font-weight: 700;
+        color: var(--color-espresso);
+      }
+      .st-balance-total dd {
+        font-weight: 700;
       }
       .st-notice {
         margin: 0;
@@ -586,7 +843,24 @@ const ERROR_CODES = {
       .st-empty td {
         color: var(--color-text-tertiary);
       }
+      .ov-table .st-left {
+        text-align: left;
+      }
+      .st-strong {
+        font-weight: 700;
+      }
+      .ov-table td.st-small {
+        min-width: 160px;
+        max-width: 220px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        white-space: normal;
+      }
+      .st-payouts td {
+        vertical-align: top;
+      }
       .st-status {
+        display: inline-block;
         padding: 2px 8px;
         border-radius: 9999px;
         font-size: 11px;
@@ -595,16 +869,37 @@ const ERROR_CODES = {
         color: var(--chart-warning);
       }
       .st-status[data-status='PAID'] {
+        background: var(--color-caramel-light);
+        color: var(--color-caramel);
+      }
+      .st-status[data-status='CONFIRMED'] {
         background: color-mix(in srgb, var(--chart-customers) 18%, transparent);
         color: var(--color-positive);
       }
-      .st-ref {
-        max-width: 260px;
-        overflow: hidden;
-        text-overflow: ellipsis;
+      .st-status[data-status='DISPUTED'] {
+        background: color-mix(in srgb, var(--color-berry) 14%, transparent);
+        color: var(--color-berry);
+      }
+      .st-under {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+        white-space: normal;
+      }
+      .st-dispute {
+        max-width: 240px;
+        font-style: italic;
+        color: var(--color-berry);
+      }
+      .ov-table td.st-ref {
+        max-width: 200px;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       .st-actions {
         display: flex;
+        flex-wrap: wrap;
         justify-content: flex-end;
         gap: 6px;
       }
@@ -638,6 +933,9 @@ export class SettlementsPage {
   readonly columns = DAY_COLUMNS;
 
   readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
+  /** The side the viewer speaks for: the platform admin for takeAway, an owner for their brand. */
+  readonly side = computed<SettlementSide>(() => (this.isPlatformAdmin() ? 'TAKEAWAY' : 'BRAND'));
+  readonly viewer = computed<Viewer>(() => (this.isPlatformAdmin() ? 'platform' : 'brand'));
   readonly brandId = computed(() => this.activeBrand.activeId());
 
   readonly preset = signal<SettlementPreset | 'custom'>('lastWeek');
@@ -654,9 +952,12 @@ export class SettlementsPage {
   readonly busy = signal(false);
   readonly payoutReference = signal('');
   readonly payoutComment = signal('');
-  /** The payout whose «Отметить выплаченной» form is open. */
+  /** The settlement whose «Отметить оплату» form is open. */
   readonly paying = signal<string | null>(null);
   readonly paidReference = signal('');
+  /** The settlement whose «Не получено» form is open. */
+  readonly disputing = signal<string | null>(null);
+  readonly disputeComment = signal('');
   private readonly tick = signal(0);
   private request: Subscription | null = null;
 
@@ -689,7 +990,7 @@ export class SettlementsPage {
   });
 
   /**
-   * The report reaches today, so the payout card stops at yesterday: the
+   * The report reaches today, so the settlement card stops at yesterday: the
    * API proposes only days that have ended, and the card says why its
    * period is shorter than the report's.
    */
@@ -698,12 +999,62 @@ export class SettlementsPage {
     return !!r && r.nextPayout.periodTo < r.period.to;
   });
 
-  /** What the next payout carries in from earlier periods (refunds after a payout, late orders). */
-  readonly carried = computed(() => {
+  /**
+   * «комиссия − компенсация по акциям − компенсация по баллам = итог» of the
+   * settlement on offer, and what it carries in from earlier periods
+   * (refunds or rate corrections after an earlier settlement). Shown while a
+   * settlement can be fixed, and when the two sides cancel out (to explain
+   * why there is nothing to fix).
+   */
+  readonly payoutBreakdown = computed(() => {
     const next = this.report()?.nextPayout;
-    if (!next) return 0;
-    // An API older than takeAway promos sends no compensation.
-    return next.amountCents - (next.cardNetCents + (next.compensationCents ?? 0) - next.commissionCents);
+    if (!next?.periodFrom) return null;
+    if (next.blocked && next.blocked !== 'NOTHING_DUE') return null;
+    const points = next.pointsCompensationCents ?? 0;
+    const own = next.commissionCents - next.compensationCents - points;
+    const carried = next.netCents - own;
+    return {
+      commission: this.money(next.commissionCents),
+      promo: this.money(next.compensationCents),
+      points: this.money(points),
+      result: this.money(own),
+      carried: carried ? this.signedMoney(carried) : null,
+      cardNet: this.money(next.cardNetCents),
+    };
+  });
+
+  /** «Продажи 150 руб. · промокоды бренда −5 руб. · баллы −20 руб.»: the sales and what came off them, zeros left out. */
+  readonly breakdownParts = computed(() => {
+    const t = this.report()?.totals;
+    if (!t) return [];
+    const parts: Array<{ key: string; cents: number }> = [
+      { key: 'sales', cents: t.salesCents },
+      { key: 'promo', cents: t.promoDiscountCents },
+      { key: 'gift', cents: t.giftCardCents },
+      { key: 'points', cents: t.pointsDiscountCents },
+      { key: 'delivery', cents: t.deliveryFeeCents },
+    ];
+    return parts.filter((p) => p.key === 'sales' || p.cents);
+  });
+
+  /** «Ждёт вас»: the settlements this viewer has to pay, pay again or confirm. */
+  readonly waiting = computed<WaitingLine[]>(() => {
+    const r = this.report();
+    if (!r) return [];
+    const side = this.side();
+    const viewer = this.viewer();
+    return r.payouts.flatMap((p): WaitingLine[] => {
+      const can = settlementActions(p, side);
+      const params = { amount: this.money(p.amountCents), period: this.shortPeriod(p.periodFrom, p.periodTo) };
+      if (can.markPaid && p.status === 'DISPUTED') {
+        const comment = p.disputeComment ? `: «${p.disputeComment}»` : '';
+        return [{ id: p.id, key: 'admin.settlements.waiting.repay', params: { ...params, comment } }];
+      }
+      if (can.markPaid) return [{ id: p.id, key: `admin.settlements.waiting.pay.${viewer}`, params }];
+      // The receiver may confirm early, but only a paid one waits on them.
+      if (can.dispute) return [{ id: p.id, key: `admin.settlements.waiting.confirm.${viewer}`, params }];
+      return [];
+    });
   });
 
   constructor() {
@@ -743,10 +1094,68 @@ export class SettlementsPage {
     return this.fmt.money(cents, this.report()?.currency);
   }
 
+  /** «+2 руб.» / «−2 руб.»: a correction whose sign matters. */
+  signedMoney(cents: number): string {
+    return cents > 0 ? `+${this.money(cents)}` : this.money(cents);
+  }
+
   /** A local calendar day, `YYYY-MM-DD`, in words. */
   day(value: string | null | undefined): string {
     if (!value) return '—';
     return this.fmt.date(`${value}T00:00:00Z`, 'UTC');
+  }
+
+  /** «1 нояб. – 7 нояб.» — a settlement's days in a sentence. */
+  shortPeriod(from: string, to: string): string {
+    const short = (value: string) => this.fmt.dayMonth(`${value}T00:00:00Z`, 'UTC');
+    return from === to ? short(from) : `${short(from)} – ${short(to)}`;
+  }
+
+  /** «27.10» on the brand's clock. */
+  shortDay(iso: string): string {
+    return this.fmt.shortDay(iso, this.report()?.period.timeZone);
+  }
+
+  sign(cents: number): 'positive' | 'negative' | 'zero' {
+    return cents > 0 ? 'positive' : cents < 0 ? 'negative' : 'zero';
+  }
+
+  /**
+   * A signed sum in words for this viewer: «Вы должны takeAway 50 руб.»,
+   * «takeAway должен бренду 50 руб.», «В расчёте».
+   */
+  owes(cents: number): string {
+    return this.translate.instant(`admin.settlements.owes.${this.viewer()}.${this.sign(cents)}`, {
+      amount: this.money(Math.abs(cents)),
+    });
+  }
+
+  /** Money that moved or will move: «Бренд → takeAway 50 руб.», «нет». */
+  flow(cents: number): string {
+    if (!cents) return this.translate.instant('admin.settlements.balance.none');
+    const direction: SettlementDirection = cents > 0 ? 'BRAND_TO_TAKEAWAY' : 'TAKEAWAY_TO_BRAND';
+    return `${this.translate.instant(`admin.settlements.direction.${direction}`)} ${this.money(Math.abs(cents))}`;
+  }
+
+  /** «Вы платите takeAway 50 руб.», «takeAway платит бренду 50 руб.». */
+  paysText(direction: SettlementDirection, amountCents: number): string {
+    return this.translate.instant(`admin.settlements.payout.pays.${this.viewer()}.${direction}`, {
+      amount: this.money(amountCents),
+    });
+  }
+
+  /** «Ждёт оплаты», «Оплачено — ждёт подтверждения», «Получено 27.10», «Не получено». */
+  statusText(payout: SettlementPayout): string {
+    if (payout.status === 'CONFIRMED' && payout.confirmedAt) {
+      return this.translate.instant('admin.settlements.payouts.confirmedOn', {
+        date: this.shortDay(payout.confirmedAt),
+      });
+    }
+    return this.translate.instant(`admin.settlements.payouts.statuses.${payout.status}`);
+  }
+
+  actions(payout: SettlementPayout): SettlementActions {
+    return settlementActions(payout, this.side());
   }
 
   refText(payout: SettlementPayout): string {
@@ -778,7 +1187,9 @@ export class SettlementsPage {
           this.payoutReference.set('');
           this.payoutComment.set('');
           this.notice.set(
-            this.translate.instant('admin.settlements.payout.fixed', { amount: this.money(payout.amountCents) }),
+            this.translate.instant('admin.settlements.payout.fixed', {
+              amount: this.paysText(payout.direction, payout.amountCents),
+            }),
           );
           this.reload();
         },
@@ -787,19 +1198,49 @@ export class SettlementsPage {
   }
 
   startPaid(payout: SettlementPayout): void {
+    this.disputing.set(null);
     this.paidReference.set(payout.reference ?? '');
     this.paying.set(payout.id);
   }
 
   confirmPaid(payout: SettlementPayout): void {
-    this.busy.set(true);
-    this.error.set(null);
+    this.begin();
     this.api.markPaid(payout.id, { reference: this.paidReference().trim() || undefined }).subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.paying.set(null);
-        this.reload();
-      },
+      next: () => this.done('admin.settlements.payouts.markedPaid'),
+      error: (err) => this.fail(err),
+    });
+  }
+
+  /** «Получено» is final: it asks once. */
+  received(payout: SettlementPayout): void {
+    const ok = window.confirm(
+      this.translate.instant('admin.settlements.payouts.receivedConfirm', {
+        amount: this.money(payout.amountCents),
+        from: this.day(payout.periodFrom),
+        to: this.day(payout.periodTo),
+      }),
+    );
+    if (!ok) return;
+    this.begin();
+    this.api.confirm(payout.id, { received: true }).subscribe({
+      next: () => this.done('admin.settlements.payouts.confirmed'),
+      error: (err) => this.fail(err),
+    });
+  }
+
+  startDispute(payout: SettlementPayout): void {
+    this.paying.set(null);
+    this.disputeComment.set('');
+    this.disputing.set(payout.id);
+  }
+
+  /** «Не получено» with the receiver's words — the payer needs to know what to check. */
+  sendDispute(payout: SettlementPayout): void {
+    const comment = this.disputeComment().trim();
+    if (!comment) return;
+    this.begin();
+    this.api.confirm(payout.id, { received: false, comment }).subscribe({
+      next: () => this.done('admin.settlements.payouts.disputed'),
       error: (err) => this.fail(err),
     });
   }
@@ -812,13 +1253,9 @@ export class SettlementsPage {
       }),
     );
     if (!ok) return;
-    this.busy.set(true);
-    this.error.set(null);
+    this.begin();
     this.api.deletePayout(payout.id).subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.reload();
-      },
+      next: () => this.done(null),
       error: (err) => this.fail(err),
     });
   }
@@ -861,6 +1298,21 @@ export class SettlementsPage {
         this.error.set(apiErrorMessage(err, this.translate, { codes: ERROR_CODES, network: 'common.networkError' }));
       },
     });
+  }
+
+  private begin(): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+  }
+
+  /** A step went through: close the inline forms, say so, re-read the report. */
+  private done(noticeKey: string | null): void {
+    this.busy.set(false);
+    this.paying.set(null);
+    this.disputing.set(null);
+    if (noticeKey) this.notice.set(this.translate.instant(noticeKey));
+    this.reload();
   }
 
   private fail(err: unknown): void {
