@@ -57,10 +57,16 @@ export function takeawayPromoBudgetFits(budgetCents: number, spentCents: number,
   return spentCents + discountCents <= budgetCents;
 }
 
-/** Where a promo order's compensation stands: owed, part of a fixed payout, or paid out. */
-export function takeawayDebtStatus(payout: { status: 'PENDING' | 'PAID' } | null | undefined): TakeawayDebtStatus {
+/**
+ * Where a promo order's compensation stands: owed, part of a fixed settlement,
+ * or settled — once the brand confirmed the settlement (docs/settlements.md:
+ * only a confirmed settlement closes the balance).
+ */
+export function takeawayDebtStatus(
+  payout: { status: 'PENDING' | 'PAID' | 'CONFIRMED' | 'DISPUTED' } | null | undefined,
+): TakeawayDebtStatus {
   if (!payout) return 'ACCRUED';
-  return payout.status === 'PAID' ? 'REPAID' : 'IN_PAYOUT';
+  return payout.status === 'CONFIRMED' ? 'REPAID' : 'IN_PAYOUT';
 }
 
 /**

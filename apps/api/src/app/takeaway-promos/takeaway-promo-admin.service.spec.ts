@@ -288,8 +288,8 @@ describe('TakeawayPromoAdminService.updateStatus', () => {
 });
 
 describe('TakeawayPromoAdminService reports', () => {
-  const paidOut = { id: 'payout-1', status: 'PAID' as const, paidAt: new Date('2026-11-12T10:00:00Z') };
-  const fixed = { id: 'payout-2', status: 'PENDING' as const, paidAt: null };
+  const paidOut = { id: 'payout-1', status: 'CONFIRMED' as const, confirmedAt: new Date('2026-11-12T10:00:00Z') };
+  const fixed = { id: 'payout-2', status: 'PENDING' as const, confirmedAt: null };
   const rows = () => [
     // Accepted — counts on its accept.
     redemptionRow({ userId: 'u-1', storeId: 's-1', storeName: 'Центр', discountCents: 1_000, payout: paidOut }),

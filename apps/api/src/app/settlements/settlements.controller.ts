@@ -8,6 +8,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { BrandTakeawayPromoReportDto } from '../takeaway-promos/dto/takeaway-promo.dto';
 import {
   CommissionRateHistoryDto,
+  ConfirmPayoutDto,
   CreatePayoutDto,
   MarkPayoutPaidDto,
   SetCommissionRateDto,
@@ -20,8 +21,10 @@ import { SettlementsService } from './settlements.service';
 
 /**
  * «Расчёты с брендами». A platform admin reads any brand and is the only one
- * who changes rates or fixes and pays out; a brand owner reads the same
- * figures for their own brand — the scope comes from the account.
+ * who changes rates or fixes a settlement; a brand owner reads the same
+ * figures for their own brand — the scope comes from the account. Paying and
+ * confirming a settlement is each side's own step (docs/settlements.md §6):
+ * the service checks which side the caller is on.
  */
 @ApiTags('admin: settlements')
 @ApiBearerAuth()
@@ -82,8 +85,8 @@ export class SettlementsController {
     return this.settlements.createPayout(user, dto);
   }
 
+  /** «Отметить оплату» — the payer: the platform admin when takeAway pays, the brand owner when the brand does. */
   @Patch('payouts/:id/paid')
-  @Roles(Role.SUPER_ADMIN)
   @ApiOkResponse({ type: SettlementPayoutDto })
   markPaid(
     @CurrentUser() user: AuthenticatedUser,
@@ -91,6 +94,17 @@ export class SettlementsController {
     @Body() dto: MarkPayoutPaidDto,
   ): Promise<SettlementPayoutDto> {
     return this.settlements.markPaid(user, id, dto);
+  }
+
+  /** «Получено» / «Не получено» — the receiver. */
+  @Patch('payouts/:id/confirm')
+  @ApiOkResponse({ type: SettlementPayoutDto })
+  confirm(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ConfirmPayoutDto,
+  ): Promise<SettlementPayoutDto> {
+    return this.settlements.confirm(user, id, dto);
   }
 
   @Delete('payouts/:id')
