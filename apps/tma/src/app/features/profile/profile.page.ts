@@ -2,7 +2,13 @@ import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { customerBonusTerms, LanguageSwitcherComponent, LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
+import {
+  customerBonusTerms,
+  LanguageSwitcherComponent,
+  LocaleFormatService,
+  PointsPipe,
+  takeawayPromoLabel,
+} from '@takeaway/i18n';
 import type { CustomerBonus, LoyaltyAccount, LoyaltyTier } from '@takeaway/shared-types';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
@@ -47,7 +53,7 @@ const TIER_KEYS: Record<LoyaltyTier, string> = {
 @Component({
   selector: 'app-tma-profile',
   standalone: true,
-  imports: [TmaTabBarComponent, TranslatePipe, LanguageSwitcherComponent],
+  imports: [TmaTabBarComponent, TranslatePipe, PointsPipe, LanguageSwitcherComponent],
   template: `
     <section
       style="padding: 16px; padding-bottom: var(--tma-tab-page-bottom); display: flex; flex-direction: column; gap: 20px"
@@ -129,12 +135,12 @@ const TIER_KEYS: Record<LoyaltyTier, string> = {
           <span
             data-testid="loyalty-points"
             style="font-family: var(--font-display); font-size: 30px; font-weight: 700"
-            >{{ 'tma.profile.pointsLine' | translate: { points: l.pointsBalance } }}</span
+            >{{ l.pointsBalance | points }}</span
           >
           @if (l.nextTier) {
             <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.7)">{{
               'web.profile.toNextTier'
-                | translate: { points: l.pointsToNextTier, tier: (tierKey(l.nextTier) | translate) }
+                | translate: { points: l.pointsToNextTier | points, tier: (tierKey(l.nextTier) | translate) }
             }}</span>
             <div
               style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 9999px; overflow: hidden; margin-top: 4px"
