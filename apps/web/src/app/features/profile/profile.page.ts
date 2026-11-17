@@ -124,7 +124,7 @@ interface ProfileSection {
               >{{ tier() | translate }}</span
             >
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
-              'web.profile.toNextTier' | translate: { points: pointsToNextTier() | points, tier: nextTier() }
+              'web.profile.toNextTier' | translate: { points: (pointsToNextTier() | points), tier: nextTier() }
             }}</span>
           </div>
           <div

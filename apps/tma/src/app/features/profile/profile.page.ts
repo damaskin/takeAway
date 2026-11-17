@@ -140,7 +140,7 @@ const TIER_KEYS: Record<LoyaltyTier, string> = {
           @if (l.nextTier) {
             <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.7)">{{
               'web.profile.toNextTier'
-                | translate: { points: l.pointsToNextTier | points, tier: (tierKey(l.nextTier) | translate) }
+                | translate: { points: (l.pointsToNextTier | points), tier: (tierKey(l.nextTier) | translate) }
             }}</span>
             <div
               style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 9999px; overflow: hidden; margin-top: 4px"

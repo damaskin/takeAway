@@ -545,7 +545,7 @@ interface Step {
                     >{{ 'web.checkout.pointsLabel' | translate }}</span
                   >
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
-                    'web.checkout.pointsBalance' | translate: { points: pointsBalance() | points }
+                    'web.checkout.pointsBalance' | translate: { points: (pointsBalance() | points) }
                   }}</span>
                 </div>
 
