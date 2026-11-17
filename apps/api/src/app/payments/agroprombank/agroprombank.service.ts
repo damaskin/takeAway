@@ -14,6 +14,8 @@ import { SecretCipher } from '../../common/crypto/secret-cipher';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isDeferredCharge } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
+import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
+import { type CardTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig, CARD_INSTITUTES } from './agroprombank.config';
 import { BANK_CURRENCY_CODES } from './constants';
@@ -94,6 +96,7 @@ export class AgroprombankService {
     private readonly client: AgroprombankClient,
     private readonly cipher: SecretCipher,
     private readonly settlement: OrderSettlementService,
+    private readonly terminals: PaymentTerminalsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -114,9 +117,16 @@ export class AgroprombankService {
       fio?: string;
       deactivateOld?: boolean;
       label?: string;
+      /**
+       * The store the customer is about to pay at: the card is bound at that
+       * brand's terminal, since a token belongs to the merchant it was issued
+       * by. Without it — takeAway's default terminal.
+       */
+      storeId?: string;
     },
   ): Promise<StartBindingResult> {
-    this.assertEnabled();
+    const terminal = await this.terminalForStore(input.storeId);
+    this.assertCanCall(terminal);
     const lastDigits = input.lastDigits.trim();
     const phone = input.phone.replace(/[\s()-]/g, '');
     if (!/^\d{4}$/.test(lastDigits)) throw new BadRequestException('lastDigits must be exactly 4 digits');
@@ -129,14 +139,18 @@ export class AgroprombankService {
     const description = truncate(`Оплата заказов в takeAway. Пользователь ${userId}`, 128);
     const deactivateOld = input.deactivateOld ?? false;
 
-    const response = await this.client.invoke('NewTokenRequest', {
-      LastDigit: lastDigits,
-      Phone: phone,
-      deactivateold: deactivateOld ? 1 : 0,
-      description,
-      fio: input.fio?.trim() || null,
-      institute: input.institute,
-    });
+    const response = await this.client.invoke(
+      'NewTokenRequest',
+      {
+        LastDigit: lastDigits,
+        Phone: phone,
+        deactivateold: deactivateOld ? 1 : 0,
+        description,
+        fio: input.fio?.trim() || null,
+        institute: input.institute,
+      },
+      terminal,
+    );
 
     const expiresAt = new Date(Date.now() + this.config.bindingTtlMinutes * 60_000);
 
@@ -148,6 +162,7 @@ export class AgroprombankService {
         institute: input.institute,
         label: input.label,
         deactivateOld,
+        paymentTerminalId: terminal.id,
       });
       const binding = await this.prisma.cardBindingRequest.create({
         data: {
@@ -157,6 +172,7 @@ export class AgroprombankService {
           phone,
           institute: input.institute,
           deactivateOld,
+          paymentTerminalId: terminal.id,
           status: 'CONFIRMED',
           cardTokenId: card.id,
           expiresAt,
@@ -176,7 +192,16 @@ export class AgroprombankService {
     }
 
     const binding = await this.prisma.cardBindingRequest.create({
-      data: { userId, bankRequestId, lastDigits, phone, institute: input.institute, deactivateOld, expiresAt },
+      data: {
+        userId,
+        bankRequestId,
+        lastDigits,
+        phone,
+        institute: input.institute,
+        deactivateOld,
+        paymentTerminalId: terminal.id,
+        expiresAt,
+      },
     });
     return { bindingId: binding.id, completed: false, card: null, expiresAt: expiresAt.toISOString() };
   }
@@ -188,9 +213,11 @@ export class AgroprombankService {
    * kills the request so a stolen phone cannot be brute-forced.
    */
   async confirmBinding(userId: string, bindingId: string, code: string): Promise<BoundCardView> {
-    this.assertEnabled();
     const binding = await this.prisma.cardBindingRequest.findUnique({ where: { id: bindingId } });
     if (!binding || binding.userId !== userId) throw new NotFoundException('Card binding request not found');
+    // The one-time password is checked by the merchant that sent it.
+    const terminal = await this.terminals.cardFor(binding.paymentTerminalId);
+    this.assertCanCall(terminal);
     if (binding.status === 'CONFIRMED') throw new ConflictException('This card is already bound');
     if (binding.status !== 'PENDING') throw new BadRequestException('This binding request is no longer usable');
 
@@ -212,10 +239,14 @@ export class AgroprombankService {
 
     let response: XmlElement;
     try {
-      response = await this.client.invoke('ProcessTokenRequest', {
-        requestid: binding.bankRequestId,
-        code: code.trim(),
-      });
+      response = await this.client.invoke(
+        'ProcessTokenRequest',
+        {
+          requestid: binding.bankRequestId,
+          code: code.trim(),
+        },
+        terminal,
+      );
     } catch (err) {
       const attempts = binding.attempts + 1;
       const exhausted = attempts >= this.config.bindingMaxAttempts;
@@ -236,6 +267,7 @@ export class AgroprombankService {
     const card = await this.persistToken(userId, token, {
       institute: binding.institute,
       deactivateOld: binding.deactivateOld,
+      paymentTerminalId: binding.paymentTerminalId,
     });
     await this.prisma.cardBindingRequest.update({
       where: { id: binding.id },
@@ -252,19 +284,30 @@ export class AgroprombankService {
   // Card management
   // ───────────────────────────────────────────────────────────────────────────
 
-  async listCards(userId: string): Promise<BoundCardView[]> {
+  /**
+   * The customer's bound cards. With `storeId`, only the ones that can pay
+   * there: a token works only at the merchant that issued it, so a brand with
+   * its own terminal needs the card bound again through it.
+   */
+  async listCards(userId: string, storeId?: string): Promise<BoundCardView[]> {
     const cards = await this.prisma.cardToken.findMany({
       where: { userId, provider: 'AGROPROMBANK', status: 'ACTIVE' },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     });
-    return cards.map((card) => this.toCardView(card));
+    if (!storeId) return cards.map((card) => this.toCardView(card));
+    const terminal = await this.terminalForStore(storeId);
+    const merchants = await this.terminals.cardMerchantIds(cards.map((card) => card.paymentTerminalId));
+    return cards
+      .filter((card) => merchants.get(card.paymentTerminalId) === terminal.merchantId)
+      .map((card) => this.toCardView(card));
   }
 
   /** Re-reads the card state from the bank; a revoked token is retired locally. */
   async refreshCard(userId: string, cardId: string): Promise<BoundCardView> {
-    this.assertEnabled();
     const card = await this.requireCard(userId, cardId);
-    const response = await this.client.invoke('CheckToken', { token: this.revealToken(card) });
+    const terminal = await this.terminals.cardFor(card.paymentTerminalId);
+    this.assertCanCall(terminal);
+    const response = await this.client.invoke('CheckToken', { token: this.revealToken(card) }, terminal);
     return this.toCardView(await this.applyCheckTokenResponse(card, response));
   }
 
@@ -277,9 +320,10 @@ export class AgroprombankService {
   async deleteCard(userId: string, cardId: string): Promise<void> {
     const card = await this.requireCard(userId, cardId);
 
-    if (this.config.isConfigured) {
+    const terminal = await this.terminals.cardFor(card.paymentTerminalId).catch(() => null);
+    if (terminal && this.config.canCall(terminal)) {
       try {
-        await this.client.invoke('DeactivateToken', { token: this.revealToken(card) });
+        await this.client.invoke('DeactivateToken', { token: this.revealToken(card) }, terminal);
       } catch (err) {
         // A token the bank already considers dead still has to disappear from
         // the customer's card list, so we log and retire it locally.
@@ -321,11 +365,19 @@ export class AgroprombankService {
    */
   async charge(userId: string, options: ChargeOptions): Promise<ChargeResult> {
     this.assertEnabled();
-    const moment = options.preauth === undefined ? this.config.chargeMoment : options.preauth ? 'hold' : 'checkout';
-    const preauth = moment === 'hold';
 
-    const order = await this.prisma.order.findUnique({ where: { id: options.orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: options.orderId },
+      include: { store: { select: { brandId: true } } },
+    });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
+
+    // The brand's own terminal takes the money; without one, takeAway's.
+    const terminal = await this.terminals.cardForBrand(order.store.brandId);
+    this.assertCanCall(terminal);
+    const moment =
+      options.preauth === undefined ? this.config.chargeMomentFor(terminal) : options.preauth ? 'hold' : 'checkout';
+    const preauth = moment === 'hold';
 
     const settled = await this.prisma.payment.findFirst({
       where: { orderId: order.id, provider: 'AGROPROMBANK', status: 'SUCCEEDED' },
@@ -366,12 +418,16 @@ export class AgroprombankService {
     }
 
     const card = await this.requireCard(userId, options.cardId);
+    await this.assertCardFits(card, terminal);
     const token = this.revealToken(card);
 
     // The bank documents a token check before every payment: a customer can
     // revoke a token in their banking app and we would otherwise only find out
     // from a failed charge.
-    const checked = await this.applyCheckTokenResponse(card, await this.client.invoke('CheckToken', { token }));
+    const checked = await this.applyCheckTokenResponse(
+      card,
+      await this.client.invoke('CheckToken', { token }, terminal),
+    );
     if (checked.status !== 'ACTIVE') {
       throw new BadRequestException('This card is no longer active — bind it again');
     }
@@ -391,6 +447,7 @@ export class AgroprombankService {
           tipCents,
           currency: order.currency,
           cardTokenId: card.id,
+          paymentTerminalId: terminal.id,
           rawJson: { deferred: true, requestedPreauth: false } satisfies Prisma.InputJsonValue,
         },
       });
@@ -403,24 +460,29 @@ export class AgroprombankService {
       tipCents,
       currency: order.currency,
       cardTokenId: card.id,
+      paymentTerminalId: terminal.id,
       preauth,
     });
 
     let response: XmlElement;
     try {
-      response = await this.client.invoke('ProcessCardAutoPayment', {
-        invoiceid: payment.invoiceId,
-        token,
-        amount: order.totalCents,
-        tipamount: tipCents,
-        currencycode: currencyCode,
-        istest: this.config.isTest ? '1' : '0',
-        description: truncate(`Оплата заказа №${order.orderCode}`, 128),
-        recipienttoken: options.recipientToken ?? null,
-        recipient: options.recipientToken ? (options.recipientName ?? null) : null,
-        terminalid: this.config.terminalId,
-        preauth: preauth ? 1 : 0,
-      });
+      response = await this.client.invoke(
+        'ProcessCardAutoPayment',
+        {
+          invoiceid: payment.invoiceId,
+          token,
+          amount: order.totalCents,
+          tipamount: tipCents,
+          currencycode: currencyCode,
+          istest: terminal.isTest ? '1' : '0',
+          description: truncate(`Оплата заказа №${order.orderCode}`, 128),
+          recipienttoken: options.recipientToken ?? null,
+          recipient: options.recipientToken ? (options.recipientName ?? null) : null,
+          terminalid: terminal.terminalId,
+          preauth: preauth ? 1 : 0,
+        },
+        terminal,
+      );
     } catch (err) {
       if (err instanceof AgroprombankError) {
         // The bank refused the charge — a definitive answer, safe to record.
@@ -443,8 +505,8 @@ export class AgroprombankService {
    * the held amount, so a delivery whose final total grew slightly still works.
    */
   async completePreauthorization(paymentId: string, amountCents: number): Promise<ChargeResult> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
+    const terminal = await this.terminalOf(payment);
     if (payment.status !== 'REQUIRES_ACTION') {
       throw new BadRequestException('Only a preauthorized payment can be completed');
     }
@@ -453,11 +515,15 @@ export class AgroprombankService {
       throw new BadRequestException(`Amount must be between 1 and ${ceiling} (110% of the held amount)`);
     }
 
-    await this.client.invoke('CompletePreAuthorizaion', {
-      invoiceid: payment.invoiceId,
-      amount: amountCents,
-      terminalid: this.config.terminalId,
-    });
+    await this.client.invoke(
+      'CompletePreAuthorizaion',
+      {
+        invoiceid: payment.invoiceId,
+        amount: amountCents,
+        terminalid: terminal.terminalId,
+      },
+      terminal,
+    );
 
     const updated = await this.prisma.payment.update({
       where: { id: payment.id },
@@ -492,12 +558,13 @@ export class AgroprombankService {
    * transport failure leaves it `PENDING` for reconciliation.
    */
   async captureDeferred(paymentId: string): Promise<ChargeResult> {
-    this.assertEnabled();
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.provider !== 'AGROPROMBANK' || payment.status !== 'REQUIRES_ACTION') {
       throw new BadRequestException('There is no charge waiting for this order');
     }
     if (!isDeferredCharge(payment)) throw new BadRequestException('This payment is a hold — complete it instead');
+    // The terminal chosen at checkout, the one the card was checked against.
+    const terminal = await this.terminalOf(payment);
 
     const order = await this.prisma.order.findUnique({ where: { id: payment.orderId } });
     if (!order) throw new NotFoundException('Order not found');
@@ -509,25 +576,32 @@ export class AgroprombankService {
     const token = this.revealToken(card);
 
     // The customer may have revoked the token in their banking app since checkout.
-    const checked = await this.applyCheckTokenResponse(card, await this.client.invoke('CheckToken', { token }));
+    const checked = await this.applyCheckTokenResponse(
+      card,
+      await this.client.invoke('CheckToken', { token }, terminal),
+    );
     if (checked.status !== 'ACTIVE') throw new BadRequestException('The customer’s card is no longer active');
 
     const claimed = await this.claimDeferred(payment);
     let response: XmlElement;
     try {
-      response = await this.client.invoke('ProcessCardAutoPayment', {
-        invoiceid: claimed.invoiceId,
-        token,
-        amount: claimed.amountCents,
-        tipamount: claimed.tipCents,
-        currencycode: currencyCode,
-        istest: this.config.isTest ? '1' : '0',
-        description: truncate(`Оплата заказа №${order.orderCode}`, 128),
-        recipienttoken: null,
-        recipient: null,
-        terminalid: this.config.terminalId,
-        preauth: 0,
-      });
+      response = await this.client.invoke(
+        'ProcessCardAutoPayment',
+        {
+          invoiceid: claimed.invoiceId,
+          token,
+          amount: claimed.amountCents,
+          tipamount: claimed.tipCents,
+          currencycode: currencyCode,
+          istest: terminal.isTest ? '1' : '0',
+          description: truncate(`Оплата заказа №${order.orderCode}`, 128),
+          recipienttoken: null,
+          recipient: null,
+          terminalid: terminal.terminalId,
+          preauth: 0,
+        },
+        terminal,
+      );
     } catch (err) {
       if (err instanceof AgroprombankError) {
         await this.markPaymentFailed(claimed, err);
@@ -563,14 +637,18 @@ export class AgroprombankService {
    * possible before the operation settles — use {@link refund} afterwards.
    */
   async reverse(paymentId: string): Promise<ChargeResult> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
     if (payment.status === 'REFUNDED') throw new ConflictException('This payment has already been reversed');
+    const terminal = await this.terminalOf(payment);
 
-    await this.client.invoke('ReverseOperation', {
-      invoiceid: payment.invoiceId,
-      amount: payment.amountCents,
-    });
+    await this.client.invoke(
+      'ReverseOperation',
+      {
+        invoiceid: payment.invoiceId,
+        amount: payment.amountCents,
+      },
+      terminal,
+    );
 
     const updated = await this.prisma.payment.update({
       where: { id: payment.id },
@@ -600,8 +678,9 @@ export class AgroprombankService {
     refundCents: number,
     audit: { actorId?: string; reason?: string | null; note?: string | null; source?: string } = {},
   ): Promise<ChargeResult> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
+    // Back through the terminal that took the money, whatever the brand uses now.
+    const terminal = await this.terminalOf(payment);
     if (payment.status !== 'SUCCEEDED' && payment.status !== 'PARTIALLY_REFUNDED') {
       throw new BadRequestException(`Cannot refund a payment in status ${payment.status}`);
     }
@@ -610,11 +689,15 @@ export class AgroprombankService {
       throw new BadRequestException(`Refund must be between 1 and ${remaining}`);
     }
 
-    await this.client.invoke('RefundOperation', {
-      invoiceid: payment.invoiceId,
-      amount: payment.amountCents,
-      refundamount: refundCents,
-    });
+    await this.client.invoke(
+      'RefundOperation',
+      {
+        invoiceid: payment.invoiceId,
+        amount: payment.amountCents,
+        refundamount: refundCents,
+      },
+      terminal,
+    );
 
     const refundedCents = payment.refundedCents + refundCents;
     const updated = await this.prisma.payment.update({
@@ -645,12 +728,16 @@ export class AgroprombankService {
 
   /** Pulls the bank's own record of an operation — used by support and the cron. */
   async describeOperation(paymentId: string): Promise<Record<string, unknown>> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
-    const response = await this.client.invoke('GetOperation', {
-      terminalid: this.config.terminalId,
-      invoiceid: payment.invoiceId,
-    });
+    const terminal = await this.terminalOf(payment);
+    const response = await this.client.invoke(
+      'GetOperation',
+      {
+        terminalid: terminal.terminalId,
+        invoiceid: payment.invoiceId,
+      },
+      terminal,
+    );
     const operation = children(response, 'operation')[0];
     return operation ? toPlainObject(operation) : {};
   }
@@ -661,7 +748,9 @@ export class AgroprombankService {
    * reconciliation cron and before any retry of the same order.
    */
   async reconcilePendingPayments(olderThanMs = 60_000, limit = 50): Promise<{ checked: number; settled: number }> {
-    if (!this.config.isConfigured) return { checked: 0, settled: 0 };
+    // Each payment is asked about through its own terminal; one that cannot
+    // be called is logged and left for the next pass.
+    if (!this.config.enabled) return { checked: 0, settled: 0 };
     const cutoff = new Date(Date.now() - olderThanMs);
     const pending = await this.prisma.payment.findMany({
       where: {
@@ -693,13 +782,18 @@ export class AgroprombankService {
    */
   async reconcilePayment(payment: Payment): Promise<Payment> {
     if (!payment.invoiceId) return payment;
+    const terminal = await this.terminalOf(payment);
 
     let response: XmlElement;
     try {
-      response = await this.client.invoke('CheckOperation', {
-        invoiceid: payment.invoiceId,
-        amount: payment.amountCents,
-      });
+      response = await this.client.invoke(
+        'CheckOperation',
+        {
+          invoiceid: payment.invoiceId,
+          amount: payment.amountCents,
+        },
+        terminal,
+      );
     } catch (err) {
       if (err instanceof AgroprombankError) {
         return this.markPaymentFailed(payment, err);
@@ -721,10 +815,47 @@ export class AgroprombankService {
     if (!this.config.enabled) {
       throw new ServiceUnavailableException('Agroprombank payments are disabled on this deployment');
     }
-    const missing = this.config.missingSettings();
+  }
+
+  /** Switched on, and `terminal` holds everything a live call needs. */
+  private assertCanCall(terminal: CardTerminal): void {
+    this.assertEnabled();
+    const missing = this.config.missingFor(terminal);
     if (missing.length > 0) {
-      throw new ServiceUnavailableException(`Agroprombank is not configured: missing ${missing.join(', ')}`);
+      throw new ServiceUnavailableException(
+        `Agroprombank is not configured for ${describeTerminal(terminal)}: missing ${missing.join(', ')}`,
+      );
     }
+  }
+
+  /** The terminal a payment went through — every later call for it uses the same one. */
+  private async terminalOf(payment: Payment): Promise<CardTerminal> {
+    const terminal = await this.terminals.cardFor(payment.paymentTerminalId);
+    this.assertCanCall(terminal);
+    return terminal;
+  }
+
+  /** The brand's terminal for a store a card is bound for; the default one without a store. */
+  private async terminalForStore(storeId: string | undefined): Promise<CardTerminal> {
+    if (!storeId) return this.config.defaultTerminal();
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
+    if (!store) throw new NotFoundException('Store not found');
+    return this.terminals.cardForBrand(store.brandId);
+  }
+
+  /**
+   * A token is the bank's for one merchant: a card bound at takeAway's
+   * terminal cannot pay a brand that takes money on its own, and the other
+   * way round. Refused before anything reaches the bank.
+   */
+  private async assertCardFits(card: CardToken, terminal: CardTerminal): Promise<void> {
+    const merchants = await this.terminals.cardMerchantIds([card.paymentTerminalId]);
+    if (merchants.get(card.paymentTerminalId) === terminal.merchantId) return;
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'CARD_BOUND_TO_OTHER_MERCHANT',
+      message: 'Эта карта привязана для оплаты в другом заведении — привяжите её здесь ещё раз',
+    });
   }
 
   /**
@@ -822,6 +953,7 @@ export class AgroprombankService {
       tipCents: number;
       currency: Currency;
       cardTokenId: string;
+      paymentTerminalId: string | null;
       /**
        * What we are about to ask the bank for. Written before the call so that
        * reconciliation, which runs after a transport failure and cannot tell a
@@ -842,6 +974,7 @@ export class AgroprombankService {
           tipCents: data.tipCents,
           currency: data.currency,
           cardTokenId: data.cardTokenId,
+          paymentTerminalId: data.paymentTerminalId,
           rawJson: { requestedPreauth: data.preauth } satisfies Prisma.InputJsonValue,
         },
       });
@@ -853,15 +986,16 @@ export class AgroprombankService {
   private async persistToken(
     userId: string,
     token: string,
-    options: { institute: string; label?: string; deactivateOld: boolean },
+    options: { institute: string; label?: string; deactivateOld: boolean; paymentTerminalId: string | null },
   ): Promise<CardToken> {
     const fingerprint = fingerprintOf(token);
 
     if (options.deactivateOld) {
-      // The bank already dropped the customer's other tokens; mirror that
-      // locally so we never charge a card the bank no longer honours.
+      // The bank already dropped the customer's other tokens at this
+      // merchant; mirror that locally so we never charge a card the bank no
+      // longer honours.
       await this.prisma.cardToken.updateMany({
-        where: { userId, provider: 'AGROPROMBANK', status: 'ACTIVE' },
+        where: { userId, provider: 'AGROPROMBANK', status: 'ACTIVE', paymentTerminalId: options.paymentTerminalId },
         data: { status: 'DEACTIVATED', isDefault: false, deactivatedAt: new Date() },
       });
     }
@@ -882,9 +1016,11 @@ export class AgroprombankService {
         institute: options.institute,
         label: options.label?.trim() || null,
         isDefault: activeCount === 0,
+        paymentTerminalId: options.paymentTerminalId,
       },
       update: {
         tokenCipher: this.cipher.encrypt(token),
+        paymentTerminalId: options.paymentTerminalId,
         institute: options.institute,
         label: options.label?.trim() || undefined,
         status: 'ACTIVE',
@@ -912,9 +1048,10 @@ export class AgroprombankService {
   /** CheckToken that never throws — used where a failure must not undo a binding. */
   private async refreshCardSafely(card: CardToken): Promise<CardToken> {
     try {
+      const terminal = await this.terminals.cardFor(card.paymentTerminalId);
       return await this.applyCheckTokenResponse(
         card,
-        await this.client.invoke('CheckToken', { token: this.revealToken(card) }),
+        await this.client.invoke('CheckToken', { token: this.revealToken(card) }, terminal),
       );
     } catch (err) {
       this.logger.warn(`CheckToken failed for card=${card.id}: ${messageOf(err)}`);

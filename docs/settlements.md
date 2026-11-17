@@ -25,10 +25,12 @@ Code: `apps/api/src/app/settlements` (arithmetic in `settlement-math.ts`),
 `20261114100000_settlement_netting`). The model and the routes keep the old
 «payout» names; one row is one period's settlement.
 
-> Today the card and QR payments still land on takeAway's single Agroprombank
-> terminal (`AGROPROMBANK_*` env). Routing each brand's money to its own
-> terminal is a separate task; the accounting below already treats the card
-> money as the brand's.
+> Since 2026-11-17 every brand takes card and QR payments on its own
+> Agroprombank terminal, entered by the platform team in the brand's card
+> («Платёжный терминал», docs/agroprombank-payments.md §13), so the money lands
+> on the brand's account. A brand without one still pays through takeAway's
+> default terminal (`AGROPROMBANK_*` env); the accounting below treats the card
+> money as the brand's either way.
 
 ---
 
@@ -266,8 +268,10 @@ promo codes are its discount (migration `20261114110000_analytics_points_funded`
    directly; settlements are netted (one sum, either way, confirmed by the
    receiver). Confirmed 2026-11-17 (Maxim): every brand gives takeAway its own
    bank terminal to attach, so the money lands on the brand's account with no
-   takeAway in between. Per-brand terminals in the payment code: in progress
-   (separate branch).
+   takeAway in between. Done the same day: every payment, capture and refund
+   goes through the terminal of the order's brand
+   (docs/agroprombank-payments.md §13); a brand without one falls back to
+   takeAway's terminal.
 3. **Gift cards.** Brands issue cards in the admin and sell them themselves,
    so the brand holds that money; no commission on redemptions. If gift cards
    are ever sold online through takeAway, this needs a rule.

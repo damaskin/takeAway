@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
+import type { CardTerminal } from '../terminals/terminal-types';
 import { AgroprombankConfig } from './agroprombank.config';
 import {
   DECLINE_AMOUNT,
@@ -22,12 +23,37 @@ import { num, text } from './xml';
  * agrees with the documented profile. Only a live integration run can settle
  * that.
  */
+type TestConfig = Record<string, unknown> & {
+  merchantId: string;
+  terminalId: string;
+  privateKeyPem: string;
+  certificatePem: string | null;
+  bankCertificatePem: string;
+  isTest: boolean;
+};
+
+/** The terminal a call goes out with, from the test's config. */
+function termOf(config: TestConfig): CardTerminal {
+  return {
+    id: null,
+    brandId: null,
+    merchantId: config.merchantId,
+    terminalId: config.terminalId,
+    privateKeyPem: config.privateKeyPem,
+    certificatePem: config.certificatePem,
+    bankCertificatePem: config.bankCertificatePem,
+    isTest: config.isTest,
+    holdUntilAccepted: false,
+  };
+}
+
 describe('Agroprombank end-to-end (sandbox gateway)', () => {
   const merchant = keyPair();
   const bankKeys = keyPair();
 
   let bank: SandboxBank;
   let client: AgroprombankClient;
+  let clientConfig: TestConfig;
   let endpoint: string;
 
   beforeAll(async () => {
@@ -38,7 +64,7 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
     const port = await bank.listen(0);
     endpoint = `http://127.0.0.1:${port}${SANDBOX_PATH}`;
 
-    client = new AgroprombankClient({
+    clientConfig = {
       enabled: true,
       endpoint,
       namespace: 'http://services.agroprombank.com',
@@ -52,7 +78,9 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
       timeoutMs: 10_000,
       isTest: true,
       missingSettings: () => [],
-    } as unknown as AgroprombankConfig);
+      missingFor: () => [],
+    };
+    client = new AgroprombankClient(clientConfig as unknown as AgroprombankConfig);
   });
 
   afterAll(async () => {
@@ -61,67 +89,95 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
 
   /** Binds a card the way the service does, returning the bank token. */
   async function bindCard(lastDigits = '0578'): Promise<string> {
-    const started = await client.invoke('NewTokenRequest', {
-      LastDigit: lastDigits,
-      Phone: '77712345',
-      deactivateold: 0,
-      description: 'Оплата заказов в takeAway',
-      institute: '0001',
-    });
+    const started = await client.invoke(
+      'NewTokenRequest',
+      {
+        LastDigit: lastDigits,
+        Phone: '77712345',
+        deactivateold: 0,
+        description: 'Оплата заказов в takeAway',
+        institute: '0001',
+      },
+      termOf(clientConfig),
+    );
     const requestId = text(started, 'requestid') as string;
     const otp = bank.otpFor(requestId) as string;
 
-    const confirmed = await client.invoke('ProcessTokenRequest', { requestid: requestId, code: otp });
+    const confirmed = await client.invoke(
+      'ProcessTokenRequest',
+      { requestid: requestId, code: otp },
+      termOf(clientConfig),
+    );
     return text(confirmed, 'token') as string;
   }
 
   it('binds a card through the two-step one-time-password flow', async () => {
-    const started = await client.invoke('NewTokenRequest', {
-      LastDigit: '0578',
-      Phone: '77712345',
-      deactivateold: 0,
-      description: 'Оплата заказов в takeAway',
-      institute: '0001',
-    });
+    const started = await client.invoke(
+      'NewTokenRequest',
+      {
+        LastDigit: '0578',
+        Phone: '77712345',
+        deactivateold: 0,
+        description: 'Оплата заказов в takeAway',
+        institute: '0001',
+      },
+      termOf(clientConfig),
+    );
     const requestId = text(started, 'requestid');
     expect(requestId).toMatch(/^\d{6}$/);
 
     const otp = bank.otpFor(requestId as string);
     expect(otp).toMatch(/^\d{6}$/);
 
-    const confirmed = await client.invoke('ProcessTokenRequest', { requestid: requestId, code: otp });
+    const confirmed = await client.invoke(
+      'ProcessTokenRequest',
+      { requestid: requestId, code: otp },
+      termOf(clientConfig),
+    );
     expect(text(confirmed, 'token')).toHaveLength(64);
   });
 
   it('rejects a wrong one-time password with the bank error code', async () => {
-    const started = await client.invoke('NewTokenRequest', {
-      LastDigit: '0578',
-      Phone: '77712345',
-      deactivateold: 0,
-      description: 'Оплата заказов в takeAway',
-      institute: '0001',
-    });
+    const started = await client.invoke(
+      'NewTokenRequest',
+      {
+        LastDigit: '0578',
+        Phone: '77712345',
+        deactivateold: 0,
+        description: 'Оплата заказов в takeAway',
+        institute: '0001',
+      },
+      termOf(clientConfig),
+    );
 
     await expect(
-      client.invoke('ProcessTokenRequest', { requestid: text(started, 'requestid'), code: '000000' }),
+      client.invoke(
+        'ProcessTokenRequest',
+        { requestid: text(started, 'requestid'), code: '000000' },
+        termOf(clientConfig),
+      ),
     ).rejects.toMatchObject({ code: 5, description: 'Неверный одноразовый пароль' });
   });
 
   it('surfaces a refused binding as a business error, not a transport error', async () => {
     await expect(
-      client.invoke('NewTokenRequest', {
-        LastDigit: UNKNOWN_CARD_DIGITS,
-        Phone: '77712345',
-        deactivateold: 0,
-        description: 'Оплата заказов в takeAway',
-        institute: '0001',
-      }),
+      client.invoke(
+        'NewTokenRequest',
+        {
+          LastDigit: UNKNOWN_CARD_DIGITS,
+          Phone: '77712345',
+          deactivateold: 0,
+          description: 'Оплата заказов в takeAway',
+          institute: '0001',
+        },
+        termOf(clientConfig),
+      ),
     ).rejects.toBeInstanceOf(AgroprombankError);
   });
 
   it('reads the masked card details back', async () => {
     const token = await bindCard('4704');
-    const checked = await client.invoke('CheckToken', { token });
+    const checked = await client.invoke('CheckToken', { token }, termOf(clientConfig));
 
     expect(text(checked, 'pan')).toBe('9104 **** **** 4704');
     expect(text(checked, 'embossing')).toBe('MA*** *******');
@@ -132,17 +188,21 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
     const token = await bindCard();
     const invoiceId = `${Date.now()}0001`;
 
-    const paid = await client.invoke('ProcessCardAutoPayment', {
-      invoiceid: invoiceId,
-      token,
-      amount: 3300,
-      tipamount: 0,
-      currencycode: '000',
-      istest: '1',
-      description: 'Оплата заказа №4242',
-      terminalid: 'E1016682',
-      preauth: 0,
-    });
+    const paid = await client.invoke(
+      'ProcessCardAutoPayment',
+      {
+        invoiceid: invoiceId,
+        token,
+        amount: 3300,
+        tipamount: 0,
+        currencycode: '000',
+        istest: '1',
+        description: 'Оплата заказа №4242',
+        terminalid: 'E1016682',
+        preauth: 0,
+      },
+      termOf(clientConfig),
+    );
 
     expect(num(paid, 'result')).toBe(1);
     expect(text(paid, 'operationid')).toMatch(/^\d+$/);
@@ -161,102 +221,138 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
   it('declines a charge the bank refuses', async () => {
     const token = await bindCard();
     await expect(
-      client.invoke('ProcessCardAutoPayment', {
-        invoiceid: `${Date.now()}0002`,
-        token,
-        amount: DECLINE_AMOUNT,
-        tipamount: 0,
-        currencycode: '000',
-        istest: '1',
-        description: 'Оплата заказа',
-        terminalid: 'E1016682',
-        preauth: 0,
-      }),
+      client.invoke(
+        'ProcessCardAutoPayment',
+        {
+          invoiceid: `${Date.now()}0002`,
+          token,
+          amount: DECLINE_AMOUNT,
+          tipamount: 0,
+          currencycode: '000',
+          istest: '1',
+          description: 'Оплата заказа',
+          terminalid: 'E1016682',
+          preauth: 0,
+        },
+        termOf(clientConfig),
+      ),
     ).rejects.toMatchObject({ code: 116, description: 'Недостаточно средств на карте' });
   });
 
   it('refunds part of a settled payment', async () => {
     const token = await bindCard();
     const invoiceId = `${Date.now()}0003`;
-    await client.invoke('ProcessCardAutoPayment', {
-      invoiceid: invoiceId,
-      token,
-      amount: 3300,
-      tipamount: 0,
-      currencycode: '000',
-      istest: '1',
-      description: 'Оплата заказа',
-      terminalid: 'E1016682',
-      preauth: 0,
-    });
-
-    const refunded = await client.invoke('RefundOperation', { invoiceid: invoiceId, amount: 3300, refundamount: 1000 });
-    expect(num(refunded, 'result')).toBe(1);
-    expect(bank.operations.get(invoiceId)?.refunded).toBe(1000);
-
-    // Over-refunding the remainder is refused by the bank, not by us.
-    await expect(
-      client.invoke('RefundOperation', { invoiceid: invoiceId, amount: 3300, refundamount: 2400 }),
-    ).rejects.toBeInstanceOf(AgroprombankError);
-  });
-
-  it('holds and then captures a preauthorized payment', async () => {
-    const token = await bindCard();
-    const invoiceId = `${Date.now()}0004`;
-    await client.invoke('ProcessCardAutoPayment', {
-      invoiceid: invoiceId,
-      token,
-      amount: 3300,
-      tipamount: 0,
-      currencycode: '000',
-      istest: '1',
-      description: 'Поездка',
-      terminalid: 'E1016682',
-      preauth: 1,
-    });
-    expect(bank.operations.get(invoiceId)?.state).toBe(1);
-
-    await client.invoke('CompletePreAuthorizaion', { invoiceid: invoiceId, amount: 3600, terminalid: 'E1016682' });
-    expect(bank.operations.get(invoiceId)?.state).toBe(5);
-    expect(bank.operations.get(invoiceId)?.amount).toBe(3600);
-  });
-
-  it('stops honouring a token after it is deactivated', async () => {
-    const token = await bindCard();
-    await client.invoke('DeactivateToken', { token });
-
-    expect(num(await client.invoke('CheckToken', { token }), 'cardstate')).toBe(-1);
-    await expect(
-      client.invoke('ProcessCardAutoPayment', {
-        invoiceid: `${Date.now()}0005`,
+    await client.invoke(
+      'ProcessCardAutoPayment',
+      {
+        invoiceid: invoiceId,
         token,
-        amount: 100,
+        amount: 3300,
         tipamount: 0,
         currencycode: '000',
         istest: '1',
         description: 'Оплата заказа',
         terminalid: 'E1016682',
         preauth: 0,
-      }),
+      },
+      termOf(clientConfig),
+    );
+
+    const refunded = await client.invoke(
+      'RefundOperation',
+      { invoiceid: invoiceId, amount: 3300, refundamount: 1000 },
+      termOf(clientConfig),
+    );
+    expect(num(refunded, 'result')).toBe(1);
+    expect(bank.operations.get(invoiceId)?.refunded).toBe(1000);
+
+    // Over-refunding the remainder is refused by the bank, not by us.
+    await expect(
+      client.invoke(
+        'RefundOperation',
+        { invoiceid: invoiceId, amount: 3300, refundamount: 2400 },
+        termOf(clientConfig),
+      ),
+    ).rejects.toBeInstanceOf(AgroprombankError);
+  });
+
+  it('holds and then captures a preauthorized payment', async () => {
+    const token = await bindCard();
+    const invoiceId = `${Date.now()}0004`;
+    await client.invoke(
+      'ProcessCardAutoPayment',
+      {
+        invoiceid: invoiceId,
+        token,
+        amount: 3300,
+        tipamount: 0,
+        currencycode: '000',
+        istest: '1',
+        description: 'Поездка',
+        terminalid: 'E1016682',
+        preauth: 1,
+      },
+      termOf(clientConfig),
+    );
+    expect(bank.operations.get(invoiceId)?.state).toBe(1);
+
+    await client.invoke(
+      'CompletePreAuthorizaion',
+      { invoiceid: invoiceId, amount: 3600, terminalid: 'E1016682' },
+      termOf(clientConfig),
+    );
+    expect(bank.operations.get(invoiceId)?.state).toBe(5);
+    expect(bank.operations.get(invoiceId)?.amount).toBe(3600);
+  });
+
+  it('stops honouring a token after it is deactivated', async () => {
+    const token = await bindCard();
+    await client.invoke('DeactivateToken', { token }, termOf(clientConfig));
+
+    expect(num(await client.invoke('CheckToken', { token }, termOf(clientConfig)), 'cardstate')).toBe(-1);
+    await expect(
+      client.invoke(
+        'ProcessCardAutoPayment',
+        {
+          invoiceid: `${Date.now()}0005`,
+          token,
+          amount: 100,
+          tipamount: 0,
+          currencycode: '000',
+          istest: '1',
+          description: 'Оплата заказа',
+          terminalid: 'E1016682',
+          preauth: 0,
+        },
+        termOf(clientConfig),
+      ),
     ).rejects.toMatchObject({ code: 12 });
   });
 
   it('reads an operation back from the bank register', async () => {
     const token = await bindCard();
     const invoiceId = `${Date.now()}0006`;
-    await client.invoke('ProcessCardAutoPayment', {
-      invoiceid: invoiceId,
-      token,
-      amount: 250,
-      tipamount: 50,
-      currencycode: '000',
-      istest: '1',
-      description: 'Оплата заказа',
-      terminalid: 'E1016682',
-      preauth: 0,
-    });
+    await client.invoke(
+      'ProcessCardAutoPayment',
+      {
+        invoiceid: invoiceId,
+        token,
+        amount: 250,
+        tipamount: 50,
+        currencycode: '000',
+        istest: '1',
+        description: 'Оплата заказа',
+        terminalid: 'E1016682',
+        preauth: 0,
+      },
+      termOf(clientConfig),
+    );
 
-    const fetched = await client.invoke('GetOperation', { terminalid: 'E1016682', invoiceid: invoiceId });
+    const fetched = await client.invoke(
+      'GetOperation',
+      { terminalid: 'E1016682', invoiceid: invoiceId },
+      termOf(clientConfig),
+    );
     const operation = fetched.children.find((n) => n.type === 'element' && n.name === 'operation');
     expect(operation).toBeDefined();
     if (operation?.type === 'element') {
@@ -274,7 +370,7 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
       bankPrivateKeyPem: impostor.privateKey,
     });
     const port = await wrongBank.listen(0);
-    const pinned = new AgroprombankClient({
+    const pinnedConfig = {
       enabled: true,
       endpoint: `http://127.0.0.1:${port}${SANDBOX_PATH}`,
       namespace: 'http://services.agroprombank.com',
@@ -289,17 +385,23 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
       timeoutMs: 10_000,
       isTest: true,
       missingSettings: () => [],
-    } as unknown as AgroprombankConfig);
+      missingFor: () => [],
+    };
+    const pinned = new AgroprombankClient(pinnedConfig as unknown as AgroprombankConfig);
 
     try {
       await expect(
-        pinned.invoke('NewTokenRequest', {
-          LastDigit: '0578',
-          Phone: '77712345',
-          deactivateold: 0,
-          description: 'Оплата заказов в takeAway',
-          institute: '0001',
-        }),
+        pinned.invoke(
+          'NewTokenRequest',
+          {
+            LastDigit: '0578',
+            Phone: '77712345',
+            deactivateold: 0,
+            description: 'Оплата заказов в takeAway',
+            institute: '0001',
+          },
+          termOf(pinnedConfig),
+        ),
       ).rejects.toBeInstanceOf(AgroprombankTransportError);
     } finally {
       await wrongBank.close();
@@ -308,7 +410,7 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
 
   it('refuses a request signed by a key the bank does not know', async () => {
     const impostor = keyPair();
-    const forged = new AgroprombankClient({
+    const forgedConfig = {
       enabled: true,
       endpoint,
       namespace: 'http://services.agroprombank.com',
@@ -322,9 +424,13 @@ describe('Agroprombank end-to-end (sandbox gateway)', () => {
       timeoutMs: 10_000,
       isTest: true,
       missingSettings: () => [],
-    } as unknown as AgroprombankConfig);
+      missingFor: () => [],
+    };
+    const forged = new AgroprombankClient(forgedConfig as unknown as AgroprombankConfig);
 
-    await expect(forged.invoke('CheckToken', { token: 'whatever' })).rejects.toBeInstanceOf(AgroprombankTransportError);
+    await expect(forged.invoke('CheckToken', { token: 'whatever' }, termOf(forgedConfig))).rejects.toBeInstanceOf(
+      AgroprombankTransportError,
+    );
   });
 });
 

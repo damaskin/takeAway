@@ -11,6 +11,8 @@ import type { AgroprombankConfig } from '../agroprombank/agroprombank.config';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
 import type { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankWebClient, AgroprombankWebError, AgroprombankWebTransportError } from './agroprombank-web.client';
+import { fakeTerminals } from '../terminals/testing/fake-terminals';
+import type { WebTerminal } from '../terminals/terminal-types';
 import type { AgroprombankWebConfig } from './agroprombank-web.config';
 import { AgroprombankWebService } from './agroprombank-web.service';
 import { WEB_STATE } from './constants';
@@ -93,6 +95,20 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
       isConfigured: true,
       cardPaymentFlow: 'web',
       missingSettings: () => [],
+      missingFor: () => [],
+      canCall: () => true,
+      defaultTerminal(this: Record<string, unknown>) {
+        return {
+          id: null,
+          brandId: null,
+          merchantLogin: this['merchantLogin'],
+          merchantId: this['merchantId'],
+          merchantPass: this['merchantPass'],
+          bankCertificatePem: this['bankCertificatePem'],
+          isTest: this['isTest'],
+          holdUntilAccepted: this['holdUntilAccepted'],
+        };
+      },
       returnBase: (target: string) =>
         ({ web: 'https://takeaway.md', tma: 'https://t.me/takaway_tgbot/app', mobile: 'takeaway://pay' })[target] ??
         null,
@@ -111,16 +127,22 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
     bank.refuseCancel = false;
   });
 
+  /** The default registration the calls go out with, as the config describes it. */
+  const webTerm = (): WebTerminal => config.defaultTerminal();
+
   let nextNivid = 1_100_000;
   async function openInvoice(sum = 3300, preauth = true): Promise<string> {
     const nivid = String((nextNivid += 1));
-    const page = client.paymentPage({
-      nivid,
-      sum,
-      currencyCode: '000',
-      description: `takeAway order ${nivid}`,
-      preauth,
-    });
+    const page = client.paymentPage(
+      {
+        nivid,
+        sum,
+        currencyCode: '000',
+        description: `takeAway order ${nivid}`,
+        preauth,
+      },
+      webTerm(),
+    );
     // A GET of the link, as the TMA and the mobile app open it.
     const response = await fetch(page.url);
     expect(response.status).toBe(200);
@@ -129,13 +151,16 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
 
   describe('client', () => {
     it('opens a signed payment page, by GET or by form POST', async () => {
-      const page = client.paymentPage({
-        nivid: '7000001',
-        sum: 1524,
-        currencyCode: '000',
-        description: 'takeAway order 1',
-        preauth: true,
-      });
+      const page = client.paymentPage(
+        {
+          nivid: '7000001',
+          sum: 1524,
+          currencyCode: '000',
+          description: 'takeAway order 1',
+          preauth: true,
+        },
+        webTerm(),
+      );
 
       const posted = await fetch(page.action, {
         method: 'POST',
@@ -148,13 +173,16 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
     });
 
     it('is turned away when the page request was tampered with', async () => {
-      const page = client.paymentPage({
-        nivid: '7000002',
-        sum: 1524,
-        currencyCode: '000',
-        description: 'x',
-        preauth: false,
-      });
+      const page = client.paymentPage(
+        {
+          nivid: '7000002',
+          sum: 1524,
+          currencyCode: '000',
+          description: 'x',
+          preauth: false,
+        },
+        webTerm(),
+      );
       const url = new URL(page.url);
       url.searchParams.set('RequestSum', '1');
       expect((await fetch(url)).status).toBe(400);
@@ -167,10 +195,10 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
 
       expect(new URL(back).searchParams.get('invoiceid')).toBe(nivid);
       expect(notifications).toHaveLength(1);
-      expect(client.verifyNotification(notifications[0] ?? {})).toBe(true);
-      expect(client.verifyNotification({ ...notifications[0], paymentsum: '1' })).toBe(false);
+      expect(client.verifyNotification(notifications[0] ?? {}, webTerm())).toBe(true);
+      expect(client.verifyNotification({ ...notifications[0], paymentsum: '1' }, webTerm())).toBe(false);
 
-      const state = await client.getState(nivid);
+      const state = await client.getState(nivid, webTerm());
       expect(state).toMatchObject({ state: WEB_STATE.PAID, sum: 3300, usePreauth: true, lastDigits: '0578' });
     });
 
@@ -178,29 +206,29 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
       const nivid = await openInvoice(3300, true);
       await bank.pay(nivid);
 
-      await client.complete(nivid, 3300);
-      await client.refund(nivid, 1000);
+      await client.complete(nivid, 3300, webTerm());
+      await client.refund(nivid, 1000, webTerm());
 
       expect(bank.invoices.get(nivid)).toMatchObject({ completed: true, refunded: 1000 });
-      await expect(client.refund(nivid, 5000)).rejects.toBeInstanceOf(AgroprombankWebError);
+      await expect(client.refund(nivid, 5000, webTerm())).rejects.toBeInstanceOf(AgroprombankWebError);
     });
 
     it('refuses to capture more than 110% of the hold', async () => {
       const nivid = await openInvoice(1000, true);
       await bank.pay(nivid);
-      await expect(client.complete(nivid, 1101)).rejects.toMatchObject({ code: 0 });
+      await expect(client.complete(nivid, 1101, webTerm())).rejects.toMatchObject({ code: 0 });
     });
 
     it('cancels a hold, and reports a cancel the bank refuses as a business error', async () => {
       const released = await openInvoice(2000, true);
       await bank.pay(released);
-      await client.cancel(released);
-      expect((await client.getState(released)).state).toBe(WEB_STATE.CANCELLED);
+      await client.cancel(released, webTerm());
+      expect((await client.getState(released, webTerm())).state).toBe(WEB_STATE.CANCELLED);
 
       const stuck = await openInvoice(2000, true);
       await bank.pay(stuck);
       bank.refuseCancel = true;
-      await expect(client.cancel(stuck)).rejects.toBeInstanceOf(AgroprombankWebError);
+      await expect(client.cancel(stuck, webTerm())).rejects.toBeInstanceOf(AgroprombankWebError);
     });
 
     it('signals a declined card with a fail notification', async () => {
@@ -209,12 +237,12 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
 
       expect(back).toContain('/fail');
       expect(notifications[0]).toMatchObject({ status: 'fail', invoiceid: nivid });
-      expect(client.verifyNotification(notifications[0] ?? {})).toBe(true);
-      expect((await client.getState(nivid)).state).toBe(WEB_STATE.ERROR);
+      expect(client.verifyNotification(notifications[0] ?? {}, webTerm())).toBe(true);
+      expect((await client.getState(nivid, webTerm())).state).toBe(WEB_STATE.ERROR);
     });
 
     it('treats an invoice the bank never saw as a business answer', async () => {
-      await expect(client.getState('404404')).rejects.toBeInstanceOf(AgroprombankWebError);
+      await expect(client.getState('404404', webTerm())).rejects.toBeInstanceOf(AgroprombankWebError);
     });
 
     it('refuses a response that is not signed by the bank', async () => {
@@ -223,13 +251,11 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
         publicKeyEncoding: { type: 'spki', format: 'pem' },
         privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
       });
-      const suspicious = new AgroprombankWebClient({
-        ...config,
-        bankCertificatePem: stranger.publicKey,
-      } as unknown as AgroprombankWebConfig);
       const nivid = await openInvoice(1500, false);
 
-      await expect(suspicious.getState(nivid)).rejects.toBeInstanceOf(AgroprombankWebTransportError);
+      await expect(
+        client.getState(nivid, { ...webTerm(), bankCertificatePem: stranger.publicKey }),
+      ).rejects.toBeInstanceOf(AgroprombankWebTransportError);
     });
   });
 
@@ -257,6 +283,7 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
         client,
         { canCallBank: false, currencies: [] } as unknown as AgroprombankQrConfig,
         {} as AgroprombankQrClient,
+        fakeTerminals({ web: config }),
       );
       service = new AgroprombankWebService(
         db.prisma as unknown as PrismaService,
@@ -264,6 +291,7 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
         client,
         settlement as unknown as OrderSettlementService,
         holds,
+        fakeTerminals({ web: config }),
       );
       onNotification = (params) => service.handleNotification(params);
     });
@@ -435,6 +463,7 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
         client,
         settlement as unknown as OrderSettlementService,
         holds,
+        fakeTerminals({ web: charging }),
       );
       onNotification = (params) => service.handleNotification(params);
       db.orders.set('order-6', {
@@ -510,6 +539,7 @@ function memoryDb() {
           tipCents: 0,
           refundedCents: 0,
           cardTokenId: null,
+          paymentTerminalId: null,
           createdAt: new Date(Date.now() + ids),
           updatedAt: new Date(),
           ...data,
@@ -533,7 +563,11 @@ function memoryDb() {
       },
     },
     order: {
-      findUnique: async ({ where }: { where: { id: string } }) => orders.get(where.id) ?? null,
+      // Every order here is brand-1's, which has no terminal of its own.
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        const order = orders.get(where.id);
+        return order ? { store: { brandId: 'brand-1' }, ...order } : null;
+      },
     },
     orderEvent: { create: async ({ data }: { data: unknown }) => events.push(data) },
     $queryRaw: async () => [{ value: BigInt((seq += 1)) }],

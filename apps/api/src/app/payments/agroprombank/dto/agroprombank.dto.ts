@@ -42,6 +42,16 @@ export class BindCardDto {
   @IsString()
   @MaxLength(60)
   label?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Store the customer is paying at: the card is bound at its brand’s own terminal (a token works only at ' +
+      'the merchant that issued it). Omitted — takeAway’s default terminal.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  storeId?: string;
 }
 
 export class ConfirmBindingDto {

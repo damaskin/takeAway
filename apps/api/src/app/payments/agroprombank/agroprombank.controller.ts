@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -54,8 +54,13 @@ export class AgroprombankController {
   @Get('cards')
   @ApiBearerAuth()
   @ApiOkResponse({ type: [BoundCardDto] })
-  listCards(@CurrentUser() user: AuthenticatedUser): Promise<BoundCardView[]> {
-    return this.agro.listCards(user.id);
+  @ApiQuery({
+    name: 'storeId',
+    required: false,
+    description: 'Only the cards that can pay at this store (bound at its brand’s terminal)',
+  })
+  listCards(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId?: string): Promise<BoundCardView[]> {
+    return this.agro.listCards(user.id, storeId || undefined);
   }
 
   /** Step 1 — the bank SMSes a one-time password to the customer. */

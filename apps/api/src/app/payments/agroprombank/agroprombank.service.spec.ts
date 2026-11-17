@@ -6,6 +6,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
+import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
+import { type FakeBrandTerminal, fakeTerminals } from '../terminals/testing/fake-terminals';
+import type { CardTerminal } from '../terminals/terminal-types';
 import { AgroprombankService } from './agroprombank.service';
 import { parseXml } from './xml';
 
@@ -19,6 +22,32 @@ const PAYMENT_OK = parseXml(
     '</root>',
 );
 
+/** takeAway's own terminal from env, as the config under test describes it. */
+/** A brand's own terminal (`PaymentTerminal` row `term-b`). */
+const BRAND_CARD: CardTerminal = {
+  id: 'term-b',
+  brandId: 'brand-1',
+  merchantId: 'M00099999',
+  terminalId: 'E2000001',
+  privateKeyPem: 'brand-key',
+  certificatePem: 'brand-cert',
+  bankCertificatePem: 'bank',
+  isTest: false,
+  holdUntilAccepted: false,
+};
+
+const DEFAULT_CARD: CardTerminal = {
+  id: null,
+  brandId: null,
+  merchantId: 'M00012345',
+  terminalId: 'E1016682',
+  privateKeyPem: 'key',
+  certificatePem: 'cert',
+  bankCertificatePem: 'bank',
+  isTest: false,
+  holdUntilAccepted: false,
+};
+
 describe('AgroprombankService', () => {
   let service: AgroprombankService;
   let client: { invoke: jest.Mock; invokeRaw: jest.Mock };
@@ -31,6 +60,7 @@ describe('AgroprombankService', () => {
 
   interface PrismaMock {
     order: { findUnique: jest.Mock };
+    store: { findUnique: jest.Mock };
     payment: {
       findFirst: jest.Mock;
       findUnique: jest.Mock;
@@ -61,6 +91,7 @@ describe('AgroprombankService', () => {
     status: 'CREATED',
     totalCents: 3300,
     currency: 'RUP',
+    store: { brandId: 'brand-1' },
   };
 
   const card = {
@@ -78,6 +109,7 @@ describe('AgroprombankService', () => {
     isDefault: true,
     createdAt: new Date('2026-08-01T00:00:00Z'),
     lastUsedAt: null,
+    paymentTerminalId: null as string | null,
   };
 
   const pendingPayment = {
@@ -92,11 +124,17 @@ describe('AgroprombankService', () => {
     currency: 'RUP',
     providerRef: null,
     rawJson: null,
+    paymentTerminalId: null as string | null,
   };
+
+  /** Brands with a terminal of their own, by brand id; reset before every test. */
+  let brandTerminals: Record<string, FakeBrandTerminal>;
+  let retiredTerminals: FakeBrandTerminal[];
 
   beforeEach(async () => {
     prisma = {
       order: { findUnique: jest.fn().mockResolvedValue(order) },
+      store: { findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-1' }) },
       payment: {
         // First lookup is for a settled payment, second for an in-flight one.
         findFirst: jest.fn(({ where }) => Promise.resolve(typeof where.status === 'string' ? null : null)),
@@ -145,7 +183,14 @@ describe('AgroprombankService', () => {
       // rest read as "charge the card now", which is the simpler story.
       holdUntilAccepted: false,
       chargeMoment: 'checkout',
+      missingFor: () => [],
+      canCall: () => true,
+      defaultTerminal: () => DEFAULT_CARD,
+      chargeMomentFor: (t: Pick<CardTerminal, 'holdUntilAccepted'>) =>
+        t === DEFAULT_CARD || !('id' in t) ? config.chargeMoment : t.holdUntilAccepted ? 'hold' : 'accept',
     };
+    brandTerminals = {};
+    retiredTerminals = [];
 
     const module = await Test.createTestingModule({
       providers: [
@@ -161,6 +206,11 @@ describe('AgroprombankService', () => {
           },
         },
         { provide: OrderSettlementService, useValue: settlement },
+        {
+          provide: PaymentTerminalsService,
+          useFactory: () =>
+            fakeTerminals({ card: config as unknown as AgroprombankConfig }, brandTerminals, retiredTerminals),
+        },
       ],
     }).compile();
 
@@ -195,6 +245,7 @@ describe('AgroprombankService', () => {
         2,
         'ProcessCardAutoPayment',
         expect.objectContaining({ invoiceid: '100042', token: 'E6B2C8', amount: 3300, preauth: 0 }),
+        DEFAULT_CARD,
       );
       expect(result.status).toBe('SUCCEEDED');
       // Staff heard about the order when it was placed; the capture must not page them again.
@@ -241,7 +292,7 @@ describe('AgroprombankService', () => {
 
       const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
 
-      expect(client.invoke).toHaveBeenNthCalledWith(1, 'CheckToken', { token: 'E6B2C8' });
+      expect(client.invoke).toHaveBeenNthCalledWith(1, 'CheckToken', { token: 'E6B2C8' }, DEFAULT_CARD);
       expect(client.invoke).toHaveBeenNthCalledWith(
         2,
         'ProcessCardAutoPayment',
@@ -255,6 +306,7 @@ describe('AgroprombankService', () => {
           preauth: 0,
           description: 'Оплата заказа №4242',
         }),
+        DEFAULT_CARD,
       );
       expect(settlement.settlePaidOrder).toHaveBeenCalledWith(
         order.id,
@@ -371,6 +423,7 @@ describe('AgroprombankService', () => {
         2,
         'ProcessCardAutoPayment',
         expect.objectContaining({ preauth: 1 }),
+        DEFAULT_CARD,
       );
       expect(result.status).toBe('REQUIRES_ACTION');
       expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
@@ -391,6 +444,7 @@ describe('AgroprombankService', () => {
         2,
         'ProcessCardAutoPayment',
         expect.objectContaining({ preauth: 1 }),
+        DEFAULT_CARD,
       );
       expect(result.status).toBe('REQUIRES_ACTION');
       expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
@@ -424,7 +478,7 @@ describe('AgroprombankService', () => {
       const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
 
       expect(client.invoke).toHaveBeenCalledTimes(1);
-      expect(client.invoke).toHaveBeenCalledWith('CheckToken', { token: 'E6B2C8' });
+      expect(client.invoke).toHaveBeenCalledWith('CheckToken', { token: 'E6B2C8' }, DEFAULT_CARD);
       expect(prisma.payment.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           status: 'REQUIRES_ACTION',
@@ -521,10 +575,149 @@ describe('AgroprombankService', () => {
         2,
         'ProcessCardAutoPayment',
         expect.objectContaining({ amount: 3300, tipamount: 150 }),
+        DEFAULT_CARD,
       );
       expect(prisma.payment.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tipCents: 150 }) }),
       );
+    });
+  });
+
+  describe('per-brand terminals', () => {
+    it('checks the card on the brand’s own terminal and records it on the charge', async () => {
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      prisma.cardToken.findUnique.mockResolvedValue({ ...card, paymentTerminalId: 'term-b' });
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK);
+
+      // No preauthorization on the brand's terminal: charged on accept.
+      await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(client.invoke).toHaveBeenCalledTimes(1);
+      expect(client.invoke).toHaveBeenCalledWith('CheckToken', { token: 'E6B2C8' }, BRAND_CARD);
+      expect(prisma.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ status: 'REQUIRES_ACTION', paymentTerminalId: 'term-b' }),
+      });
+    });
+
+    it('captures a charge put off until the accept on the terminal chosen at checkout', async () => {
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      prisma.payment.findUnique.mockResolvedValue({
+        ...pendingPayment,
+        id: 'pay-d',
+        status: 'REQUIRES_ACTION',
+        invoiceId: null,
+        cardTokenId: card.id,
+        paymentTerminalId: 'term-b',
+        rawJson: { deferred: true, requestedPreauth: false },
+      });
+      prisma.cardToken.findUnique.mockResolvedValue({ ...card, paymentTerminalId: 'term-b' });
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      await service.captureDeferred('pay-d');
+
+      expect(client.invoke).toHaveBeenNthCalledWith(
+        2,
+        'ProcessCardAutoPayment',
+        expect.objectContaining({ terminalid: 'E2000001', preauth: 0 }),
+        BRAND_CARD,
+      );
+    });
+
+    it('falls back to takeAway’s default terminal for a brand without one', async () => {
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(client.invoke).toHaveBeenNthCalledWith(
+        2,
+        'ProcessCardAutoPayment',
+        expect.objectContaining({ terminalid: 'E1016682' }),
+        DEFAULT_CARD,
+      );
+      expect(prisma.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ paymentTerminalId: null }),
+      });
+    });
+
+    it('refuses a card bound at another merchant before anything reaches the bank', async () => {
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      // Bound at takeAway's default terminal: the token is that merchant's.
+
+      const err = await service.charge('user-1', { orderId: order.id, cardId: card.id }).catch((e: unknown) => e);
+
+      expect((err as { getResponse(): unknown }).getResponse()).toMatchObject({
+        code: 'CARD_BOUND_TO_OTHER_MERCHANT',
+      });
+      expect(client.invoke).not.toHaveBeenCalled();
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('takes the charge moment from the brand’s terminal', async () => {
+      brandTerminals['brand-1'] = { card: { ...BRAND_CARD, holdUntilAccepted: true } };
+      prisma.cardToken.findUnique.mockResolvedValue({ ...card, paymentTerminalId: 'term-b' });
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(client.invoke).toHaveBeenNthCalledWith(
+        2,
+        'ProcessCardAutoPayment',
+        expect.objectContaining({ preauth: 1, terminalid: 'E2000001' }),
+        expect.objectContaining({ id: 'term-b' }),
+      );
+      expect(result.status).toBe('REQUIRES_ACTION');
+    });
+
+    it('refunds through the terminal that took the money, even after the brand replaced it', async () => {
+      const OLD = { ...BRAND_CARD, id: 'term-old', terminalId: 'E1999999' };
+      retiredTerminals.push({ card: OLD });
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      prisma.payment.findUnique.mockResolvedValue({
+        ...pendingPayment,
+        status: 'SUCCEEDED',
+        paymentTerminalId: 'term-old',
+      });
+      client.invoke.mockResolvedValueOnce(parseXml('<root><result>1</result></root>'));
+
+      await service.refund('pay-1', 1000);
+
+      expect(client.invoke).toHaveBeenCalledWith('RefundOperation', expect.anything(), OLD);
+    });
+
+    it('refunds a payment taken before brand terminals existed on the default terminal', async () => {
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      prisma.payment.findUnique.mockResolvedValue({ ...pendingPayment, status: 'SUCCEEDED' });
+      client.invoke.mockResolvedValueOnce(parseXml('<root><result>1</result></root>'));
+
+      await service.refund('pay-1', 1000);
+
+      expect(client.invoke).toHaveBeenCalledWith('RefundOperation', expect.anything(), DEFAULT_CARD);
+    });
+
+    it('lists only the cards that can pay at a store when one is given', async () => {
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      prisma.cardToken.findMany.mockResolvedValue([
+        { ...card, id: 'card-default' },
+        { ...card, id: 'card-brand', paymentTerminalId: 'term-b' },
+      ]);
+
+      const atStore = await service.listCards('user-1', 'store-1');
+      const all = await service.listCards('user-1');
+
+      expect(atStore.map((c) => c.id)).toEqual(['card-brand']);
+      expect(all.map((c) => c.id)).toEqual(['card-default', 'card-brand']);
+    });
+
+    it('binds a card at the terminal of the store’s brand', async () => {
+      brandTerminals['brand-1'] = { card: BRAND_CARD };
+      client.invoke.mockResolvedValueOnce(parseXml('<root><result>1</result><requestid>777</requestid></root>'));
+
+      await service.startBinding('user-1', { lastDigits: '1234', phone: '77712345', institute: '0001', storeId: 's1' });
+
+      expect(client.invoke).toHaveBeenCalledWith('NewTokenRequest', expect.anything(), BRAND_CARD);
+      expect(prisma.cardBindingRequest.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ paymentTerminalId: 'term-b', bankRequestId: '777' }),
+      });
     });
   });
 
@@ -548,10 +741,15 @@ describe('AgroprombankService', () => {
 
       const result = await service.confirmBinding('user-1', 'bind-1', '047805');
 
-      expect(client.invoke).toHaveBeenNthCalledWith(1, 'ProcessTokenRequest', {
-        requestid: '123456',
-        code: '047805',
-      });
+      expect(client.invoke).toHaveBeenNthCalledWith(
+        1,
+        'ProcessTokenRequest',
+        {
+          requestid: '123456',
+          code: '047805',
+        },
+        DEFAULT_CARD,
+      );
       // The token is a bearer credential — it must never hit the DB in clear.
       expect(prisma.cardToken.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ create: expect.objectContaining({ tokenCipher: 'cipher:E6B2C8' }) }),
@@ -631,11 +829,15 @@ describe('AgroprombankService', () => {
 
       await service.refund('pay-1', 3300);
 
-      expect(client.invoke).toHaveBeenCalledWith('RefundOperation', {
-        invoiceid: pendingPayment.invoiceId,
-        amount: 3300,
-        refundamount: 3300,
-      });
+      expect(client.invoke).toHaveBeenCalledWith(
+        'RefundOperation',
+        {
+          invoiceid: pendingPayment.invoiceId,
+          amount: 3300,
+          refundamount: 3300,
+        },
+        DEFAULT_CARD,
+      );
       expect(prisma.payment.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'REFUNDED', refundedCents: 3300 }) }),
       );
@@ -649,11 +851,15 @@ describe('AgroprombankService', () => {
 
       await service.completePreauthorization('pay-1', 3630);
 
-      expect(client.invoke).toHaveBeenCalledWith('CompletePreAuthorizaion', {
-        invoiceid: pendingPayment.invoiceId,
-        amount: 3630,
-        terminalid: 'E1016682',
-      });
+      expect(client.invoke).toHaveBeenCalledWith(
+        'CompletePreAuthorizaion',
+        {
+          invoiceid: pendingPayment.invoiceId,
+          amount: 3630,
+          terminalid: 'E1016682',
+        },
+        DEFAULT_CARD,
+      );
       expect(settlement.settlePaidOrder).toHaveBeenCalled();
     });
 
@@ -671,10 +877,14 @@ describe('AgroprombankService', () => {
 
       const result = await service.reconcilePayment(pendingPayment as never);
 
-      expect(client.invoke).toHaveBeenCalledWith('CheckOperation', {
-        invoiceid: pendingPayment.invoiceId,
-        amount: 3300,
-      });
+      expect(client.invoke).toHaveBeenCalledWith(
+        'CheckOperation',
+        {
+          invoiceid: pendingPayment.invoiceId,
+          amount: 3300,
+        },
+        DEFAULT_CARD,
+      );
       expect(result.status).toBe('SUCCEEDED');
       expect(settlement.settlePaidOrder).toHaveBeenCalled();
     });

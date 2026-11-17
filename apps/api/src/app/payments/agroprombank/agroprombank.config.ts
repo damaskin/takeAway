@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'node:fs';
 
+import type { CardTerminal } from '../terminals/terminal-types';
 import { DEFAULT_ENDPOINT, DEFAULT_NAMESPACE } from './constants';
 
 // Re-exported so existing imports keep working; the definitions live in a
@@ -119,8 +120,17 @@ export class AgroprombankConfig {
    *   `AGROPROMBANK_CHARGE_AT_CHECKOUT=true`.
    */
   get chargeMoment(): 'hold' | 'accept' | 'checkout' {
+    return this.chargeMomentFor(this.defaultTerminal());
+  }
+
+  /**
+   * {@link chargeMoment} for one terminal: a brand's terminal says itself
+   * whether it allows preauthorization (`PaymentTerminal.holdUntilAccepted`);
+   * `AGROPROMBANK_CHARGE_AT_CHECKOUT` still wins for every terminal.
+   */
+  chargeMomentFor(terminal: Pick<CardTerminal, 'holdUntilAccepted'>): 'hold' | 'accept' | 'checkout' {
     if (this.bool('AGROPROMBANK_CHARGE_AT_CHECKOUT')) return 'checkout';
-    return this.holdUntilAccepted ? 'hold' : 'accept';
+    return terminal.holdUntilAccepted ? 'hold' : 'accept';
   }
 
   /** `istest` flag echoed into payment requests. The bank ignores it for now. */
@@ -150,21 +160,54 @@ export class AgroprombankConfig {
     return this.config.get<string>('AGROPROMBANK_INVOICE_PREFIX')?.trim() ?? '';
   }
 
-  /** True when every mandatory setting for live calls is present. */
+  /** takeAway's own terminal, from env — what a brand without its own terminal pays through. */
+  defaultTerminal(): CardTerminal {
+    return {
+      id: null,
+      brandId: null,
+      merchantId: this.merchantId,
+      terminalId: this.terminalId,
+      privateKeyPem: this.privateKeyPem,
+      certificatePem: this.certificatePem,
+      bankCertificatePem: this.bankCertificatePem,
+      isTest: this.isTest,
+      holdUntilAccepted: this.holdUntilAccepted,
+    };
+  }
+
+  /** True when every mandatory setting for live calls is present (default terminal). */
   get isConfigured(): boolean {
     return Boolean(this.enabled && this.merchantId && this.terminalId && this.privateKeyPem);
   }
 
+  /** Switched on, and the terminal has everything a live call needs. */
+  canCall(terminal: CardTerminal): boolean {
+    return this.enabled && this.missingFor(terminal).length === 0;
+  }
+
   /** Human-readable list of what is still missing — surfaced in health/logs. */
   missingSettings(): string[] {
+    return this.missingFor(this.defaultTerminal());
+  }
+
+  /**
+   * What one terminal still lacks for a live call. The default terminal is
+   * reported by env var; a brand's by the field the platform admin fills in.
+   */
+  missingFor(terminal: CardTerminal): string[] {
+    const env = terminal.id === null;
     const missing: string[] = [];
-    if (!this.merchantId) missing.push('AGROPROMBANK_MERCHANT_ID');
-    if (!this.terminalId) missing.push('AGROPROMBANK_TERMINAL_ID');
-    if (!this.privateKeyPem) missing.push('AGROPROMBANK_PRIVATE_KEY (or _FILE)');
-    if (this.includeKeyInfo && !this.certificatePem) {
-      missing.push('AGROPROMBANK_CERTIFICATE (or _FILE), or AGROPROMBANK_INCLUDE_KEYINFO=false');
+    if (!terminal.merchantId) missing.push(env ? 'AGROPROMBANK_MERCHANT_ID' : 'card merchant id');
+    if (!terminal.terminalId) missing.push(env ? 'AGROPROMBANK_TERMINAL_ID' : 'card terminal id');
+    if (!terminal.privateKeyPem) missing.push(env ? 'AGROPROMBANK_PRIVATE_KEY (or _FILE)' : 'card private key');
+    if (this.includeKeyInfo && !terminal.certificatePem) {
+      missing.push(
+        env
+          ? 'AGROPROMBANK_CERTIFICATE (or _FILE), or AGROPROMBANK_INCLUDE_KEYINFO=false'
+          : 'card merchant certificate',
+      );
     }
-    if (this.verifyResponses && !this.bankCertificatePem) {
+    if (this.verifyResponses && !terminal.bankCertificatePem) {
       missing.push('AGROPROMBANK_BANK_CERTIFICATE (or _FILE), or AGROPROMBANK_VERIFY_RESPONSES=false');
     }
     if (!/^\d*$/.test(this.invoicePrefix)) {

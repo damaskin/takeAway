@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'node:fs';
 
+import type { WebTerminal } from '../terminals/terminal-types';
 import {
   type CardPaymentFlow,
   DEFAULT_WEB_NAMESPACE,
@@ -142,15 +143,41 @@ export class AgroprombankWebConfig {
     }
   }
 
+  /** takeAway's own registration, from env — what a brand without its own pays through. */
+  defaultTerminal(): WebTerminal {
+    return {
+      id: null,
+      brandId: null,
+      merchantLogin: this.merchantLogin,
+      merchantId: this.merchantId,
+      merchantPass: this.merchantPass,
+      bankCertificatePem: this.bankCertificatePem,
+      isTest: this.isTest,
+      holdUntilAccepted: this.holdUntilAccepted,
+    };
+  }
+
   get isConfigured(): boolean {
-    return this.enabled && this.missingSettings().length === 0;
+    return this.canCall(this.defaultTerminal());
+  }
+
+  canCall(terminal: WebTerminal): boolean {
+    return this.enabled && this.missingFor(terminal).length === 0;
   }
 
   missingSettings(): string[] {
+    return this.missingFor(this.defaultTerminal());
+  }
+
+  /** What one registration still lacks; the default one by env var, a brand's by field. */
+  missingFor(terminal: WebTerminal): string[] {
+    const env = terminal.id === null;
     const missing: string[] = [];
-    if (!this.merchantLogin) missing.push('AGROPROMBANK_WEB_MERCHANT_LOGIN');
-    if (!this.merchantPass) missing.push('AGROPROMBANK_WEB_MERCHANT_PASS (or _FILE)');
-    if (this.verifyResponses && !this.bankCertificatePem) {
+    if (!terminal.merchantLogin) missing.push(env ? 'AGROPROMBANK_WEB_MERCHANT_LOGIN' : 'Web-платёж merchant login');
+    if (!terminal.merchantPass) {
+      missing.push(env ? 'AGROPROMBANK_WEB_MERCHANT_PASS (or _FILE)' : 'Web-платёж merchant pass');
+    }
+    if (this.verifyResponses && !terminal.bankCertificatePem) {
       missing.push('AGROPROMBANK_WEB_BANK_CERT_FILE, or AGROPROMBANK_WEB_VERIFY_RESPONSES=false');
     }
     if (!/^\d*$/.test(this.invoicePrefix)) {

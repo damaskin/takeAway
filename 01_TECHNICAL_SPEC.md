@@ -678,8 +678,16 @@ OrderEvent (id, orderId, type[STATUS_CHANGED|GEOFENCE_NEAR|GEOFENCE_HERE|RIDER_A
             actorId?, payload?, createdAt)
 Payment (id, orderId, provider[STRIPE|TELEGRAM_PAY|...], providerRef?,
          status[PENDING|REQUIRES_ACTION|PAID|FAILED|REFUNDED], amountCents, refundedCents,
-         currency, rawJson?)
+         currency, paymentTerminalId?, rawJson?)  // paymentTerminalId — терминал бренда, принявший деньги; null — терминал takeAway по умолчанию (env)
+PaymentTerminal (id, brandId, cardMerchantId?, cardTerminalId?, cardPrivateKeyCipher?, cardCertificatePem?,
+                 cardBankCertificatePem?, webMerchantLogin?, webMerchantId?, webMerchantPassCipher?,
+                 webBankCertificatePem?, qrTerminalId?, qrLogin?, qrPasswordCipher?, qrExternalTokenCipher?,
+                 holdUntilAccepted, isTest, note?, retiredAt?, createdById?, updatedById?)
+// свой терминал Агропромбанка у бренда; *Cipher — AES-256-GCM (SecretCipher, POS_CREDENTIALS_KEY), наружу не отдаются
+CardToken.paymentTerminalId?, CardBindingRequest.paymentTerminalId?  // через какой терминал привязана карта (токен — мерчанта)
 ```
+
+**Терминалы брендов (миграция `20261117120000_brand_payment_terminals`, 2026-11-17).** Каждый бренд принимает оплату картой и по QR на свой терминал Агропромбанка, деньги гостя идут на счёт бренда. `PaymentTerminal` — разделы по схемам (привязанные карты, Web-платёж, QR); раздел, которого у бренда нет, и бренд без терминала платят через терминал takeAway по умолчанию из env — так работают стейджинг и сегодняшний прод. Новая оплата берёт терминал бренда заказа (`Order → Store.brandId`) и записывает его в `Payment.paymentTerminalId`; всё дальнейшее по этой оплате — списание при принятии, статус, снятие брони, возврат, сверка, колбэки — идёт через записанный терминал, даже если бренд его уже сменил. Терминал, через который уже шли оплаты или привязаны карты, не перезаписывается: смена идентификатора раздела (merchant/terminal id, логин Web-платежа, QR-терминал) и «Убрать терминал» ставят ему `retiredAt` и заводят новую строку; неиспользованный удаляется. Токен карты принадлежит мерчанту: карту, привязанную на терминале takeAway, нельзя списать на терминале бренда (`409 CARD_BOUND_TO_OTHER_MERCHANT`); `POST /payments/agroprombank/cards/bind` и `GET …/cards` принимают `storeId` — привязать на терминале бренда точки и показать только подходящие карты. API: `GET|PUT|DELETE /admin/brands/:brandId/payment-terminal`, `POST …/check` («Проверить подключение» — запрос статуса несуществующего счёта, ничего не списывает) — SUPER_ADMIN; `GET …/status` (`connected` и источник по каждой схеме) — роли бренда. Подробно — `docs/agroprombank-payments.md`, раздел 13.
 
 **Миграции 2026-11-09.** `20261109100000_order_cancel_money` — `Order.cancelMoney`; старые отменённые и истёкшие заказы заполнены по событиям возврата и платежам (что не удалось определить — null). `20261109110000_queue_policy` — поля очереди заказов: `Store.loadExtraSeconds`, `Product.prepParallel`, `Order.placedUnderLoad`, `OrderItem.prepSeconds` / `prepParallel`; без бэкфилла — строки заказов, сделанных с выключенным флагом, очередь читает через товар. Подробно — `docs/queue-policy.md`, 2.1.
 

@@ -19,6 +19,11 @@ A third, «Мобильный платёж» — an invoice paid by QR in the ba
 is offered next to either; see
 [section 12](#12-мобильный-платёж-paying-by-qr-in-the-banks-app).
 
+Every brand takes these payments on **its own terminal**, entered by the
+platform team in the brand's card; the `AGROPROMBANK_*` env describes
+takeAway's default terminal, used by a brand that has none. See
+[section 13](#13-every-brand-on-its-own-terminal).
+
 ---
 
 ## 1. What the bank gives you
@@ -384,6 +389,7 @@ so the order is still paid, but the incident is logged for ops to chase.
 | `CardToken`          | one bound card. `tokenCipher` is AES-256-GCM (same key as POS credentials, `POS_CREDENTIALS_KEY`); `tokenFingerprint` is a SHA-256 of the plaintext used for lookup and uniqueness. |
 | `CardBindingRequest` | one binding attempt: bank request id, attempts, expiry.                                                                                                                             |
 | `Payment`            | gains `invoiceId`, `tipCents` and `cardTokenId`.                                                                                                                                    |
+| `PaymentTerminal`    | a brand's own terminal, one section per flow, secrets encrypted; `Payment`, `CardToken` and `CardBindingRequest` gain `paymentTerminalId` (section 13).                             |
 
 `PaymentProvider` gains `AGROPROMBANK`; `Currency` gains `RUP`.
 
@@ -976,3 +982,120 @@ path too.
       one left to expire; log lines checked for the amount unit and states.
 - [ ] Production with `AGROPROMBANK_QR_ENABLED=true`: one low-value live order
       paid, accepted; a second one rejected to see `ReversePayment` work.
+
+## 13. Every brand on its own terminal
+
+Decided 2026-11-14 (the guest pays the brand) and 2026-11-17 (Maxim: every
+new brand gives takeAway its own bank terminal to attach; the acquiring fee is
+between the brand and its bank). The money for a brand's orders lands on the
+brand's account, without takeAway in between; settlements net the commission
+against takeAway's compensations (`docs/settlements.md`).
+
+### 13.1 What the bank issues per brand
+
+The brand signs its own acquiring contract with ЗАО «Агропромбанк» and passes
+takeAway, for each flow it wants:
+
+| Flow                          | From the bank                                                                                       | From the brand / us                                                                                                      |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Bound cards (sections 1–10)   | merchant id, terminal id, the merchant certificate for our key; whether the terminal allows preauth | a key pair generated for the brand (section 2); the CSR goes to the bank, the private key into the admin, never by email |
+| Web-платёж (section 11)       | MerchantLogin, MerchantPass (MerchantId if not the login); ResultURL registered                     | —                                                                                                                        |
+| Мобильный платёж (section 12) | QR terminal (`QRT` + 15 digits), login and password for remote operations or an ExternalToken       | the callback URL registered for that terminal                                                                            |
+
+The bank's own certificate (to verify its answers) is normally the same for
+every merchant: leave it empty and the env one is used. Only fill it in if the
+bank says it signs this merchant's answers with another certificate.
+
+### 13.2 What the platform admin enters
+
+Admin → «Бренды» → the brand's card → «Платёжный терминал» (SUPER_ADMIN only):
+
+- **Привязанные карты** — Merchant ID, Terminal ID, private key (PEM,
+  unencrypted), merchant certificate (PEM; needed while
+  `AGROPROMBANK_INCLUDE_KEYINFO` is on, as in production), bank certificate
+  (optional).
+- **Web-платёж** — MerchantLogin, MerchantId (optional), MerchantPass, bank
+  certificate (optional).
+- **Мобильный платёж (QR)** — QR terminal, login and password, or an
+  ExternalToken.
+- **Общее** — «Терминал поддерживает преавторизацию» (hold at checkout,
+  capture on accept; off — bound cards are charged on accept and Web-платёж
+  at checkout, like takeAway's own terminal today), the bank's test mode, a
+  note.
+
+A section is all or nothing: saving half of one is refused with the list of
+what is missing (`PAYMENT_TERMINAL_INCOMPLETE`). Secrets are write-only: the
+API stores them AES-256-GCM-encrypted under `POS_CREDENTIALS_KEY` (the same
+`SecretCipher` as POS credentials and card tokens) and answers only «задан ·
+…1234»; an empty field keeps what is stored. Certificates are read back as
+subject and expiry.
+
+«Проверить подключение» sends, per section, one read-only status lookup of an
+invoice that does not exist — `GetOperation`, `GetState`,
+`GetPaymentStateExtId`. Nothing is created, held or moved. «подключено» or
+«банк ответил: …» with the bank's «not found» means the bank accepted our
+credentials; «нет подключения» — network, signature or missing settings, with
+the reason.
+
+The brand's own roles see in «Настройки» only whether their terminal is
+connected (`GET /admin/brands/:brandId/payment-terminal/status`).
+
+### 13.3 Routing and fallback
+
+- A **new payment** — a bound-card charge, a Web-платёж page, a QR invoice —
+  uses the terminal of the order's brand (`Order → Store.brandId`) for that
+  flow, and records it on `Payment.paymentTerminalId`. A brand without a
+  terminal, or without the section for this flow, uses takeAway's default
+  terminal from env, recorded as `null`. The admin card shows each flow as
+  «терминал бренда» or «терминал takeAway по умолчанию».
+- **Everything after** — capture on accept, a deferred charge, a hold
+  released on cancel, a refund or reversal from the admin, the reconciliation
+  cron, a Web-платёж notification (verified with that registration's
+  MerchantPass), a QR callback (checked against that QR terminal) — goes
+  through the terminal recorded on the payment, whatever the brand uses now.
+- A terminal row is **never rewritten under payments**: changing what
+  identifies a section (merchant/terminal id, Web-платёж login, QR terminal)
+  on a terminal that took payments or bound cards retires it (`retiredAt`)
+  and starts a new one; «Убрать терминал» retires a used one and deletes an
+  unused one. Rotating a key or a password is done in place — it serves the
+  terminal's old payments too.
+- **Card tokens belong to a merchant.** `CardToken.paymentTerminalId` records
+  where a card was bound. A card bound at takeAway's terminal cannot pay a
+  brand with its own, and the other way round: the charge is refused with
+  `409 CARD_BOUND_TO_OTHER_MERCHANT` before anything reaches the bank.
+  `POST /payments/agroprombank/cards/bind` and `GET /payments/agroprombank/cards`
+  take an optional `storeId`: bind at that store's brand terminal, list only
+  the cards that can pay there. Clients that send no `storeId` keep binding
+  at the default terminal.
+- Switches, endpoints, namespaces, time-outs, response verification and the
+  invoice prefix stay in env for every terminal; invoice ids come from the one
+  `agroprombank_invoice_seq`, so they never collide between terminals.
+- Whether a flow is offered to customers at all is still decided by env
+  (`CARD_PAYMENT_FLOW`, `AGROPROMBANK_QR_ENABLED` and the default terminal
+  being configured).
+
+Code: `apps/api/src/app/payments/terminals` (`PaymentTerminalsService` picks
+the terminal, `PaymentTerminalsAdminService` stores it); the bank clients take
+the terminal as an argument on every call. Migration
+`20261117120000_brand_payment_terminals`.
+
+### 13.4 Connecting a brand
+
+- [ ] The brand has its contract and the bank's data (13.1).
+- [ ] For bound cards: generate the brand's key pair and CSR (section 2), get
+      the certificate back.
+- [ ] Enter the sections in the brand's card, «Сохранить», «Проверить
+      подключение».
+- [ ] On staging first if the bank gives test credentials for the brand.
+- [ ] One low-value live order per flow, accepted; one refunded from
+      «Заказы» — the money goes back from the brand's terminal.
+- [ ] Customers who bound a card before the brand had a terminal bind it
+      again for the brand (the token is takeAway's merchant's).
+
+> **Bound cards need the clients first.** The site, the mini app and the
+> store app bind cards from the profile and do not send `storeId` yet, so
+> every card they bind is takeAway's merchant's. Until they bind for the
+> store the customer is paying at, give a brand the «Привязанные карты»
+> section only while `CARD_PAYMENT_FLOW` is not `token` — otherwise its
+> customers' cards are refused (`CARD_BOUND_TO_OTHER_MERCHANT`) with no way
+> to bind one for it. Web-платёж and QR have no such catch: nothing is bound.

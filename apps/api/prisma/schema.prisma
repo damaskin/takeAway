@@ -450,19 +450,21 @@ model User {
   // referredByUserId points at the user whose code unlocked this account's
   // first-order bonus. Locked at the moment the apply endpoint fires; we
   // never overwrite it.
-  referralCode        String?            @unique
-  referredByUserId    String?
-  referredBy          User?              @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
-  referees            User[]             @relation("ReferredBy")
-  referralsAsReferrer Referral[]         @relation("ReferralsAsReferrer")
-  referralsAsReferee  Referral[]         @relation("ReferralsAsReferee")
-  campaignDeliveries  CampaignDelivery[]
-  feedback            Feedback[]
+  referralCode            String?            @unique
+  referredByUserId        String?
+  referredBy              User?              @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referees                User[]             @relation("ReferredBy")
+  referralsAsReferrer     Referral[]         @relation("ReferralsAsReferrer")
+  referralsAsReferee      Referral[]         @relation("ReferralsAsReferee")
+  campaignDeliveries      CampaignDelivery[]
+  feedback                Feedback[]
   /// Reviews of their own orders. Account deletion keeps them: the row
   /// they point at is the anonymised tombstone.
-  orderReviews        OrderReview[]
-  campaignsCreated    Campaign[]         @relation("CampaignCreatedBy")
-  campaignsReviewed   Campaign[]         @relation("CampaignReviewedBy")
+  orderReviews            OrderReview[]
+  campaignsCreated        Campaign[]         @relation("CampaignCreatedBy")
+  campaignsReviewed       Campaign[]         @relation("CampaignReviewedBy")
+  paymentTerminalsCreated PaymentTerminal[]  @relation("PaymentTerminalCreatedBy")
+  paymentTerminalsUpdated PaymentTerminal[]  @relation("PaymentTerminalUpdatedBy")
 
   // «Уведомления»: brand campaigns and platform announcements the customer received.
   inboxNotifications     CustomerNotification[]
@@ -664,23 +666,25 @@ model Brand {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
-  owner           User?                 @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  stores          Store[]
-  categories      Category[]
-  products        Product[]
-  ingredients     Ingredient[]
-  optionSettings  BrandOptionSetting[]
-  promos          Promo[]
-  posIntegrations PosIntegration[]
-  giftCards       GiftCard[]
-  campaigns       Campaign[]
-  feedback        Feedback[]
+  owner            User?                 @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  stores           Store[]
+  categories       Category[]
+  products         Product[]
+  ingredients      Ingredient[]
+  optionSettings   BrandOptionSetting[]
+  promos           Promo[]
+  posIntegrations  PosIntegration[]
+  giftCards        GiftCard[]
+  campaigns        Campaign[]
+  feedback         Feedback[]
   /// Customers' reviews of its orders — read by the platform team only.
-  orderReviews    OrderReview[]
-  commissionRates BrandCommissionRate[]
-  payouts         BrandPayout[]
-  kitchenDevices  KitchenDevice[]
-  kdsPinUsers     User[]                @relation("KdsPinBrand")
+  orderReviews     OrderReview[]
+  commissionRates  BrandCommissionRate[]
+  payouts          BrandPayout[]
+  kitchenDevices   KitchenDevice[]
+  kdsPinUsers      User[]                @relation("KdsPinBrand")
+  /// Its own Agroprombank registrations; at most one not retired.
+  paymentTerminals PaymentTerminal[]
 
   /// Inbox items of its push campaigns — the brand is their sender.
   inboxNotifications CustomerNotification[]
@@ -750,16 +754,16 @@ enum SettlementDirection {
 /// a refund that lands after a settlement is carried into the next one. The
 /// model keeps its old name. See docs/settlements.md.
 model BrandPayout {
-  id                String       @id @default(cuid())
-  brandId           String
-  currency          Currency
+  id                      String              @id @default(cuid())
+  brandId                 String
+  currency                Currency
   /// First and last local day the payout settles, both included, in `timeZone`.
-  periodFrom        DateTime     @db.Date
-  periodTo          DateTime     @db.Date
-  timeZone          String
+  periodFrom              DateTime            @db.Date
+  periodTo                DateTime            @db.Date
+  timeZone                String
   /// The instant `periodTo` ends at (local midnight after it). Balances are
   /// matched on it: the payout settles everything settled before it.
-  periodEnd         DateTime
+  periodEnd               DateTime
   /// Who pays.
   direction               SettlementDirection
   /// What the payer pays, never negative.
@@ -1930,33 +1934,39 @@ model OrderReview {
 }
 
 model Payment {
-  id            String          @id @default(cuid())
-  orderId       String
-  provider      PaymentProvider @default(STRIPE)
-  providerRef   String? // Stripe PaymentIntent id, Agroprombank operationid, etc.
-  status        PaymentStatus   @default(PENDING)
-  amountCents   Int
+  id                String          @id @default(cuid())
+  orderId           String
+  provider          PaymentProvider @default(STRIPE)
+  providerRef       String? // Stripe PaymentIntent id, Agroprombank operationid, etc.
+  status            PaymentStatus   @default(PENDING)
+  amountCents       Int
   /// Tip routed to a recipient token alongside the payment (Agroprombank).
-  tipCents      Int             @default(0)
-  refundedCents Int             @default(0)
-  currency      Currency
+  tipCents          Int             @default(0)
+  refundedCents     Int             @default(0)
+  currency          Currency
   /// Merchant-side operation identifier sent to Agroprombank as `invoiceid`.
   /// Every later call (reverse, refund, status) addresses the operation by
   /// this value, and the bank requires it to stay unique forever.
-  invoiceId     String?         @unique
+  invoiceId         String?         @unique
   /// Card the charge was made against, for tokenized providers.
-  cardTokenId   String?
-  rawJson       Json?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  cardTokenId       String?
+  /// The brand's own terminal that took the money; null — takeAway's default
+  /// terminal from the API's env. Every later bank call for this payment
+  /// (capture, status, cancel, refund) goes through the same terminal.
+  paymentTerminalId String?
+  rawJson           Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  cardToken CardToken? @relation(fields: [cardTokenId], references: [id], onDelete: SetNull)
+  order           Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cardToken       CardToken?       @relation(fields: [cardTokenId], references: [id], onDelete: SetNull)
+  paymentTerminal PaymentTerminal? @relation(fields: [paymentTerminalId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@index([providerRef])
   @@index([cardTokenId])
   @@index([provider, status])
+  @@index([paymentTerminalId])
 }
 
 /// A card the customer bound to the merchant, stored as an opaque provider
@@ -1967,33 +1977,93 @@ model Payment {
 /// key as the POS credentials. `tokenFingerprint` is a SHA-256 of the
 /// plaintext so we can look a token up and enforce uniqueness without
 /// decrypting every row.
-model CardToken {
-  id               String          @id @default(cuid())
-  userId           String
-  provider         PaymentProvider @default(AGROPROMBANK)
-  tokenCipher      String
-  tokenFingerprint String
-  /// Masked PAN as the bank returns it, e.g. `9104 **** **** 1234`.
-  maskedPan        String?
-  /// Masked cardholder embossing, e.g. `MA*** *******`.
-  embossing        String?
-  /// Issuer code the customer picked when binding (see CARD_INSTITUTES).
-  institute        String?
-  /// Customer-visible label; defaults to the masked PAN.
-  label            String?
-  status           CardTokenStatus @default(ACTIVE)
-  /// Last `cardstate` the bank reported: 1 active, -1 inactive.
-  cardState        Int?
-  isDefault        Boolean         @default(false)
-  lastCheckedAt    DateTime?
-  lastUsedAt       DateTime?
-  deactivatedAt    DateTime?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+/// A brand's own Agroprombank («Клевер») registration: the guest's money for
+/// its orders lands on the brand's account (docs/settlements.md §9.2,
+/// docs/agroprombank-payments.md §13). One section per flow — bound cards,
+/// the Web-платёж page, the QR terminal; a section left empty falls back to
+/// takeAway's default terminal from the API's env for that flow.
+///
+/// Secrets (`*Cipher`) are AES-256-GCM ciphertext under `POS_CREDENTIALS_KEY`
+/// (SecretCipher) and never leave the API. Rows are never deleted: removing
+/// or re-identifying a terminal retires it (`retiredAt`), and the old row
+/// keeps serving the payments it took — refunds go back the way the money came.
+model PaymentTerminal {
+  id                     String    @id @default(cuid())
+  brandId                String
+  /// Bound cards («Рекуррентные платежи»): merchant and terminal ids,
+  /// the merchant's private key, its certificate (public) and, when the
+  /// bank signs with a certificate of its own for this merchant, that one.
+  cardMerchantId         String?
+  cardTerminalId         String?
+  cardPrivateKeyCipher   String?
+  cardCertificatePem     String?
+  cardBankCertificatePem String?
+  /// Web-платёж: MerchantLogin, MerchantId (defaults to the login),
+  /// MerchantPass, and the bank certificate for its web service.
+  webMerchantLogin       String?
+  webMerchantId          String?
+  webMerchantPassCipher  String?
+  webBankCertificatePem  String?
+  /// Мобильный платёж: the QR terminal (`QRT` + 15 digits) and the login and
+  /// password for remote operations, or an ExternalToken instead.
+  qrTerminalId           String?
+  qrLogin                String?
+  qrPasswordCipher       String?
+  qrExternalTokenCipher  String?
+  /// The terminal allows preauthorization: a card is held at checkout and
+  /// captured on accept. Off — charged on accept (bound cards) or at checkout
+  /// (Web-платёж), as with takeAway's own terminal today.
+  holdUntilAccepted      Boolean   @default(false)
+  /// `istest` / `IsTest` on card requests — the bank's test mode.
+  isTest                 Boolean   @default(false)
+  note                   String?
+  retiredAt              DateTime?
+  createdById            String?
+  updatedById            String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  payments Payment[]
-  bindings CardBindingRequest[]
+  brand        Brand                @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdBy    User?                @relation("PaymentTerminalCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy    User?                @relation("PaymentTerminalUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  payments     Payment[]
+  cardTokens   CardToken[]
+  cardBindings CardBindingRequest[]
+
+  @@index([brandId, retiredAt])
+}
+
+model CardToken {
+  id                String          @id @default(cuid())
+  userId            String
+  provider          PaymentProvider @default(AGROPROMBANK)
+  tokenCipher       String
+  tokenFingerprint  String
+  /// Masked PAN as the bank returns it, e.g. `9104 **** **** 1234`.
+  maskedPan         String?
+  /// Masked cardholder embossing, e.g. `MA*** *******`.
+  embossing         String?
+  /// Issuer code the customer picked when binding (see CARD_INSTITUTES).
+  institute         String?
+  /// Customer-visible label; defaults to the masked PAN.
+  label             String?
+  status            CardTokenStatus @default(ACTIVE)
+  /// Last `cardstate` the bank reported: 1 active, -1 inactive.
+  cardState         Int?
+  isDefault         Boolean         @default(false)
+  /// The terminal the card was bound through — the token belongs to that
+  /// merchant (null: takeAway's default terminal from env).
+  paymentTerminalId String?
+  lastCheckedAt     DateTime?
+  lastUsedAt        DateTime?
+  deactivatedAt     DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+  bindings        CardBindingRequest[]
+  paymentTerminal PaymentTerminal?     @relation(fields: [paymentTerminalId], references: [id], onDelete: Restrict)
 
   // The bank derives the token from card + merchant, not from our user, so two
   // accounts sharing one physical card get the same token. Scoping uniqueness
@@ -2002,33 +2072,37 @@ model CardToken {
   @@unique([userId, tokenFingerprint])
   @@index([tokenFingerprint])
   @@index([userId, status])
+  @@index([paymentTerminalId])
 }
 
 /// One attempt at binding a card. Holds only what the bank needs to re-issue
 /// the one-time password; the customer's input is never persisted beyond the
 /// last four digits and the phone number the SMS went to.
 model CardBindingRequest {
-  id            String            @id @default(cuid())
-  userId        String
-  provider      PaymentProvider   @default(AGROPROMBANK)
+  id                String            @id @default(cuid())
+  userId            String
+  provider          PaymentProvider   @default(AGROPROMBANK)
   /// `requestid` returned by NewTokenRequest.
-  bankRequestId String
-  lastDigits    String
+  bankRequestId     String
+  lastDigits        String
   /// Mobile number for the one-time password, or the prepaid card id.
-  phone         String
-  institute     String
+  phone             String
+  institute         String
   /// Whether the bank was asked to drop the customer's previous tokens.
-  deactivateOld Boolean           @default(false)
-  status        CardBindingStatus @default(PENDING)
-  attempts      Int               @default(0)
-  failureReason String?
-  cardTokenId   String?
-  expiresAt     DateTime
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  deactivateOld     Boolean           @default(false)
+  /// The terminal the token is requested through (null: the default one).
+  paymentTerminalId String?
+  status            CardBindingStatus @default(PENDING)
+  attempts          Int               @default(0)
+  failureReason     String?
+  cardTokenId       String?
+  expiresAt         DateTime
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cardToken CardToken? @relation(fields: [cardTokenId], references: [id], onDelete: SetNull)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardToken       CardToken?       @relation(fields: [cardTokenId], references: [id], onDelete: SetNull)
+  paymentTerminal PaymentTerminal? @relation(fields: [paymentTerminalId], references: [id], onDelete: Restrict)
 
   @@unique([provider, bankRequestId])
   @@index([userId, status])

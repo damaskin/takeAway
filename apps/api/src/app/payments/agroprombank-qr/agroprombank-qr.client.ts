@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { type AxiosError } from 'axios';
 
+import { type QrTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankQrConfig } from './agroprombank-qr.config';
 import { QR_CURRENCY_CODE, type QrServiceFunction } from './constants';
 import {
@@ -63,8 +64,8 @@ export class AgroprombankQrClient {
    * `CreatePaymentID`: an invoice for `amountKopecks` in рубль ПМР under our
    * external id. Returns the bank's id of the payment.
    */
-  async createPaymentId(extid: string, amountKopecks: number): Promise<string> {
-    const result = await this.call('CreatePaymentID', (terminal) => [
+  async createPaymentId(extid: string, amountKopecks: number, qr: QrTerminal): Promise<string> {
+    const result = await this.call(qr, 'CreatePaymentID', (terminal) => [
       ['terminalid', terminal],
       ['amount', String(amountKopecks)],
       ['currencycode', QR_CURRENCY_CODE],
@@ -78,16 +79,16 @@ export class AgroprombankQrClient {
   }
 
   /** `ClosePaymentExtId`: the invoice is no longer offered. Returns nothing. */
-  async closePaymentExtId(extid: string): Promise<void> {
-    await this.call('ClosePaymentExtId', (terminal) => [
+  async closePaymentExtId(extid: string, qr: QrTerminal): Promise<void> {
+    await this.call(qr, 'ClosePaymentExtId', (terminal) => [
       ['terminalid', terminal],
       ['externalid', extid],
     ]);
   }
 
   /** `GetPaymentStateExtId`: the bank's record of our invoice, or `null` when it returns none. */
-  async getPaymentStateExtId(extid: string): Promise<QrPaymentRecord | null> {
-    const result = await this.call('GetPaymentStateExtId', (terminal) => [
+  async getPaymentStateExtId(extid: string, qr: QrTerminal): Promise<QrPaymentRecord | null> {
+    const result = await this.call(qr, 'GetPaymentStateExtId', (terminal) => [
       ['terminalid', terminal],
       ['externalid', extid],
     ]);
@@ -103,8 +104,8 @@ export class AgroprombankQrClient {
    * the bank's own names — `qrterminal`, `paymetid` (sic), `rrn`. Returns
    * nothing; a fault is a refusal.
    */
-  async reversePayment(qrPaymentId: string, rrn: string): Promise<void> {
-    await this.call('ReversePayment', (terminal) => [
+  async reversePayment(qrPaymentId: string, rrn: string, qr: QrTerminal): Promise<void> {
+    await this.call(qr, 'ReversePayment', (terminal) => [
       ['qrterminal', terminal],
       ['paymetid', qrPaymentId],
       ['rrn', rrn],
@@ -120,25 +121,26 @@ export class AgroprombankQrClient {
    * leaves (question 6). `null` when that read did not work; the reversal
    * itself went through either way.
    */
-  async reverseInvoice(extid: string, known: QrPaymentRefs): Promise<QrPaymentRecord | null> {
+  async reverseInvoice(extid: string, known: QrPaymentRefs, qr: QrTerminal): Promise<QrPaymentRecord | null> {
     let { qrPaymentId, rrn } = known;
     if (!qrPaymentId || !rrn) {
-      const record = await this.getPaymentStateExtId(extid);
+      const record = await this.getPaymentStateExtId(extid, qr);
       qrPaymentId = qrPaymentId ?? record?.qrPaymentId ?? null;
       rrn = rrn ?? record?.rrn ?? null;
     }
     if (!qrPaymentId || !rrn) {
       throw new AgroprombankQrError('ReversePayment', `the bank has no paid payment with an RRN for invoice ${extid}`);
     }
-    await this.reversePayment(qrPaymentId, rrn);
-    return this.getPaymentStateExtId(extid).catch(() => null);
+    await this.reversePayment(qrPaymentId, rrn, qr);
+    return this.getPaymentStateExtId(extid, qr).catch(() => null);
   }
 
   private async call(
+    qr: QrTerminal,
     fn: QrServiceFunction,
     args: (terminal: string) => Args,
   ): Promise<ReturnType<typeof readQrResponse>> {
-    const { terminal, credentials } = this.requireSettings();
+    const { terminal, credentials } = this.requireSettings(qr);
     let body: string;
     try {
       const response = await axios.post<string>(
@@ -172,17 +174,19 @@ export class AgroprombankQrClient {
     }
   }
 
-  private requireSettings(): { terminal: string; credentials: QrCredentials } {
-    const missing = this.config.missingSettings();
+  private requireSettings(qr: QrTerminal): { terminal: string; credentials: QrCredentials } {
+    const missing = this.config.missingFor(qr);
     if (missing.length > 0) {
-      throw new ServiceUnavailableException(`The QR payment is not configured: missing ${missing.join(', ')}`);
+      throw new ServiceUnavailableException(
+        `The QR payment is not configured for ${describeTerminal(qr)}: missing ${missing.join(', ')}`,
+      );
     }
     return {
-      terminal: this.config.terminalId as string,
+      terminal: qr.terminalId as string,
       credentials: {
-        login: this.config.login ?? '',
-        password: this.config.password ?? '',
-        externalToken: this.config.externalToken ?? '',
+        login: qr.login ?? '',
+        password: qr.password ?? '',
+        externalToken: qr.externalToken ?? '',
       },
     };
   }

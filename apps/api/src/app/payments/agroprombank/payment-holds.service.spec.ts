@@ -10,6 +10,7 @@ import type { AgroprombankWebClient } from '../agroprombank-web/agroprombank-web
 import type { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
 import { AgroprombankTransportError } from './agroprombank.client';
 import type { AgroprombankClient } from './agroprombank.client';
+import type { PaymentTerminalsService } from '../terminals/payment-terminals.service';
 import type { AgroprombankConfig } from './agroprombank.config';
 import { MAX_RELEASE_ATTEMPTS, PaymentHoldsService } from './payment-holds.service';
 
@@ -29,7 +30,11 @@ describe('PaymentHoldsService', () => {
     invoiceId: '1100042',
     amountCents: 3300,
     rawJson: raw,
+    paymentTerminalId: null as string | null,
   });
+
+  /** The terminal a stubbed lookup answers: the default one, or the brand row the payment names. */
+  const terminalFor = (flow: string) => async (id: string | null) => ({ flow, id, brandId: id ? 'brand-b' : null });
 
   function build(flow: 'token' | 'web' | 'none' = 'web', qrCurrencies: string[] = []) {
     const prisma = {
@@ -49,16 +54,22 @@ describe('PaymentHoldsService', () => {
     const client = { invoke: jest.fn().mockResolvedValue({}) };
     const webClient = { cancel: jest.fn().mockResolvedValue({ state: 2 }) };
     const qrClient = { reverseInvoice: jest.fn().mockResolvedValue({ state: 4, stateDescription: 'Возвращён' }) };
+    const terminals = {
+      cardFor: jest.fn(terminalFor('card')),
+      webFor: jest.fn(terminalFor('web')),
+      qrFor: jest.fn(terminalFor('qr')),
+    };
     const service = new PaymentHoldsService(
       prisma as unknown as PrismaService,
-      { isConfigured: true, enabled: true } as unknown as AgroprombankConfig,
+      { isConfigured: true, enabled: true, canCall: () => true } as unknown as AgroprombankConfig,
       client as unknown as AgroprombankClient,
-      { isConfigured: true, cardPaymentFlow: flow } as unknown as AgroprombankWebConfig,
+      { isConfigured: true, cardPaymentFlow: flow, canCall: () => true } as unknown as AgroprombankWebConfig,
       webClient as unknown as AgroprombankWebClient,
-      { canCallBank: true, currencies: qrCurrencies } as unknown as AgroprombankQrConfig,
+      { canCallBank: true, currencies: qrCurrencies, canCall: () => true } as unknown as AgroprombankQrConfig,
       qrClient as unknown as AgroprombankQrClient,
+      terminals as unknown as PaymentTerminalsService,
     );
-    return { service, prisma, client, webClient, qrClient };
+    return { service, prisma, client, webClient, qrClient, terminals };
   }
 
   it('releases a Web-платёж hold with CancelOperation', async () => {
@@ -67,7 +78,7 @@ describe('PaymentHoldsService', () => {
 
     const released = await service.releaseForOrder('order-1', 'order-cancelled');
 
-    expect(webClient.cancel).toHaveBeenCalledWith('1100042');
+    expect(webClient.cancel).toHaveBeenCalledWith('1100042', expect.objectContaining({ flow: 'web', id: null }));
     expect(client.invoke).not.toHaveBeenCalled();
     expect(released?.status).toBe('REFUNDED');
     expect(prisma.orderEvent.create).toHaveBeenCalledWith({
@@ -84,8 +95,38 @@ describe('PaymentHoldsService', () => {
 
     await service.releaseForOrder('order-1', 'order-cancelled');
 
-    expect(client.invoke).toHaveBeenCalledWith('ReverseOperation', { invoiceid: '1100042', amount: 3300 });
+    expect(client.invoke).toHaveBeenCalledWith(
+      'ReverseOperation',
+      { invoiceid: '1100042', amount: 3300 },
+      expect.objectContaining({ flow: 'card', id: null }),
+    );
     expect(webClient.cancel).not.toHaveBeenCalled();
+  });
+
+  it('releases on the terminal that took the money, the brand’s own one included', async () => {
+    const { service, prisma, client, webClient, qrClient, terminals } = build();
+    for (const provider of ['AGROPROMBANK', 'AGROPROMBANK_WEB', 'AGROPROMBANK_QR'] as const) {
+      prisma.payment.findFirst.mockResolvedValueOnce({
+        ...hold(provider, { qrPaymentId: '1', rrn: '2' }),
+        paymentTerminalId: 'term-b',
+      });
+      await service.releaseForOrder('order-1', 'order-cancelled');
+    }
+
+    expect(terminals.cardFor).toHaveBeenCalledWith('term-b');
+    expect(terminals.webFor).toHaveBeenCalledWith('term-b');
+    expect(terminals.qrFor).toHaveBeenCalledWith('term-b');
+    expect(client.invoke).toHaveBeenCalledWith(
+      'ReverseOperation',
+      expect.anything(),
+      expect.objectContaining({ id: 'term-b' }),
+    );
+    expect(webClient.cancel).toHaveBeenCalledWith('1100042', expect.objectContaining({ id: 'term-b' }));
+    expect(qrClient.reverseInvoice).toHaveBeenCalledWith(
+      '1100042',
+      expect.anything(),
+      expect.objectContaining({ id: 'term-b' }),
+    );
   });
 
   /** A charge that was waiting for the accept never reached the bank — there is nothing to give back. */
@@ -185,7 +226,11 @@ describe('PaymentHoldsService', () => {
 
     const released = await service.releaseForOrder('order-1', 'order-cancelled-by-store');
 
-    expect(qrClient.reverseInvoice).toHaveBeenCalledWith('1100042', { qrPaymentId: '5229848', rrn: '000602981706' });
+    expect(qrClient.reverseInvoice).toHaveBeenCalledWith(
+      '1100042',
+      { qrPaymentId: '5229848', rrn: '000602981706' },
+      expect.objectContaining({ flow: 'qr', id: null }),
+    );
     expect(client.invoke).not.toHaveBeenCalled();
     expect(webClient.cancel).not.toHaveBeenCalled();
     expect(released?.status).toBe('REFUNDED');

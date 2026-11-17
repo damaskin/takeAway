@@ -15,6 +15,8 @@ import { withFreshInvoiceId } from '../agroprombank/invoice-ids';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
 import { CARD_PROVIDERS } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
+import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
+import { type WebTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankWebClient, AgroprombankWebError, AgroprombankWebTransportError } from './agroprombank-web.client';
 import { AgroprombankWebConfig } from './agroprombank-web.config';
 import { type ReturnTarget, WEB_STATE } from './constants';
@@ -86,6 +88,7 @@ export class AgroprombankWebService {
     private readonly client: AgroprombankWebClient,
     private readonly settlement: OrderSettlementService,
     private readonly holds: PaymentHoldsService,
+    private readonly terminals: PaymentTerminalsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -109,7 +112,10 @@ export class AgroprombankWebService {
   ): Promise<StartWebPaymentResult> {
     this.assertEnabled();
 
-    const order = await this.prisma.order.findUnique({ where: { id: input.orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: input.orderId },
+      include: { store: { select: { brandId: true } } },
+    });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
 
     const settled = await this.findActive(order.id);
@@ -142,11 +148,15 @@ export class AgroprombankWebService {
     const currencyCode = BANK_CURRENCY_CODES[order.currency];
     if (!currencyCode) throw new BadRequestException(`Agroprombank does not settle in ${order.currency}`);
 
-    const preauth = this.config.holdUntilAccepted;
+    // The brand's own registration takes the money; without one, takeAway's.
+    const terminal = await this.terminals.webForBrand(order.store.brandId);
+    this.assertCanCall(terminal);
+    const preauth = terminal.holdUntilAccepted;
     const expiresAt = new Date(Date.now() + this.config.lifetimeMinutes * 60_000);
     const payment = await this.createPendingPayment(order.id, {
       amountCents: order.totalCents,
       currency: order.currency,
+      paymentTerminalId: terminal.id,
       raw: {
         requestedPreauth: preauth,
         returnTo: input.returnTo,
@@ -155,13 +165,16 @@ export class AgroprombankWebService {
       },
     });
 
-    const page = this.client.paymentPage({
-      nivid: payment.invoiceId,
-      sum: order.totalCents,
-      currencyCode,
-      description: paymentDescription(order.orderCode),
-      preauth,
-    });
+    const page = this.client.paymentPage(
+      {
+        nivid: payment.invoiceId,
+        sum: order.totalCents,
+        currencyCode,
+        description: paymentDescription(order.orderCode),
+        preauth,
+      },
+      terminal,
+    );
     this.logger.log(
       `Opened Web-платёж invoice=${payment.invoiceId} for order=${order.id} (${preauth ? 'hold' : 'charge'})`,
     );
@@ -189,12 +202,15 @@ export class AgroprombankWebService {
       this.logger.warn('Web-платёж notification without invoiceid ignored');
       return false;
     }
-    if (!this.client.verifyNotification(params)) {
+    // Signed with the MerchantPass of the registration the invoice was
+    // issued on — the brand's own or takeAway's — so the invoice is looked
+    // up first. An unknown invoice is checked against the default one.
+    const payment = await this.findByInvoice(invoiceId);
+    const terminal = await this.terminals.webFor(payment?.paymentTerminalId ?? null);
+    if (!this.client.verifyNotification(params, terminal)) {
       this.logger.error(`Web-платёж notification for invoice=${invoiceId} failed the signature check`);
       return false;
     }
-
-    const payment = await this.findByInvoice(invoiceId);
     if (!payment) {
       this.logger.warn(`Web-платёж notification for unknown invoice=${invoiceId}`);
       return true;
@@ -261,8 +277,8 @@ export class AgroprombankWebService {
    * customer agreed to the figure they saw at checkout.
    */
   async complete(paymentId: string, amountCents: number): Promise<WebPaymentView> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
+    const terminal = await this.terminalOf(payment);
     if (payment.status !== 'REQUIRES_ACTION') {
       throw new BadRequestException('Only a held payment can be captured');
     }
@@ -272,7 +288,7 @@ export class AgroprombankWebService {
     }
 
     try {
-      await this.client.complete(payment.invoiceId, amountCents);
+      await this.client.complete(payment.invoiceId, amountCents, terminal);
     } catch (err) {
       throw this.toHttpException(err);
     }
@@ -308,14 +324,14 @@ export class AgroprombankWebService {
    * the day it was made. Irreversible.
    */
   async cancel(paymentId: string, audit: { actorId?: string; reason?: string } = {}): Promise<WebPaymentView> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
+    const terminal = await this.terminalOf(payment);
     if (payment.status === 'REFUNDED') throw new ConflictException('This payment has already been given back');
     if (payment.status !== 'REQUIRES_ACTION' && payment.status !== 'SUCCEEDED') {
       throw new BadRequestException(`Cannot cancel a payment in status ${payment.status}`);
     }
     try {
-      await this.client.cancel(payment.invoiceId);
+      await this.client.cancel(payment.invoiceId, terminal);
     } catch (err) {
       throw this.toHttpException(err);
     }
@@ -338,8 +354,9 @@ export class AgroprombankWebService {
     refundCents: number,
     audit: { actorId?: string; reason?: string | null; note?: string | null; source?: string } = {},
   ): Promise<WebPaymentView> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
+    // Back through the registration that took the money, whatever the brand uses now.
+    const terminal = await this.terminalOf(payment);
     if (payment.status !== 'SUCCEEDED' && payment.status !== 'PARTIALLY_REFUNDED') {
       throw new BadRequestException(`Cannot refund a payment in status ${payment.status}`);
     }
@@ -356,15 +373,15 @@ export class AgroprombankWebService {
     try {
       if (fullAndSameDay) {
         try {
-          await this.client.cancel(payment.invoiceId);
+          await this.client.cancel(payment.invoiceId, terminal);
           kind = 'cancellation';
         } catch (err) {
           if (!(err instanceof AgroprombankWebError)) throw err;
           this.logger.warn(`CancelOperation refused for invoice=${payment.invoiceId}, refunding: ${err.description}`);
-          await this.client.refund(payment.invoiceId, refundCents);
+          await this.client.refund(payment.invoiceId, refundCents, terminal);
         }
       } else {
-        await this.client.refund(payment.invoiceId, refundCents);
+        await this.client.refund(payment.invoiceId, refundCents, terminal);
       }
     } catch (err) {
       throw this.toHttpException(err);
@@ -381,10 +398,10 @@ export class AgroprombankWebService {
 
   /** The bank's own record of the operation — support and disputes. */
   async describe(paymentId: string): Promise<OperationState> {
-    this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
+    const terminal = await this.terminalOf(payment);
     try {
-      return await this.client.getState(payment.invoiceId);
+      return await this.client.getState(payment.invoiceId, terminal);
     } catch (err) {
       throw this.toHttpException(err);
     }
@@ -400,7 +417,8 @@ export class AgroprombankWebService {
    * and given up once the page has stopped taking the invoice.
    */
   async reconcilePendingPayments(olderThanMs = 2 * 60_000, limit = 50): Promise<{ checked: number; settled: number }> {
-    if (!this.config.isConfigured) return { checked: 0, settled: 0 };
+    // Each invoice is asked about through its own registration.
+    if (!this.config.enabled) return { checked: 0, settled: 0 };
     const pending = await this.prisma.payment.findMany({
       where: {
         provider: 'AGROPROMBANK_WEB',
@@ -431,9 +449,10 @@ export class AgroprombankWebService {
    */
   async reconcilePayment(payment: Payment): Promise<Payment> {
     if (!payment.invoiceId) return payment;
+    const terminal = await this.terminalOf(payment);
     let state: OperationState | null;
     try {
-      state = await this.client.getState(payment.invoiceId);
+      state = await this.client.getState(payment.invoiceId, terminal);
     } catch (err) {
       if (!(err instanceof AgroprombankWebError)) throw err;
       state = null;
@@ -555,7 +574,7 @@ export class AgroprombankWebService {
       return (await this.holds.release(flagged, 'unusable-payment')) ?? flagged;
     }
     try {
-      await this.client.cancel(payment.invoiceId as string);
+      await this.client.cancel(payment.invoiceId as string, await this.terminalOf(payment));
     } catch (err) {
       this.logger.error(
         `REFUND NEEDED: invoice=${payment.invoiceId} order=${payment.orderId} was charged (${why}) ` +
@@ -632,7 +651,12 @@ export class AgroprombankWebService {
   /** Same numbering as every other flow — see {@link withFreshInvoiceId}. */
   private createPendingPayment(
     orderId: string,
-    data: { amountCents: number; currency: Payment['currency']; raw: Record<string, Prisma.InputJsonValue> },
+    data: {
+      amountCents: number;
+      currency: Payment['currency'];
+      paymentTerminalId: string | null;
+      raw: Record<string, Prisma.InputJsonValue>;
+    },
   ): Promise<Payment & { invoiceId: string }> {
     return withFreshInvoiceId(this.prisma, this.config.invoicePrefix, async (invoiceId) => {
       const payment = await this.prisma.payment.create({
@@ -643,6 +667,7 @@ export class AgroprombankWebService {
           invoiceId,
           amountCents: data.amountCents,
           currency: data.currency,
+          paymentTerminalId: data.paymentTerminalId,
           rawJson: data.raw,
         },
       });
@@ -714,10 +739,23 @@ export class AgroprombankWebService {
     if (!this.config.enabled) {
       throw new ServiceUnavailableException('Web-платёж is disabled on this deployment');
     }
-    const missing = this.config.missingSettings();
+  }
+
+  private assertCanCall(terminal: WebTerminal): void {
+    this.assertEnabled();
+    const missing = this.config.missingFor(terminal);
     if (missing.length > 0) {
-      throw new ServiceUnavailableException(`Web-платёж is not configured: missing ${missing.join(', ')}`);
+      throw new ServiceUnavailableException(
+        `Web-платёж is not configured for ${describeTerminal(terminal)}: missing ${missing.join(', ')}`,
+      );
     }
+  }
+
+  /** The registration a payment was issued on — every later call for it uses the same one. */
+  private async terminalOf(payment: Payment): Promise<WebTerminal> {
+    const terminal = await this.terminals.webFor(payment.paymentTerminalId);
+    this.assertCanCall(terminal);
+    return terminal;
   }
 
   private toHttpException(err: unknown): Error {

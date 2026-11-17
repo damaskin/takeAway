@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'node:fs';
 
+import type { QrTerminal } from '../terminals/terminal-types';
 import {
   DEFAULT_QR_CODE_FORMAT,
   DEFAULT_QR_NAMESPACE,
@@ -108,16 +109,45 @@ export class AgroprombankQrConfig {
    * orders.
    */
   get canCallBank(): boolean {
-    return this.missingSettings().length === 0;
+    return this.canCall(this.defaultTerminal());
+  }
+
+  /** {@link canCallBank} for one terminal, switched on or not. */
+  canCall(terminal: QrTerminal): boolean {
+    return this.missingFor(terminal).length === 0;
+  }
+
+  /** takeAway's own QR terminal, from env — what a brand without its own takes QR payments on. */
+  defaultTerminal(): QrTerminal {
+    return {
+      id: null,
+      brandId: null,
+      terminalId: this.terminalId,
+      login: this.login,
+      password: this.password,
+      externalToken: this.externalToken,
+    };
   }
 
   missingSettings(): string[] {
+    return this.missingFor(this.defaultTerminal());
+  }
+
+  /** What one QR terminal still lacks; the default one by env var, a brand's by field. */
+  missingFor(t: QrTerminal): string[] {
+    const env = t.id === null;
     const missing: string[] = [];
-    const terminal = this.terminalId;
-    if (!terminal) missing.push('AGROPROMBANK_QR_TERMINAL_ID');
-    else if (!QR_TERMINAL_PATTERN.test(terminal)) missing.push('AGROPROMBANK_QR_TERMINAL_ID as QRT and 15 digits');
-    if (!this.externalToken && !(this.login && this.password)) {
-      missing.push('AGROPROMBANK_QR_LOGIN and AGROPROMBANK_QR_PASSWORD (or _FILE), or AGROPROMBANK_QR_EXTERNAL_TOKEN');
+    const terminal = t.terminalId;
+    if (!terminal) missing.push(env ? 'AGROPROMBANK_QR_TERMINAL_ID' : 'QR terminal id');
+    else if (!QR_TERMINAL_PATTERN.test(terminal)) {
+      missing.push(env ? 'AGROPROMBANK_QR_TERMINAL_ID as QRT and 15 digits' : 'QR terminal id as QRT and 15 digits');
+    }
+    if (!t.externalToken && !(t.login && t.password)) {
+      missing.push(
+        env
+          ? 'AGROPROMBANK_QR_LOGIN and AGROPROMBANK_QR_PASSWORD (or _FILE), or AGROPROMBANK_QR_EXTERNAL_TOKEN'
+          : 'QR login and password, or ExternalToken',
+      );
     }
     if (!/^\d*$/.test(this.invoicePrefix)) {
       missing.push('AGROPROMBANK_INVOICE_PREFIX of digits only');

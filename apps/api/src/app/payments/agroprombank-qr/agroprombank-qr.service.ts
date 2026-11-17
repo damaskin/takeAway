@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Order, Payment, Prisma } from '@prisma/client';
 import type {
@@ -20,6 +21,8 @@ import { withFreshInvoiceId } from '../agroprombank/invoice-ids';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
 import { CARD_PROVIDERS } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
+import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
+import { type QrTerminal, describeTerminal } from '../terminals/terminal-types';
 import {
   AgroprombankQrClient,
   AgroprombankQrError,
@@ -89,6 +92,7 @@ export class AgroprombankQrService {
     private readonly client: AgroprombankQrClient,
     private readonly settlement: OrderSettlementService,
     private readonly holds: PaymentHoldsService,
+    private readonly terminals: PaymentTerminalsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -103,10 +107,16 @@ export class AgroprombankQrService {
    * its last second is not lost, before a new one is issued.
    */
   async startPayment(userId: string, orderId: string): Promise<AgroprombankQrPaymentDto> {
-    this.assertOffered();
+    this.assertSwitchedOn();
 
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { store: { select: { brandId: true } } },
+    });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
+    // The brand's own QR terminal takes the money; without one, takeAway's.
+    const terminal = await this.terminals.qrForBrand(order.store.brandId);
+    this.assertOffered(terminal);
     if (order.currency !== QR_CURRENCY) {
       throw qrError(409, 'QR_CURRENCY_UNSUPPORTED', `The QR payment takes ${QR_CURRENCY} only`);
     }
@@ -133,7 +143,7 @@ export class AgroprombankQrService {
     }
     if (order.totalCents <= 0) throw qrError(409, 'ORDER_NOT_PAYABLE', 'Nothing to pay for this order');
 
-    return this.toDto(await this.issueInvoice(order));
+    return this.toDto(await this.issueInvoice(order, terminal));
   }
 
   /**
@@ -143,7 +153,7 @@ export class AgroprombankQrService {
    */
   async getPayment(userId: string, paymentId: string): Promise<AgroprombankQrPaymentDto> {
     const payment = await this.requireOwnPayment(userId, paymentId);
-    if (payment.status !== 'PENDING' || !this.config.canCallBank || !this.dueForCheck(payment.id)) {
+    if (payment.status !== 'PENDING' || !this.dueForCheck(payment.id)) {
       return this.toDto(payment);
     }
     try {
@@ -189,24 +199,25 @@ export class AgroprombankQrService {
       this.logger.warn('QR callback named no payment');
       return;
     }
-    if (!this.config.canCallBank) {
-      this.logger.warn('QR callback arrived, but the QR payment is not configured — ignored');
-      return;
-    }
-
     for (const record of records) {
       const extid = record.externalId;
       if (!extid) {
         this.logger.warn(`QR callback for bank payment ${record.qrPaymentId ?? '?'} without an external id`);
         continue;
       }
-      if (record.terminalId && record.terminalId !== this.config.terminalId) {
-        this.logger.warn(`QR callback for extid=${extid} on terminal ${record.terminalId}, not ours — ignored`);
-        continue;
-      }
       const payment = await this.prisma.payment.findUnique({ where: { invoiceId: extid } });
       if (!payment || payment.provider !== 'AGROPROMBANK_QR') {
         this.logger.warn(`QR callback for unknown extid=${extid}`);
+        continue;
+      }
+      // The invoice was issued on one terminal — the brand's or takeAway's.
+      const terminal = await this.terminals.qrFor(payment.paymentTerminalId).catch(() => null);
+      if (!terminal || !this.config.canCall(terminal)) {
+        this.logger.warn(`QR callback for extid=${extid}, but its terminal is not configured — ignored`);
+        continue;
+      }
+      if (record.terminalId && record.terminalId !== terminal.terminalId) {
+        this.logger.warn(`QR callback for extid=${extid} on terminal ${record.terminalId}, not its own — ignored`);
         continue;
       }
       // FAILED too: an invoice we closed may still have been paid in the bank's app.
@@ -313,7 +324,7 @@ export class AgroprombankQrService {
   async describe(paymentId: string): Promise<QrPaymentRecord | null> {
     const payment = await this.requirePayment(paymentId);
     try {
-      return await this.client.getPaymentStateExtId(payment.invoiceId);
+      return await this.client.getPaymentStateExtId(payment.invoiceId, await this.terminalOf(payment));
     } catch (err) {
       throw toHttpException(err);
     }
@@ -329,7 +340,8 @@ export class AgroprombankQrService {
    * a grace) — or at once when their order can no longer be paid.
    */
   async reconcilePendingPayments(olderThanMs = 60_000, limit = 50): Promise<{ checked: number; settled: number }> {
-    if (!this.config.canCallBank) return { checked: 0, settled: 0 };
+    // Each invoice is asked about on its own terminal; one that cannot be
+    // called is logged and left for the next pass.
     const pending = await this.prisma.payment.findMany({
       where: {
         provider: 'AGROPROMBANK_QR',
@@ -392,8 +404,8 @@ export class AgroprombankQrService {
   // Internals
   // ───────────────────────────────────────────────────────────────────────────
 
-  private async issueInvoice(order: Order): Promise<Payment> {
-    const terminal = this.config.terminalId as string;
+  private async issueInvoice(order: Order, qr: QrTerminal): Promise<Payment> {
+    const terminal = qr.terminalId as string;
     const expiresAt = new Date(Date.now() + this.config.lifetimeMinutes * 60_000);
     const payment = await withFreshInvoiceId(this.prisma, this.config.invoicePrefix, (extid) =>
       this.prisma.payment.create({
@@ -404,6 +416,7 @@ export class AgroprombankQrService {
           invoiceId: extid,
           amountCents: order.totalCents,
           currency: order.currency,
+          paymentTerminalId: qr.id,
           rawJson: {
             terminalId: terminal,
             currencyCode: QR_CURRENCY_CODE,
@@ -417,7 +430,7 @@ export class AgroprombankQrService {
 
     let bankId: string;
     try {
-      bankId = await this.client.createPaymentId(extid, order.totalCents);
+      bankId = await this.client.createPaymentId(extid, order.totalCents, qr);
     } catch (err) {
       if (err instanceof AgroprombankQrError) {
         this.logger.warn(`CreatePaymentID refused extid=${extid} for order=${order.id}: ${err.description}`);
@@ -445,7 +458,7 @@ export class AgroprombankQrService {
   private async closeInvoice(payment: Payment, reason: string): Promise<Payment> {
     const extid = payment.invoiceId as string;
     try {
-      await this.client.closePaymentExtId(extid);
+      await this.client.closePaymentExtId(extid, await this.terminalOf(payment));
     } catch (err) {
       if (!(err instanceof AgroprombankQrError)) throw err;
       // Already closed, never issued, or refused: the state below decides.
@@ -556,7 +569,12 @@ export class AgroprombankQrService {
   private async reverseNow(payment: Payment & { invoiceId: string }, audit: RefundAudit): Promise<Payment> {
     let after: QrPaymentRecord | null;
     try {
-      after = await this.client.reverseInvoice(payment.invoiceId, qrPaymentRefs(payment));
+      // Back through the terminal that took the money, whatever the brand uses now.
+      after = await this.client.reverseInvoice(
+        payment.invoiceId,
+        qrPaymentRefs(payment),
+        await this.terminalOf(payment),
+      );
     } catch (err) {
       throw toHttpException(err);
     }
@@ -596,8 +614,9 @@ export class AgroprombankQrService {
 
   /** The bank's record of the invoice; a refusal to answer reads as "no such paid invoice". */
   private async readState(payment: Payment): Promise<QrPaymentRecord | null> {
+    const terminal = await this.terminalOf(payment);
     try {
-      return await this.client.getPaymentStateExtId(payment.invoiceId as string);
+      return await this.client.getPaymentStateExtId(payment.invoiceId as string, terminal);
     } catch (err) {
       if (!(err instanceof AgroprombankQrError)) throw err;
       this.logger.debug(`GetPaymentStateExtId refused for extid=${payment.invoiceId}: ${err.description}`);
@@ -690,16 +709,37 @@ export class AgroprombankQrService {
     return payment as Payment & { invoiceId: string };
   }
 
-  private assertOffered(): void {
-    if (this.config.isConfigured) return;
-    const missing = this.config.missingSettings();
+  private assertSwitchedOn(): void {
+    if (this.config.enabled) return;
+    throw qrError(409, 'QR_PAYMENT_DISABLED', 'The QR payment is switched off on this deployment');
+  }
+
+  /** Switched on, and the terminal the order would pay on can be called. */
+  private assertOffered(terminal: QrTerminal): void {
+    this.assertSwitchedOn();
+    const missing = this.config.missingFor(terminal);
+    if (missing.length === 0) return;
     throw qrError(
       409,
       'QR_PAYMENT_DISABLED',
-      !this.config.enabled
-        ? 'The QR payment is switched off on this deployment'
-        : `The QR payment is not configured: missing ${missing.join(', ')}`,
+      `The QR payment is not configured for ${describeTerminal(terminal)}: missing ${missing.join(', ')}`,
     );
+  }
+
+  /**
+   * The terminal an invoice was issued on — every later call for it uses the
+   * same one. Money already taken is looked after with the QR payment
+   * switched off for new orders, so only the terminal's settings count.
+   */
+  private async terminalOf(payment: Payment): Promise<QrTerminal> {
+    const terminal = await this.terminals.qrFor(payment.paymentTerminalId);
+    const missing = this.config.missingFor(terminal);
+    if (missing.length > 0) {
+      throw new ServiceUnavailableException(
+        `The QR payment is not configured for ${describeTerminal(terminal)}: missing ${missing.join(', ')}`,
+      );
+    }
+    return terminal;
   }
 
   private toDto(payment: Payment): AgroprombankQrPaymentDto {
