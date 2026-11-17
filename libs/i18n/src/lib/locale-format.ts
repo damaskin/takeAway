@@ -7,8 +7,10 @@ import {
   formatDistance,
   formatMoney,
   formatPercent,
+  formatPoints,
   formatShortDay,
   formatTime,
+  pointsFromUnits,
   type DateInput,
   type FormatMoneyOptions,
   type FormatPercentOptions,
@@ -81,7 +83,31 @@ export class LocaleFormatService {
    * language's plural rules pick the form, so Russian gets all three.
    */
   plural(key: string, count: number): string {
-    return this.translate.instant(`${key}.${pluralRules(this.lang()).select(count)}`, { count });
+    return this.pluralWith(key, count, count);
+  }
+
+  /**
+   * «12,40 балла», «1 балл», «5 баллов» — a points figure as the API sends it,
+   * in units (a hundredth of a point), with its word: whole points by the
+   * plural rules, «балла» for a fraction (see `formatPoints`, `pointsWord`).
+   */
+  points(units: number): string {
+    return this.pluralWith('common.pointsCount', pointsFromUnits(units), formatPoints(units, this.lang()));
+  }
+
+  /** «12,40» — the figure alone, for a layout that sets the word apart. */
+  pointsNumber(units: number): string {
+    return formatPoints(units, this.lang());
+  }
+
+  /** «балла» — the word alone, to go after `pointsNumber`. */
+  pointsWord(units: number): string {
+    return this.translate.instant(`common.pointsWord.${pluralRules(this.lang()).select(pointsFromUnits(units))}`);
+  }
+
+  /** The plural form `count` takes, with `shown` — the count as written — in place of `{{count}}`. */
+  private pluralWith(key: string, count: number, shown: number | string): string {
+    return this.translate.instant(`${key}.${pluralRules(this.lang()).select(count)}`, { count: shown });
   }
 }
 
@@ -110,6 +136,25 @@ export class MoneyPipe implements PipeTransform {
     options?: FormatMoneyOptions,
   ): string {
     return cents == null ? '' : this.fmt.money(cents, currency, options);
+  }
+}
+
+export type PointsStyle = 'full' | 'number' | 'word';
+
+/**
+ * `{{ account.pointsBalance | points }}` → «12,40 балла»; `'number'` gives
+ * the figure alone («12,40»), `'word'` the word alone («балла»). Takes the
+ * API's units. Impure for the same reason as `money`.
+ */
+@Pipe({ name: 'points', pure: false })
+export class PointsPipe implements PipeTransform {
+  private readonly fmt = inject(LocaleFormatService);
+
+  transform(units: number | null | undefined, style: PointsStyle = 'full'): string {
+    if (units == null) return '';
+    if (style === 'number') return this.fmt.pointsNumber(units);
+    if (style === 'word') return this.fmt.pointsWord(units);
+    return this.fmt.points(units);
   }
 }
 

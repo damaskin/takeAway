@@ -170,7 +170,7 @@ const RATINGS_DESC = [...ORDER_REVIEW_RATINGS].reverse();
     </section>
 
     @if (openOrderId(); as id) {
-      <app-order-detail-panel [orderId]="id" (closed)="openOrderId.set(null)" />
+      <app-order-detail-panel [orderId]="id" [allowRefund]="false" (closed)="openOrderId.set(null)" />
     }
   `,
   styles: [

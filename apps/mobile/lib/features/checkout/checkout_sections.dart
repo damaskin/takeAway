@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
+import '../../core/format/points.dart';
 import '../../core/format/time.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
@@ -430,6 +431,130 @@ class SummaryLine extends StatelessWidget {
           if (negative) Text('− ', style: style),
           AnimatedMoney(cents: cents, currency: currency, style: style ?? const TextStyle()),
         ],
+      ),
+    );
+  }
+}
+
+/// How many points to spend, typed with up to two decimals («12,4» or
+/// «12.40»), under «Оплатить баллами». Applied with «Применить», the
+/// keyboard's done key or on leaving the field; shows the server's quote back
+/// («12,40»), or keeps what the customer typed while it was under the minimum.
+class PointsAmountField extends StatefulWidget {
+  const PointsAmountField({required this.state, required this.capUnits, required this.onApply, super.key});
+
+  final PointsState state;
+
+  /// The most the order can take, in units, for the «Не больше» line.
+  final int capUnits;
+
+  /// Called with the typed amount in units (see [Points.parse]).
+  final ValueChanged<int> onApply;
+
+  @override
+  State<PointsAmountField> createState() => _PointsAmountFieldState();
+}
+
+class _PointsAmountFieldState extends State<PointsAmountField> {
+  /// Digits, then at most one separator and two decimals.
+  static final _shape = RegExp(r'^\d{0,7}([.,]\d{0,2})?$');
+
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+
+  /// The amount last sent, in units: leaving the field does not ask about it
+  /// again (a done key unfocuses right after submitting, and an amount under
+  /// the minimum stays in the field).
+  int? _asked;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocus);
+    _controller.addListener(_onText);
+  }
+
+  /// Leaving the field applies what was typed — scrolling the keyboard away
+  /// or tapping elsewhere is how most people finish an amount.
+  void _onFocus() {
+    if (mounted && !_focus.hasFocus) _apply(again: false);
+  }
+
+  void _onText() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controller.text.isEmpty && widget.state.spent > 0) _show(widget.state.spent);
+  }
+
+  @override
+  void didUpdateWidget(PointsAmountField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A new quote: the field shows what actually goes on the order.
+    final spent = widget.state.spent;
+    if (spent > 0 && (spent != oldWidget.state.spent || oldWidget.state.busy && !widget.state.busy)) _show(spent);
+  }
+
+  void _show(int units) {
+    final text = Points.input(units, locale: AppLocalizations.of(context).localeName);
+    if (_controller.text != text) _controller.text = text;
+  }
+
+  bool get _changed => Points.parse(_controller.text) != widget.state.spent;
+
+  /// Sends the typed amount unless it is what goes on the order already;
+  /// [again]: also when it was just asked (the customer pressed «Применить»
+  /// after a failed quote).
+  void _apply({bool again = true}) {
+    final units = Points.parse(_controller.text);
+    if (widget.state.busy || !_changed || (!again && units == _asked)) return;
+    _asked = units;
+    widget.onApply(units);
+  }
+
+  @override
+  void dispose() {
+    // Gone with the switch turned off: what was typed is not applied then.
+    _focus
+      ..removeListener(_onFocus)
+      ..dispose();
+    _controller
+      ..removeListener(_onText)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final busy = widget.state.busy;
+    return TextField(
+      key: const ValueKey('points-amount'),
+      controller: _controller,
+      focusNode: _focus,
+      // Not disabled: that would take the keyboard away mid-quote.
+      readOnly: busy,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      textInputAction: TextInputAction.done,
+      inputFormatters: [TextInputFormatter.withFunction((old, next) => _shape.hasMatch(next.text) ? next : old)],
+      onSubmitted: (_) => _apply(),
+      decoration: InputDecoration(
+        labelText: l10n.pointsAmount,
+        helperText: widget.capUnits > 0 ? l10n.pointsAmountMax(Points.label(l10n, widget.capUnits)) : null,
+        suffixIcon: busy
+            ? const Padding(
+                padding: EdgeInsets.all(14),
+                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            : _changed
+            ? Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: TextButton(onPressed: _apply, child: Text(l10n.apply)),
+              )
+            : null,
       ),
     );
   }

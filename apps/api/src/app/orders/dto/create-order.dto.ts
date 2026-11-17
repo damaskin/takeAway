@@ -55,7 +55,9 @@ export class CreateOrderDto {
 
   @ApiPropertyOptional({
     description:
-      'Loyalty points to spend. Clamped server-side to the balance and to the order value — never trusted as sent.',
+      'Loyalty points to spend, in units (a hundredth of a point; 1 point = 1 currency unit). Clamped ' +
+      'server-side to the balance and to the order value — never trusted as sent. Above 0 together with any ' +
+      'couponCode the order is refused with PROMO_WITH_POINTS: a promo code and points do not combine.',
     minimum: 0,
   })
   @IsOptional()

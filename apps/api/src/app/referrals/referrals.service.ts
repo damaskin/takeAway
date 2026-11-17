@@ -113,7 +113,7 @@ export class ReferralsService {
   /**
    * Called from OrdersService on the PAID transition. If the paying user
    * has a PENDING referral row, we credit BOTH sides (referee + referrer)
-   * with `REFERRAL_BONUS_POINTS` (default 100), then flip the row to
+   * with `REFERRAL_BONUS_POINTS` (in units: the default 100 is one point), then flip the row to
    * REWARDED so the bonus only fires once. No-op for non-referred users
    * or for orders that are not the user's first paid one.
    */

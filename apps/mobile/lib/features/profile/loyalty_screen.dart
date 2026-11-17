@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/format/points.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -75,7 +76,8 @@ class LoyaltyScreen extends ConsumerWidget {
                           title: Text(entry.reason),
                           subtitle: Text(DateFormat.yMMMd(locale).add_Hm().format(entry.createdAt.toLocal())),
                           trailing: Text(
-                            '${entry.amount >= 0 ? '+' : ''}${entry.amount}',
+                            // «+0,40», «−3,20»: points, not the units they travel in.
+                            '${entry.amount >= 0 ? '+' : ''}${Points.format(entry.amount, locale: l10n.localeName)}',
                             style: context.text.titleMedium?.copyWith(
                               color: entry.amount >= 0 ? brand.mint : brand.berry,
                             ),

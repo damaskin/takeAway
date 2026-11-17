@@ -1274,11 +1274,17 @@ abstract class AppLocalizations {
   /// **'On an order at any venue · until {date}'**
   String bonusAnyVenueUntil(String date);
 
-  /// No description provided for @pointsNotWithPromo.
+  /// Under «Pay with points», switched off while any promo code is applied; also the PROMO_WITH_POINTS refusal.
   ///
   /// In en, this message translates to:
   /// **'Points can\'t be combined with a promo code'**
   String get pointsNotWithPromo;
+
+  /// Brief notice: a promo code was applied while points were chosen, so the points came off.
+  ///
+  /// In en, this message translates to:
+  /// **'Points removed: they can\'t be combined with a promo code'**
+  String get pointsRemovedForPromo;
 
   /// No description provided for @giftCard.
   ///
@@ -1298,23 +1304,35 @@ abstract class AppLocalizations {
   /// **'Pay with points'**
   String get payWithPoints;
 
-  /// No description provided for @pointsAvailable.
+  /// The balance with its noun, from Points.label: «12.40 points available».
   ///
   /// In en, this message translates to:
-  /// **'{points} points available'**
-  String pointsAvailable(int points);
+  /// **'{points} available'**
+  String pointsAvailable(String points);
 
-  /// No description provided for @pointsApplied.
+  /// The quoted points with their noun (Points.label) and what they take off the order.
   ///
   /// In en, this message translates to:
-  /// **'{points} points · {amount} off'**
-  String pointsApplied(int points, String amount);
+  /// **'{points} used · {amount} off'**
+  String pointsApplied(String points, String amount);
 
-  /// No description provided for @pointsTooFew.
+  /// The minimum with its noun (Points.label): «At least 1 point…».
   ///
   /// In en, this message translates to:
-  /// **'At least {min} points, and no more than the order is worth.'**
-  String pointsTooFew(int min);
+  /// **'At least {min}, and no more than the order is worth.'**
+  String pointsTooFew(String min);
+
+  /// Label of the field where the customer types how many points to spend (up to two decimals).
+  ///
+  /// In en, this message translates to:
+  /// **'Points to use'**
+  String get pointsAmount;
+
+  /// Under the points field: the most that can go on this order, with its noun (Points.label).
+  ///
+  /// In en, this message translates to:
+  /// **'Up to {points}'**
+  String pointsAmountMax(String points);
 
   /// No description provided for @pointsDiscount.
   ///
@@ -2426,17 +2444,17 @@ abstract class AppLocalizations {
   /// **'Signature'**
   String get tierSignature;
 
-  /// No description provided for @pointsCount.
+  /// A points amount with its noun; use Points.label. count picks the form (a fraction is plural: «12,40 балла»), points is the formatted number.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =1{1 point} other{{count} points}}'**
-  String pointsCount(int count);
+  /// **'{count, plural, =1{{points} point} other{{points} points}}'**
+  String pointsCount(num count, String points);
 
   /// No description provided for @toNextTier.
   ///
   /// In en, this message translates to:
-  /// **'{points} points to {tier}'**
-  String toNextTier(int points, String tier);
+  /// **'{points} more to {tier}'**
+  String toNextTier(String points, String tier);
 
   /// No description provided for @topTier.
   ///
@@ -3337,12 +3355,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This promo doesn\'t apply at this venue'**
   String get errPromoNotHere;
-
-  /// No description provided for @errPromoWithPoints.
-  ///
-  /// In en, this message translates to:
-  /// **'Points can\'t be combined with a promo code'**
-  String get errPromoWithPoints;
 
   /// No description provided for @errGiftCardUnknown.
   ///

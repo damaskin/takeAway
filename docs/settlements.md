@@ -61,7 +61,7 @@ Every counted order with no card money is shown separately, never hidden:
   it while card payments were off and the guest paid at the counter
   (`unpaidOrders`, `unpaidTotalCents`).
 
-No commission is taken on them (decision 6 below is open).
+No commission is taken on them (decision 6 below: takeAway does not touch them).
 
 ## 2. Formulas
 
@@ -69,7 +69,8 @@ Per order _i_ settled at _tᵢ_ with rate _r(tᵢ)_ in basis points:
 
 ```
 cardᵢ        = capturedᵢ − refundedᵢ
-compᵢ        = promoᵢ + pointsᵢ                      -- 0 once cancelled or expired
+keptᵢ(x)     = ⌊(2·x·cardᵢ + capturedᵢ) / (2·capturedᵢ)⌋  -- x without a refund or a capture
+compᵢ        = keptᵢ(promoᵢ) + keptᵢ(pointsᵢ)        -- 0 once cancelled or expired, 0 after a full refund
 baseᵢ        = cardᵢ + compᵢ
 commissionᵢ  = ⌊(baseᵢ × r(tᵢ) + 5000) / 10000⌋       -- half up, whole cents
 netᵢ         = commissionᵢ − compᵢ                    -- + brand → takeAway, − takeAway → brand
@@ -263,21 +264,34 @@ promo codes are its discount (migration `20261114110000_analytics_points_funded`
    to the brand, commission on the full price.
 2. **Where the guest's money goes.** Decided 2026-11-14: to the brand
    directly; settlements are netted (one sum, either way, confirmed by the
-   receiver). Per-brand terminals in the payment code are still to do.
+   receiver). Confirmed 2026-11-17 (Maxim): every brand gives takeAway its own
+   bank terminal to attach, so the money lands on the brand's account with no
+   takeAway in between. Per-brand terminals in the payment code: in progress
+   (separate branch).
 3. **Gift cards.** Brands issue cards in the admin and sell them themselves,
    so the brand holds that money; no commission on redemptions. If gift cards
    are ever sold online through takeAway, this needs a rule.
-4. **Refunds and commission.** The commission goes back with the refund
-   (base is net of refunds). Alternative: keep it on refunds the brand caused.
-5. **Acquiring fee.** Open now that the brand takes the money: whose terminal,
-   whose fee.
+4. **Refunds.** Decided 2026-11-17 (owner): a refund is the brand's — its
+   owner or store manager (or the platform admin) gives the money back from
+   the brand's terminal, in «Заказы» → the order (not from reviews, never
+   from settlements). The commission follows the remainder (base is net of
+   refunds), and takeAway's compensation for the order — its promo and the
+   points — is cancelled in the share of the card money refunded
+   (`compensationAfterRefund`: kept = compensation × (captured − refunded) /
+   captured, half up; a full refund leaves none). The same share of the
+   points spent goes back to the guest (`LoyaltyService.returnForRefund`,
+   cumulative over partial refunds). The takeAway promo debt reports count
+   the compensation the same way.
+5. **Acquiring fee.** Decided 2026-11-17 (Maxim): not takeAway's business —
+   the brand pays its bank exactly as it does at the counter. The commission
+   stays on the full amount; nothing is deducted for the fee.
 6. **Orders not paid by card** (paid at the counter while cards are off;
-   orders at 0). Today: no commission. With the guest's money going to the
-   brand anyway, takeAway may want its commission on them too — the formula
-   would add `unpaidTotalCents` to the base.
-7. **Settlement schedule and minimum.** Weekly, every two weeks or monthly; a
-   minimum below which the balance waits. Today: whenever the platform admin
-   fixes a closed period.
+   orders at 0). Decided 2026-11-17 (Maxim): takeAway does not touch orders
+   paid at the counter — no commission on them, as today.
+7. **Settlement schedule and minimum.** Decided 2026-11-17 (Maxim): agreed
+   with each brand individually. The platform admin fixes a closed period
+   whenever that brand's agreement says (the rate history's `note` can hold
+   the agreement reference); no schedule is enforced by the system.
 8. **Delivery fees.** Part of the card money, so commission applies.
 9. **A brand that leaves with a balance** has to be invoiced or paid.
 10. **Paperwork.** The commission act/invoice per settlement, and the rate

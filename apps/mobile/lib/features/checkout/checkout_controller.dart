@@ -31,14 +31,26 @@ class AppliedCode {
   static const empty = AppliedCode();
 }
 
+/// Loyalty points on the order. Every amount is in the API's units, a
+/// hundredth of a point each (`pointUnitsPerPoint`); the screen shows
+/// points.
 class PointsState {
-  const PointsState({this.spent = 0, this.cents = 0, this.min = 0, this.message, this.busy = false});
+  const PointsState({this.spent = 0, this.cents = 0, this.min = 0, this.message, this.busy = false, this.open = false});
 
+  /// Units going on the order, as the server quoted them (0 for none).
   final int spent;
+
+  /// What [spent] takes off the order.
   final int cents;
+
+  /// The fewest units the server takes, from its last quote.
   final int min;
   final String? message;
   final bool busy;
+
+  /// «Оплатить баллами» is on, and the amount field with it — also while an
+  /// amount the customer typed is under the minimum and nothing goes on.
+  final bool open;
 }
 
 class DeliveryState {
@@ -152,13 +164,18 @@ class CheckoutState {
   /// Whether «Как можно скорее» can be chosen for [store] now.
   bool asapOffered(Store store) => store.isOpen && asapRefused == null;
 
-  /// A takeAway promo or the welcome bonus is applied: loyalty points do not
-  /// combine with it (the API refuses the order with `PROMO_WITH_POINTS`),
-  /// so «Оплатить баллами» is off and the order goes with none.
-  bool get pointsBlockedByPromo => promo.ok && promoSource == PromoSource.takeaway;
+  /// A promo code is applied — a brand's, a takeAway promo or the welcome
+  /// bonus: loyalty points do not combine with any of them (the loyalty
+  /// spec: one or the other; the API refuses the order with
+  /// `PROMO_WITH_POINTS`), so «Оплатить баллами» is off and the order goes
+  /// with none.
+  bool get pointsBlockedByPromo => promo.ok;
+
+  /// The applied code is takeAway's: a takeAway promo or the welcome bonus.
+  bool get takeawayPromoApplied => promo.ok && promoSource == PromoSource.takeaway;
 
   /// The applied code is the welcome bonus.
-  bool get welcomeBonusApplied => pointsBlockedByPromo && (takeawayPromo?.isWelcome ?? false);
+  bool get welcomeBonusApplied => takeawayPromoApplied && (takeawayPromo?.isWelcome ?? false);
 
   CheckoutState copyWith({
     FulfillmentType? fulfillment,
@@ -358,7 +375,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     final cart = _cart;
     if (bonus == null || store == null || cart == null || cart.isEmpty) return;
     final s = state;
-    if (s.promo.code != null || s.points.spent > 0 || s.placedOrderId != null) return;
+    if (s.promo.code != null || s.points.open || s.points.spent > 0 || s.placedOrderId != null) return;
     if (!bonus.worksIn(store.currency)) return;
     if (ref.read(bonusRemovedCartsProvider).contains(cart.id)) return;
     _bonusTried = true;
@@ -411,11 +428,10 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         promoMultiplier: result.valid ? result.pointsMultiplier : 1,
         promoSource: () => result.valid ? result.source : null,
         takeawayPromo: () => takeaway ? result.takeawayPromo : null,
-        // A takeAway promo and points do not combine: the points come off.
-        points: takeaway ? const PointsState() : null,
+        // A promo code and points do not combine: the points come off (the
+        // screen says so).
+        points: result.valid ? const PointsState() : null,
       );
-      // Points are capped by what is left to pay, which the promo changed.
-      if (!takeaway && state.points.spent > 0) unawaited(applyPoints(state.points.spent));
     } on Object catch (error) {
       if (!current()) return;
       state = state.copyWith(
@@ -438,7 +454,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     if (wasBonus && cart != null) {
       ref.read(bonusRemovedCartsProvider.notifier).update((carts) => {...carts, cart.id});
     }
-    if (state.points.spent > 0) unawaited(applyPoints(state.points.spent));
+    // «Оплатить баллами» is on offer again; nothing is put back by itself.
   }
 
   Future<void> applyGiftCard(String raw) async {
@@ -460,28 +476,45 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
   void clearGiftCard() => state = state.copyWith(giftCard: AppliedCode.empty);
 
-  /// Asks the server how many of [points] may be spent on what is left to
-  /// pay; the server clamps to the balance and the order value.
-  Future<void> applyPoints(int points) async {
+  /// Asks the server how many of [units] (hundredths of a point) may be
+  /// spent on the order; the server clamps to the balance and the order
+  /// value. [typed]: the customer typed the amount, so the field stays open
+  /// even when it is under the minimum; the switch alone closes again.
+  Future<void> applyPoints(int units, {bool typed = false}) async {
     final cart = _cart;
     if (cart == null || state.pointsBlockedByPromo) return;
-    final payable = (cart.subtotalCents - (state.promo.ok ? state.promo.cents : 0)).clamp(0, 1 << 31);
+    final payable = cart.subtotalCents.clamp(0, 1 << 31);
+    final before = state.points;
     state = state.copyWith(
-      points: PointsState(spent: state.points.spent, cents: state.points.cents, busy: true),
+      points: PointsState(spent: before.spent, cents: before.cents, min: before.min, open: true, busy: true),
     );
+    // A promo code applied meanwhile took the points off for good.
+    bool current() => !_disposed && !state.pointsBlockedByPromo && state.points.busy;
     try {
-      final quote = await _api.redeemQuote({'points': points, 'payableCents': payable});
+      final quote = await _api.redeemQuote({'points': units, 'payableCents': payable});
+      if (!current()) return;
       state = state.copyWith(
         points: PointsState(
           spent: quote.points,
           cents: quote.discountCents,
           min: quote.minPoints,
           message: quote.points == 0 ? 'min:${quote.minPoints}' : null,
+          open: quote.points > 0 || typed,
         ),
       );
     } on Object catch (error) {
-      state = state.copyWith(points: PointsState(message: ApiError.from(error).message ?? 'error'));
+      if (!current()) return;
+      state = state.copyWith(
+        points: PointsState(message: ApiError.from(error).message ?? 'error', open: typed),
+      );
     }
+  }
+
+  /// The most units the order can take for a [balance]: one unit is worth a
+  /// cent, so no more than the subtotal. The server's quote has the last word.
+  int pointsCap(int balance) {
+    final subtotal = _cart?.subtotalCents ?? 0;
+    return balance < subtotal ? balance : subtotal;
   }
 
   void clearPoints() => state = state.copyWith(points: const PointsState());
@@ -613,7 +646,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
             notes: _blankToNull(form.notes),
             couponCode: s.promo.ok ? s.promo.code : null,
             giftCardCode: s.giftCard.ok ? s.giftCard.code : null,
-            // With a takeAway promo, explicitly none (`PROMO_WITH_POINTS`).
+            // With a promo code, explicitly none (`PROMO_WITH_POINTS`).
             pointsToSpend: s.pointsBlockedByPromo
                 ? 0
                 : s.points.spent > 0
@@ -631,7 +664,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         // The cart became an order: a bonus taken off it is offered again
         // on the next one, and a bonus used here leaves the profile.
         ref.read(bonusRemovedCartsProvider.notifier).update((carts) => {...carts}..remove(cart.id));
-        if (s.pointsBlockedByPromo) ref.invalidate(bonusesProvider);
+        if (s.takeawayPromoApplied) ref.invalidate(bonusesProvider);
         unawaited(ref.read(contactPrefsProvider).remember(name: form.name, phone: form.phone));
       }
 

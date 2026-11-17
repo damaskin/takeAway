@@ -8,8 +8,8 @@ part 'takeaway_promo.g.dart';
 // older API simply never sends them.
 
 /// Whose promo code a validated code is: the brand's own (the brand pays)
-/// or takeAway's (takeAway compensates the venue, and loyalty points cannot
-/// be added to it).
+/// or takeAway's (takeAway compensates the venue). Loyalty points are added
+/// to neither: a promo code or points.
 @JsonEnum(alwaysCreate: true)
 enum PromoSource {
   @JsonValue('BRAND')

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../app/router.dart';
+import '../../core/format/points.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
@@ -36,6 +37,7 @@ class LoyaltyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final next = account.nextTier;
+    final balance = account.pointsBalance;
     return Pressable(
       onTap: onTap,
       child: Container(
@@ -71,12 +73,18 @@ class LoyaltyCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
+            // Counts up in points, keeping the shape of the balance on the
+            // way: «12,40» runs through «7,15», «30» through «17».
             TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: account.pointsBalance.toDouble()),
+              tween: Tween(begin: 0, end: Points.fromUnits(balance)),
               duration: const Duration(milliseconds: 900),
               curve: Curves.easeOutCubic,
               builder: (context, value, _) => Text(
-                '${value.round()}',
+                Points.format(
+                  (value * pointUnitsPerPoint).round(),
+                  locale: l10n.localeName,
+                  fractional: balance % pointUnitsPerPoint != 0,
+                ),
                 style: AppTheme.mono(size: 38, weight: FontWeight.w700, color: Colors.white),
               ),
             ),
@@ -99,7 +107,7 @@ class LoyaltyCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                l10n.toNextTier(account.pointsToNextTier, tierName(l10n, next)),
+                l10n.toNextTier(Points.label(l10n, account.pointsToNextTier), tierName(l10n, next)),
                 style: context.text.bodySmall?.copyWith(color: Colors.white),
               ),
             ] else

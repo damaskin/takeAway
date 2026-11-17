@@ -1,9 +1,11 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { OptionLine } from '@takeaway/shared-types';
 import { of } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { AdminOrdersApi, type AdminOrderDetail } from '../../core/orders/orders.service';
 import { OrderDetailPanelComponent } from './order-detail-panel.component';
 
@@ -200,12 +202,13 @@ describe('OrderDetailPanelComponent — paid by QR', () => {
     createdAt: '2026-11-09T09:01:00Z',
   };
 
-  async function render(order: AdminOrderDetail) {
+  async function render(order: AdminOrderDetail, role = 'BRAND_ADMIN', allowRefund?: boolean) {
     TestBed.configureTestingModule({
       imports: [OrderDetailPanelComponent],
       providers: [
         provideTranslateService(),
         { provide: AdminOrdersApi, useValue: { get: jest.fn().mockReturnValue(of(order)) } },
+        { provide: AuthStore, useValue: { user: signal({ role }) } },
       ],
     });
     const translate = TestBed.inject(TranslateService);
@@ -213,12 +216,40 @@ describe('OrderDetailPanelComponent — paid by QR', () => {
     translate.use('ru');
     const fixture = TestBed.createComponent(OrderDetailPanelComponent);
     fixture.componentRef.setInput('orderId', order.id);
+    if (allowRefund !== undefined) fixture.componentRef.setInput('allowRefund', allowRefund);
     fixture.detectChanges();
     await fixture.whenStable();
     return fixture;
   }
 
   beforeEach(() => TestBed.resetTestingModule());
+
+  /** Refunds are the brand's (owner, 2026-11-17): its owner or manager, in «Заказы». */
+  describe('who is offered the refund', () => {
+    const paid: AdminOrderDetail = {
+      ...ORDER,
+      status: 'PICKED_UP',
+      refundedCents: 0,
+      refundableCents: 4500,
+      payments: [qrPayment],
+    };
+    const refundSection = (el: HTMLElement) => el.querySelector('[data-testid="refund-section"]');
+
+    it.each(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER'])('%s sees it', async (role) => {
+      const fixture = await render(paid, role);
+      expect(refundSection(fixture.nativeElement as HTMLElement)).not.toBeNull();
+    });
+
+    it('kitchen staff do not', async () => {
+      const fixture = await render(paid, 'STAFF');
+      expect(refundSection(fixture.nativeElement as HTMLElement)).toBeNull();
+    });
+
+    it('nobody does where the screen opened the order for something else (reviews)', async () => {
+      const fixture = await render(paid, 'BRAND_ADMIN', false);
+      expect(refundSection(fixture.nativeElement as HTMLElement)).toBeNull();
+    });
+  });
 
   it('names QR as the way the customer paid, and refunds it only in full', async () => {
     const order: AdminOrderDetail = {
@@ -327,6 +358,18 @@ describe('OrderDetailPanelComponent — a takeAway promo order', () => {
     expect(text(el)).toContain('Скидка BRAND5');
     // A brand's own promo code is the brand's: nothing for takeAway to compensate.
     expect(el.querySelector('[data-testid="order-business-total"]')).toBeNull();
+    expect(el.querySelector('[data-testid="order-takeaway-compensation"]')).toBeNull();
+    expect(text(el.querySelector('[data-testid="order-brand-promo"]'))).toBe(
+      'Промокод бренда: скидку даёт бренд, takeAway её не компенсирует.',
+    );
+  });
+
+  it("groups takeAway's compensation: the total, then promotions, then points", async () => {
+    const el = await render(PROMO_ORDER);
+    expect(spaced(el.querySelector('[data-testid="order-takeaway-compensation"]'))).toBe(
+      'Компенсация takeAway Всего 10 MDL По акциям 10 MDL По баллам 0 MDL',
+    );
+    expect(el.querySelector('[data-testid="order-brand-promo"]')).toBeNull();
   });
 
   it('shows the full amount the business is credited with', async () => {
@@ -391,6 +434,14 @@ describe('OrderDetailPanelComponent — an order paid partly with points', () =>
     expect(spaced(el.querySelector('[data-testid="order-business-total"]'))).toBe(
       'Сумма для бизнеса 45 MDL гость оплатил 25 MDL · 20 MDL компенсирует takeAway',
     );
+  });
+
+  it("puts the points into the compensation block and marks the brand code as the brand's", async () => {
+    const el = await render({ ...POINTS_ORDER, pointsDiscountCents: 2000 });
+    expect(spaced(el.querySelector('[data-testid="order-takeaway-compensation"]'))).toBe(
+      'Компенсация takeAway Всего 20 MDL По акциям 0 MDL По баллам 20 MDL',
+    );
+    expect(el.querySelector('[data-testid="order-brand-promo"]')).not.toBeNull();
   });
 
   it('takes the points from the detail once the API sends them', async () => {

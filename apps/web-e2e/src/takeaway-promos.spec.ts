@@ -104,9 +104,9 @@ test.describe('takeAway promos', () => {
     const api = await installFakeApi(page, { pointsBalance: 500, takeawayPromos: PROMOS });
     await fillCart(page);
 
-    await page.getByTestId('points-input').fill('500');
+    await page.getByTestId('points-input').fill('5');
     await page.getByTestId('points-apply').click();
-    await expect(page.getByText(/500 points applied/i)).toBeVisible();
+    await expect(page.getByText(/5 points applied/i)).toBeVisible();
 
     await page.getByTestId('promo-input').fill('AUTUMN15');
     await page.getByTestId('promo-apply').click();
@@ -114,7 +114,9 @@ test.describe('takeAway promos', () => {
     await expect(page.getByTestId('promo-status')).toHaveText('takeAway promo −15%');
     await expect(page.getByTestId('points-apply')).toBeDisabled();
     await expect(page.getByTestId('points-input')).toBeDisabled();
-    await expect(page.getByTestId('points-blocked')).toHaveText("Points can't be combined with a promo code");
+    await expect(page.getByTestId('points-blocked')).toHaveText(
+      "Points removed: they can't be combined with a promo code",
+    );
     // The points came off: 18 AED less 15 % only.
     await expect(placeOrder(page)).toContainText('15.30 AED');
     await page.screenshot({ path: test.info().outputPath('checkout-takeaway-promo.png'), fullPage: true });

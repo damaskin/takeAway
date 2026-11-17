@@ -21,7 +21,10 @@ NestJS API as the web app and the Telegram Mini App.
 - **Cart and checkout** — something to eat offered next to a drink, ASAP or a
   15-minute pickup slot (full slots are
   shown struck through), delivery where the store offers it, promo code, gift
-  card, loyalty points, pay with a bound Agroprombank card or on the bank's
+  card, loyalty points (1 point = 1 unit of the store's currency, typed with
+  up to two decimals, never together with a promo code; the API counts them
+  in hundredths, `lib/core/format/points.dart` shows them as points), pay
+  with a bound Agroprombank card or on the bank's
   page (Web-платёж), or by QR in Agroprombank's app («Мобильный платёж»,
   for stores in RUP: the code with a countdown, a button that opens the
   bank's app on the same phone, polled every 3 s while the app is in front —

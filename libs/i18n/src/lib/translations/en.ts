@@ -151,7 +151,25 @@ export const TRANSLATIONS_EN: TranslationTree = {
     menu: 'Menu',
     close: 'Close',
     user: 'User',
-    points: 'pts',
+    /**
+     * A points figure with its word (`LocaleFormatService.points`, the `points`
+     * pipe): `{{count}}` is already written out — "12.40", "2,450".
+     */
+    pointsCount: {
+      one: '{{count}} point',
+      few: '{{count}} points',
+      many: '{{count}} points',
+      other: '{{count}} points',
+    },
+    /** The word alone, after a figure set apart (`points: 'word'`). */
+    pointsWord: {
+      one: 'point',
+      few: 'points',
+      many: 'points',
+      other: 'points',
+    },
+    /** Under «Pay with points» while any promo code is applied: one or the other. */
+    pointsWithPromo: "Points can't be combined with a promo code",
     requestFailed: 'Request failed',
     retry: 'Retry',
     genericError: 'Something went wrong, please try again',
@@ -274,8 +292,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       /** Under the bonus in the profile; the date is the bonus's last day in the customer's calendar. */
       anyStoreUntil: 'On an order at any venue · until {{date}}',
       remove: 'Remove',
-      /** Under «Pay with points» while a takeAway promo is applied. */
-      noPoints: "Points can't be combined with a promo code",
     },
     qrPayment: {
       methodCard: 'By card',
@@ -454,10 +470,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       emptyCart: 'Your cart is empty.',
       browseMenu: 'Browse the menu',
       pointsLabel: 'Pay with points',
-      pointsBalance: '{{points}} points available',
-      pointsApplied: '{{points}} points applied — {{amount}} off',
-      pointsTooFew: 'At least {{min}} points, and no more than the order is worth',
-      pointsSpent: '{{points}} points',
+      /** `{{points}}` and `{{min}}` come with their word: "12.40 points", "1 point". */
+      pointsBalance: '{{points}} available',
+      pointsApplied: '{{points}} applied — {{amount}} off',
+      pointsTooFew: 'At least {{min}}, and no more than the order is worth',
+      /** A promo code went on while points were applied: they came off. */
+      pointsDroppedForPromo: "Points removed: they can't be combined with a promo code",
       promoLabel: 'Promo code',
       promoPlaceholder: 'WELCOME10',
       promoApplied: 'Applied · saving {{amount}}',
@@ -804,8 +822,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       tierPlatinum: 'Platinum',
       tierSignature: 'Signature',
       tierSilverLabel: 'Silver',
-      pointsSuffix: 'points',
-      toNextTier: '{{points}} pts to {{tier}}',
+      /** `{{points}}` comes with its word: "3.80 points". */
+      toNextTier: '{{points}} to {{tier}}',
       sections: {
         myOrders: 'My orders',
         personal: 'Personal info',
@@ -1926,6 +1944,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'takeAway promo −{{percent}}%: the guest paid {{paid}}, takeAway covers the other {{compensation}}',
       points: 'Points — compensated by takeAway',
       businessTotal: 'Total for the business',
+      compensation: {
+        title: 'takeAway compensation',
+        total: 'Total',
+        promo: 'Promotions',
+        points: 'Points',
+      },
+      brandPromo: "The brand's own promo code: the brand gives this discount, takeAway does not compensate it.",
       events: {
         STATUS_CHANGED: 'Status',
         ETA_UPDATED: 'Ready time changed',
@@ -1992,6 +2017,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       empty: 'No orders match the current filter.',
       fundedLine: 'guest paid {{paid}} · takeAway compensates {{funded}}',
+      brandDiscountLine: 'menu price {{menu}} · brand discount {{discount}}',
       status: {
         CREATED: 'New',
         PAID: 'Queued',
@@ -2488,6 +2514,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         noBrand: 'Pick a brand in the header.',
       },
       product: {
+        drinkNoVariants:
+          'This drink has no variants, so the guest cannot pick a size. If it comes in different sizes, add a «Size» group under «Variants». Saving without variants is allowed.',
+        afterSave:
+          'open right after the product is saved: size, serving, milk, syrups. A product without them can be sold too (water, pastries).',
         title: 'Variants and add-ons',
         hint: 'Groups from the catalog: the customer picks the variants first, then the add-ons. Listed are the groups where the brand has something.',
         legacyHint:
@@ -3251,7 +3281,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         churn: {
           title: 'Inactive customers: how many and the revenue missed',
-          description: "How many regulars haven't ordered for 3, 7 or 14 days, and what that costs.",
+          description: "How many regulars haven't ordered for 14 days, and what that costs.",
         },
         promo: {
           title: 'Promo codes',
@@ -3737,7 +3767,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     churn: {
       title: 'Inactive customers',
-      windowLabel: 'Inactive after no order for',
       window: '{{days}} d',
       hint: 'Ordered from you at least 3 times, then nothing for {{days}} days, and that ran out inside the period.',
       definition: 'An inactive customer has ordered from you at least {{min}} times but not in the last {{days}} days.',
@@ -4155,7 +4184,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     profile: {
       loyalty: 'LOYALTY',
-      pointsLine: '{{points}} pts',
       fallbackName: 'Telegram user',
       signedInVia: 'Signed in with Telegram',
       signedInHint: 'In the Mini App your account is your Telegram, so there is nothing to sign out of.',

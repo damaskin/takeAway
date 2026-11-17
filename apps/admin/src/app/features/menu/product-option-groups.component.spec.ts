@@ -73,7 +73,11 @@ const CATALOG: BrandOptionCatalog = {
   ],
 };
 
-function setup(saved: ProductOptionGroupsConfig = { groups: [], overrides: [] }, hasLegacyOptions = false) {
+function setup(
+  saved: ProductOptionGroupsConfig = { groups: [], overrides: [] },
+  hasLegacyOptions = false,
+  isDrink = false,
+) {
   const api = {
     brandCatalog: jest.fn().mockReturnValue(of(CATALOG)),
     productGroups: jest.fn().mockReturnValue(of(saved)),
@@ -92,6 +96,7 @@ function setup(saved: ProductOptionGroupsConfig = { groups: [], overrides: [] },
   fixture.componentRef.setInput('basePriceCents', 2500);
   fixture.componentRef.setInput('currency', 'MDL');
   fixture.componentRef.setInput('hasLegacyOptions', hasLegacyOptions);
+  fixture.componentRef.setInput('isDrink', isDrink);
   const counts: number[] = [];
   fixture.componentInstance.attachedCount.subscribe((n) => counts.push(n));
   fixture.detectChanges();
@@ -176,5 +181,26 @@ describe('ProductOptionGroupsComponent («Варианты и добавки»)'
     cmp.detach(SIZE);
     cmp.save();
     expect(api.saveProductGroups).toHaveBeenCalledWith('p1', { groups: [], overrides: [] });
+  });
+});
+
+/** Maxim's list 7, item 5: a product without options is allowed; a drink without a size gets a warning. */
+describe('ProductOptionGroupsComponent — a drink without variants', () => {
+  beforeEach(() => TestBed.resetTestingModule());
+  const warning = (el: HTMLElement) => el.querySelector('[data-testid="product-option-groups-no-variants"]');
+
+  it('warns about a drink saved with no variant group', () => {
+    const { el } = setup({ groups: [{ groupId: 'g-sauce', sortOrder: 0 }], overrides: [] }, false, true);
+    expect(text(warning(el))).toContain('У напитка нет вариантов');
+  });
+
+  it('is quiet once the drink has a variant group', () => {
+    const { el } = setup({ groups: [{ groupId: 'g-size', sortOrder: 0 }], overrides: [] }, false, true);
+    expect(warning(el)).toBeNull();
+  });
+
+  it('never warns about other products: water or a croissant may have no options at all', () => {
+    const { el } = setup({ groups: [], overrides: [] }, false, false);
+    expect(warning(el)).toBeNull();
   });
 });

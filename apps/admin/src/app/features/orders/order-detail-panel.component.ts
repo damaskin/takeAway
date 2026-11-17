@@ -4,6 +4,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
 import { LocaleFormatService } from '@takeaway/i18n';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { orderCancelSummary } from '../../core/orders/order-cancel-summary';
 import { orderMoneyPayment, paymentProviderKey, refundsInFullOnly } from '../../core/orders/order-payment-provider';
 import {
@@ -293,8 +294,50 @@ import {
               }}
             </p>
           }
-          <!-- What the business is credited with: the guest's payment + what takeAway compensates. -->
+          <!-- A brand's own promo code: the brand gives that discount, takeAway does not compensate it. -->
+          @if (brandPromoCents() > 0) {
+            <p
+              data-testid="order-brand-promo"
+              style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+            >
+              {{ 'admin.orderDetail.brandPromo' | translate }}
+            </p>
+          }
+          <!-- What takeAway compensates (its promo, the points), then what the business is credited with. -->
           @if (fundedCents() > 0) {
+            <div
+              data-testid="order-takeaway-compensation"
+              class="flex flex-col"
+              style="gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--color-caramel-light)"
+            >
+              <span style="font-size: 13px; font-weight: 700; color: var(--color-espresso)">{{
+                'admin.orderDetail.compensation.title' | translate
+              }}</span>
+              <div data-testid="order-compensation-total" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; font-weight: 600; color: var(--color-espresso)">{{
+                  'admin.orderDetail.compensation.total' | translate
+                }}</span>
+                <span style="font-size: 14px; font-weight: 700; color: var(--color-espresso); white-space: nowrap">{{
+                  money(fundedCents(), o.currency)
+                }}</span>
+              </div>
+              <div data-testid="order-compensation-promo" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.compensation.promo' | translate
+                }}</span>
+                <span style="font-size: 13px; color: var(--color-text-secondary); white-space: nowrap">{{
+                  money(promoCompensationCents(), o.currency)
+                }}</span>
+              </div>
+              <div data-testid="order-compensation-points" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.compensation.points' | translate
+                }}</span>
+                <span style="font-size: 13px; color: var(--color-text-secondary); white-space: nowrap">{{
+                  money(pointsCents(), o.currency)
+                }}</span>
+              </div>
+            </div>
             <div
               data-testid="order-business-total"
               class="flex flex-col"
@@ -336,9 +379,10 @@ import {
           }
         </section>
 
-        <!-- Refund -->
-        @if (o.refundableCents > 0) {
+        <!-- Refund: the brand's owner or manager gives the money back from the brand's terminal. -->
+        @if (o.refundableCents > 0 && canRefund()) {
           <section
+            data-testid="refund-section"
             class="flex flex-col"
             style="padding: 16px 24px; gap: 10px; border-top: 1px solid var(--color-border-light); background: var(--color-cream)"
           >
@@ -471,6 +515,7 @@ import {
 })
 export class OrderDetailPanelComponent {
   private readonly api = inject(AdminOrdersApi);
+  private readonly auth = inject(AuthStore);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
 
@@ -490,6 +535,19 @@ export class OrderDetailPanelComponent {
    * own `pointsDiscountCents`.
    */
   readonly takeawayFundedCents = input<number | null | undefined>(undefined);
+
+  /**
+   * Whether this screen offers the refund. Refunds are the brand's — its owner
+   * or manager gives the money back from the brand's terminal, in «Заказы»
+   * (owner, 2026-11-17); other screens that open an order (reviews) pass
+   * false. Kitchen staff, who can open the orders list, never see it: the
+   * API refuses them anyway.
+   */
+  readonly allowRefund = input(true);
+  readonly canRefund = computed(() => {
+    const role = this.auth.user()?.role;
+    return this.allowRefund() && (role === 'SUPER_ADMIN' || role === 'BRAND_ADMIN' || role === 'STORE_MANAGER');
+  });
 
   readonly order = signal<AdminOrderDetail | null>(null);
   /** Who cancelled the order, why and where the money went — see `orderCancelSummary`. */
@@ -522,11 +580,26 @@ export class OrderDetailPanelComponent {
     return Math.max(0, Math.min(o.discountCents, funded - (o.takeawayPromo?.discountCents ?? 0)));
   });
 
-  /** takeAway's promo discount + the points: what takeAway compensates to the business. */
-  readonly fundedCents = computed(() => {
+  /** takeAway's own promo (or welcome bonus): its whole discount is compensated to the business. */
+  readonly promoCompensationCents = computed(() => {
     const o = this.order();
     if (!o || o.status === 'CANCELLED' || o.status === 'EXPIRED') return 0;
-    return Math.max(0, o.takeawayPromo?.discountCents ?? 0) + this.pointsCents();
+    return Math.max(0, o.takeawayPromo?.discountCents ?? 0);
+  });
+
+  /** takeAway's promo discount + the points: what takeAway compensates to the business. */
+  readonly fundedCents = computed(() => this.promoCompensationCents() + this.pointsCents());
+
+  /**
+   * The discount of the brand's own promo code: the brand gives it and
+   * takeAway does not compensate it (Maxim, 2026-11-06, №11) — said on the
+   * order, since a manager testing a code from «Акции → Промокоды» expected
+   * it among takeAway's compensation.
+   */
+  readonly brandPromoCents = computed(() => {
+    const o = this.order();
+    if (!o || o.takeawayPromo || !o.couponCode) return 0;
+    return Math.max(0, o.discountCents - this.pointsCents());
   });
 
   /** Paid by QR: the bank gives it back only whole, so the amount is not editable. */

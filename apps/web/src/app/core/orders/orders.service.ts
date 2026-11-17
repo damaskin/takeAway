@@ -141,7 +141,7 @@ export interface CreateOrderInput {
   couponCode?: string;
   /** Gift-card code, applied after promo and before delivery fee. */
   giftCardCode?: string;
-  /** Loyalty points to spend; 0 with a takeAway promo, which points do not combine with. */
+  /** Loyalty points to spend, in units (a hundredth of a point); 0 with any promo code, which points do not combine with. */
   pointsToSpend?: number;
   // Delivery-only. Required when `fulfillmentType === 'DELIVERY'`.
   deliveryAddressLine?: string;

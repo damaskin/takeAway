@@ -3,6 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { PointsPipe } from '@takeaway/i18n';
 
 import { API_CONFIG } from '../../core/api/api.config';
 
@@ -23,7 +24,7 @@ interface ReferralSummary {
 @Component({
   selector: 'app-profile-referrals',
   standalone: true,
-  imports: [RouterLink, ReactiveFormsModule, TranslatePipe],
+  imports: [RouterLink, ReactiveFormsModule, TranslatePipe, PointsPipe],
   template: `
     <section style="min-height: calc(100vh - 72px); background: var(--color-cream); padding: 32px 16px">
       <div style="max-width: 540px; margin: 0 auto">
@@ -80,7 +81,7 @@ interface ReferralSummary {
             >
               <span
                 style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-mint)"
-                >+{{ s.pointsEarned }}</span
+                >+{{ s.pointsEarned | points: 'number' }}</span
               >
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                 'web.profile.referrals.pointsEarned' | translate

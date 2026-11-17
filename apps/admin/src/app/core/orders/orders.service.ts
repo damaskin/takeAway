@@ -46,6 +46,10 @@ export interface AdminOrderSummary {
    * cancelled or expired order. Absent from an API older than 2026-11-14.
    */
   takeawayFundedCents?: number;
+  /** Menu price before any discount. Absent from an API older than 2026-11-17. */
+  subtotalCents?: number;
+  /** The brand's own promo discount — not compensated by takeAway. Absent from an API older than 2026-11-17. */
+  brandDiscountCents?: number;
 }
 
 export interface AdminOrderItem {
