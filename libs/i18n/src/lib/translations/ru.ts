@@ -155,7 +155,26 @@ export const TRANSLATIONS_RU = {
     menu: 'Меню',
     close: 'Закрыть',
     user: 'Пользователь',
-    points: 'баллов',
+    /**
+     * A points figure with its word (`LocaleFormatService.points`, the `points`
+     * pipe): `{{count}}` is already written out — «12,40», «2 450». A fraction
+     * takes `other`: «0,40 балла».
+     */
+    pointsCount: {
+      one: '{{count}} балл',
+      few: '{{count}} балла',
+      many: '{{count}} баллов',
+      other: '{{count}} балла',
+    },
+    /** The word alone, after a figure set apart (`points: 'word'`). */
+    pointsWord: {
+      one: 'балл',
+      few: 'балла',
+      many: 'баллов',
+      other: 'балла',
+    },
+    /** Under «Оплатить баллами» while any promo code is applied: one or the other. */
+    pointsWithPromo: 'Баллы нельзя совместить с промокодом',
     requestFailed: 'Запрос не выполнен',
     retry: 'Повторить',
     genericError: 'Что-то пошло не так, попробуйте снова',
@@ -282,8 +301,6 @@ export const TRANSLATIONS_RU = {
       /** Under the bonus in the profile; the date is the bonus's last day in the customer's calendar. */
       anyStoreUntil: 'На заказ в любом заведении · до {{date}}',
       remove: 'Убрать',
-      /** Under «Оплатить баллами» while a takeAway promo is applied. */
-      noPoints: 'Баллы нельзя совместить с промокодом',
     },
     /**
      * Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12): the
@@ -471,10 +488,12 @@ export const TRANSLATIONS_RU = {
       emptyCart: 'Корзина пуста.',
       browseMenu: 'Открыть меню',
       pointsLabel: 'Оплатить баллами',
-      pointsBalance: 'Доступно {{points}} баллов',
-      pointsApplied: 'Списано {{points}} баллов — минус {{amount}}',
-      pointsTooFew: 'Минимум {{min}} баллов, и не больше суммы заказа',
-      pointsSpent: '{{points}} баллов',
+      /** `{{points}}` and `{{min}}` come with their word: «12,40 балла», «1 балл». */
+      pointsBalance: 'Доступно {{points}}',
+      pointsApplied: 'Списано {{points}} — минус {{amount}}',
+      pointsTooFew: 'Минимум {{min}}, и не больше суммы заказа',
+      /** A promo code went on while points were applied: they came off. */
+      pointsDroppedForPromo: 'Баллы сняты: их нельзя совместить с промокодом',
       promoLabel: 'Промокод',
       promoPlaceholder: 'WELCOME10',
       promoApplied: 'Применён · скидка {{amount}}',
@@ -825,8 +844,8 @@ export const TRANSLATIONS_RU = {
       tierPlatinum: 'Платиновый',
       tierSignature: 'Сигнатурный',
       tierSilverLabel: 'Серебряный',
-      pointsSuffix: 'баллов',
-      toNextTier: '{{points}} баллов до уровня «{{tier}}»',
+      /** `{{points}}` comes with its word: «3,80 балла». */
+      toNextTier: '{{points}} до уровня «{{tier}}»',
       sections: {
         myOrders: 'Мои заказы',
         personal: 'Личные данные',
@@ -4207,7 +4226,6 @@ export const TRANSLATIONS_RU = {
     },
     profile: {
       loyalty: 'ЛОЯЛЬНОСТЬ',
-      pointsLine: '{{points}} баллов',
       fallbackName: 'Пользователь Telegram',
       signedInVia: 'Вы вошли через Telegram',
       signedInHint: 'В мини-приложении ваш аккаунт — это Telegram, выходить из него не нужно.',

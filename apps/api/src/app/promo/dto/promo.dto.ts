@@ -74,7 +74,7 @@ export class ValidPromoResultDto {
     nullable: true,
     description:
       "Whose code it is: BRAND — the brand's promo code; TAKEAWAY — a takeAway promo or the welcome bonus " +
-      '(takeAway compensates the venue; loyalty points do not combine with it). Null when not valid.',
+      '(takeAway compensates the venue). Loyalty points combine with neither. Null when not valid.',
   })
   source?: 'BRAND' | 'TAKEAWAY' | null;
   @ApiPropertyOptional({ type: () => ValidTakeawayPromoDto, nullable: true })

@@ -235,7 +235,10 @@ function harness() {
   const availability = { forStore: jest.fn().mockResolvedValue(view) };
   const mail = { sendOrderReceipt: jest.fn().mockResolvedValue(undefined), sendWelcome: jest.fn() };
   const receiptPdf = { render: jest.fn().mockResolvedValue(null) };
-  const loyalty = { quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }) };
+  const loyalty = {
+    quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }),
+    debit: jest.fn().mockResolvedValue(undefined),
+  };
   const promo = { validate: jest.fn(), applyAndRedeem: jest.fn().mockResolvedValue({}) };
   const takeaway = {
     reserveForOrder: jest.fn().mockResolvedValue(undefined),
@@ -850,6 +853,82 @@ describe('OrdersService.create — takeAway promos', () => {
     });
     expect(tx.order.create).not.toHaveBeenCalled();
     expect(takeaway.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('refuses loyalty points beside a brand code too: one or the other', async () => {
+    const { service, prisma, tx, promo, loyalty } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue({
+      ...takeawayCode(300),
+      source: 'BRAND',
+      takeawayPromo: null,
+      promo: { id: 'p-1', code: 'COFFEE20' },
+    });
+
+    await expect(
+      service.create('user-1', { ...placeOrder, couponCode: 'coffee20', pointsToSpend: 500 }),
+    ).rejects.toMatchObject({
+      status: 400,
+      response: expect.objectContaining({ code: 'PROMO_WITH_POINTS' }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+    expect(promo.applyAndRedeem).not.toHaveBeenCalled();
+    expect(loyalty.debit).not.toHaveBeenCalled();
+  });
+
+  it('refuses points beside a points-multiplier code, which has no discount of its own', async () => {
+    const { service, prisma, tx, promo } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue({
+      ...takeawayCode(0),
+      source: 'BRAND',
+      takeawayPromo: null,
+      promo: { id: 'p-2', code: 'DOUBLE' },
+      pointsMultiplier: 2,
+    });
+
+    await expect(
+      service.create('user-1', { ...placeOrder, couponCode: 'double', pointsToSpend: 100 }),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'PROMO_WITH_POINTS' }) });
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  it('takes a promo code with no points asked — an explicit 0 included', async () => {
+    const { service, prisma, tx, promo, loyalty } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue({
+      ...takeawayCode(300),
+      source: 'BRAND',
+      takeawayPromo: null,
+      promo: { id: 'p-1', code: 'COFFEE20' },
+    });
+
+    await service.create('user-1', { ...placeOrder, couponCode: 'coffee20', pointsToSpend: 0 });
+
+    expect(tx.order.create.mock.calls[0]?.[0]?.data).toMatchObject({ discountCents: 300, pointsSpent: 0 });
+    expect(loyalty.debit).not.toHaveBeenCalled();
+  });
+
+  it('spends points with no promo code, and writes them in points in the ledger', async () => {
+    const { service, prisma, tx, promo, loyalty } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    loyalty.quoteRedemption.mockResolvedValue({ points: 550, discountCents: 550 });
+
+    await service.create('user-1', { ...placeOrder, pointsToSpend: 550 });
+
+    expect(promo.validate).not.toHaveBeenCalled();
+    expect(tx.order.create.mock.calls[0]?.[0]?.data).toMatchObject({
+      pointsSpent: 550,
+      pointsDiscountCents: 550,
+      discountCents: 550,
+    });
+    expect(loyalty.debit).toHaveBeenCalledWith(
+      'user-1',
+      'order-1',
+      550,
+      expect.stringMatching(/ · \u22125\.50 points$/),
+      tx,
+    );
   });
 
   it('leaves a brand code as it was: the brand pays, nothing for takeAway', async () => {

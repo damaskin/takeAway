@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { LocaleFormatService, PointsPipe } from '@takeaway/i18n';
 
 import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
@@ -17,7 +17,7 @@ const TIER_KEYS: Record<LoyaltyAccount['tier'], string> = {
 @Component({
   selector: 'app-profile-loyalty',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, PointsPipe],
   template: `
     <section style="min-height: calc(100vh - 72px); background: var(--color-cream); padding: 32px 16px">
       <div style="max-width: 540px; margin: 0 auto">
@@ -49,11 +49,11 @@ const TIER_KEYS: Record<LoyaltyAccount['tier'], string> = {
             <div
               style="font-family: var(--font-display); font-size: 40px; font-weight: 700; color: var(--color-espresso)"
             >
-              {{ a.pointsBalance }}
+              {{ a.pointsBalance | points: 'number' }}
               <span
                 style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); font-weight: 400"
               >
-                {{ 'common.points' | translate }}
+                {{ a.pointsBalance | points: 'word' }}
               </span>
             </div>
 
@@ -64,7 +64,7 @@ const TIER_KEYS: Record<LoyaltyAccount['tier'], string> = {
                   style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                 >
                   <span>{{ 'web.profile.loyalty.toNextTier' | translate: { tier: tierName(a.nextTier) } }}</span>
-                  <span>{{ a.pointsToNextTier }}</span>
+                  <span>{{ a.pointsToNextTier | points }}</span>
                 </div>
                 <div style="height: 6px; background: var(--color-latte); border-radius: 999px; overflow: hidden">
                   <div
@@ -94,11 +94,12 @@ const TIER_KEYS: Record<LoyaltyAccount['tier'], string> = {
                 style="padding: 12px 14px; gap: 12px; border-bottom: 1px solid var(--color-border-light)"
               >
                 <div
-                  style="width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; flex-shrink: 0"
+                  data-testid="loyalty-entry-amount"
+                  style="min-width: 32px; height: 32px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; flex-shrink: 0; white-space: nowrap; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
                   [style.background]="e.amount >= 0 ? 'rgba(76,175,80,0.15)' : 'rgba(244,67,54,0.15)'"
                   [style.color]="e.amount >= 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
                 >
-                  {{ e.amount >= 0 ? '+' : '' }}{{ e.amount }}
+                  {{ e.amount >= 0 ? '+' : '' }}{{ e.amount | points: 'number' }}
                 </div>
                 <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
                   <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)">{{

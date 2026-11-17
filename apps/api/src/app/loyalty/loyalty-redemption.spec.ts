@@ -1,5 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
-import { LoyaltyService } from './loyalty.service';
+import { LoyaltyService, ledgerPoints } from './loyalty.service';
 
 function makeService(balance: number): { service: LoyaltyService; prisma: { loyaltyAccount: { upsert: jest.Mock } } } {
   const prisma = {
@@ -17,7 +17,9 @@ function makeService(balance: number): { service: LoyaltyService; prisma: { loya
 }
 
 describe('LoyaltyService.quoteRedemption', () => {
-  it('values a point at one cent', async () => {
+  // Every figure is in units, a hundredth of a point: 500 units are 5 points,
+  // worth 5.00 — 1 балл = 1 руб.
+  it('values a unit at one cent, so a point is one currency unit', async () => {
     const { service } = makeService(1000);
     await expect(service.quoteRedemption('user-1', 500, 10_000)).resolves.toEqual({
       points: 500,
@@ -143,6 +145,19 @@ describe('LoyaltyService.releaseForOrder', () => {
     );
   });
 
+  it('writes the refund in points in the ledger', async () => {
+    const { service, tx } = harness({ id: 'led-1', userId: 'user-1', amount: -250, type: 'SPEND' });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await service.releaseForOrder(tx as any, 'order-1');
+
+    expect(tx.pointsLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ amount: 250, reason: 'Refunded 2.50 points from order order-1' }),
+      }),
+    );
+  });
+
   it('does nothing for an order that never spent points', async () => {
     const { service, tx } = harness(null);
 
@@ -151,5 +166,37 @@ describe('LoyaltyService.releaseForOrder', () => {
 
     expect(tx.loyaltyAccount.update).not.toHaveBeenCalled();
     expect(tx.pointsLedger.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoyaltyService.creditForOrder', () => {
+  it('earns a unit per 100 cents — 0.40 points on a 40.00 order — and says so in points', async () => {
+    const account = { id: 'acc-1', userId: 'user-1', pointsBalance: 0, lifetimePoints: 0, tier: 'SILVER' };
+    const tx = {
+      pointsLedger: { create: jest.fn() },
+      loyaltyAccount: { upsert: jest.fn().mockResolvedValue(account), update: jest.fn() },
+    };
+    const service = new LoyaltyService({} as unknown as PrismaService);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await service.creditForOrder('user-1', 'order-1', 4_000, 1, tx as any);
+
+    expect(tx.loyaltyAccount.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ pointsBalance: 40, lifetimePoints: 40 }) }),
+    );
+    expect(tx.pointsLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ amount: 40, reason: 'Order order-1 · +0.40 points' }),
+      }),
+    );
+  });
+});
+
+describe('ledgerPoints', () => {
+  it('writes units as points, whole ones without decimals', () => {
+    expect(ledgerPoints(100)).toBe('1 point');
+    expect(ledgerPoints(500)).toBe('5 points');
+    expect(ledgerPoints(40)).toBe('0.40 points');
+    expect(ledgerPoints(245_050)).toBe('2,450.50 points');
   });
 });
