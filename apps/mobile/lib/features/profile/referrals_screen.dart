@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/config/env.dart';
+import '../../core/format/points.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
@@ -115,11 +116,14 @@ class _ReferralsScreenState extends ConsumerState<ReferralsScreen> {
             const SizedBox(height: 16),
             Row(
               children: [
-                _Stat(value: summary.signupsCount, label: l10n.referralsSignups),
+                _Stat(value: '${summary.signupsCount}', label: l10n.referralsSignups),
                 const SizedBox(width: 10),
-                _Stat(value: summary.rewardedCount, label: l10n.referralsRewarded),
+                _Stat(value: '${summary.rewardedCount}', label: l10n.referralsRewarded),
                 const SizedBox(width: 10),
-                _Stat(value: summary.pointsEarned, label: l10n.referralsPoints),
+                _Stat(
+                  value: Points.format(summary.pointsEarned, locale: l10n.localeName),
+                  label: l10n.referralsPoints,
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -161,7 +165,7 @@ class _ReferralsScreenState extends ConsumerState<ReferralsScreen> {
 class _Stat extends StatelessWidget {
   const _Stat({required this.value, required this.label});
 
-  final int value;
+  final String value;
   final String label;
 
   @override
@@ -173,7 +177,7 @@ class _Stat extends StatelessWidget {
         decoration: BoxDecoration(color: brand.caramelSoft, borderRadius: BorderRadius.circular(Radii.button)),
         child: Column(
           children: [
-            Text('$value', style: context.text.headlineMedium),
+            Text(value, style: context.text.headlineMedium),
             const SizedBox(height: 2),
             Text(label, textAlign: TextAlign.center, style: context.text.bodySmall),
           ],

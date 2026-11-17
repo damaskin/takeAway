@@ -142,8 +142,26 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// How many times the app read its bonuses.
   var bonusReads = 0;
 
-  /// The loyalty balance; 0 hides «Оплатить баллами».
+  /// The loyalty balance in units, a hundredth of a point each (1240 =
+  /// 12,40 балла); 0 hides «Оплатить баллами».
   int pointsBalance = 0;
+
+  /// Units still to go to the next tier.
+  int pointsToNextTier = 500;
+
+  /// The latest loyalty operations, amounts in units.
+  List<LoyaltyEntry> loyaltyRecent = const [];
+
+  /// What the app asked `POST /loyalty/redeem/quote`, in order.
+  final redeemQuotes = <Map<String, dynamic>>[];
+
+  /// `GET /me/referrals`; points in units.
+  ReferralSummary referralSummary = const ReferralSummary(
+    code: 'FRIEND1',
+    signupsCount: 0,
+    rewardedCount: 0,
+    pointsEarned: 0,
+  );
 
   /// The welcome bonus as `GET /me/bonuses` lists it.
   static Map<String, dynamic> welcomeBonusJson({
@@ -798,14 +816,17 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<List<OrderSummary>> myOrders({String group = 'ALL', int take = 30}) async => myOrdersAnswer;
 
   @override
+  Future<ReferralSummary> referrals() async => referralSummary;
+
+  @override
   Future<LoyaltyAccount> loyalty() async => LoyaltyAccount(
     userId: 'u1',
     pointsBalance: pointsBalance,
     lifetimePoints: 0,
     tier: LoyaltyTier.silver,
-    pointsToNextTier: 500,
+    pointsToNextTier: pointsToNextTier,
     tierProgressPercent: 0,
-    recent: [],
+    recent: loyaltyRecent,
     nextTier: LoyaltyTier.gold,
   );
 
@@ -974,18 +995,21 @@ class FakeApi extends Fake implements TakeAwayApi {
     );
   }
 
-  /// A point is worth a bani; at least 10 go, never more than is left to pay.
+  /// As the API counts: a point is worth 1 MDL, so a unit is worth a bani;
+  /// at least 100 units (1 point) go, never more than the balance or what
+  /// is left to pay.
   @override
   Future<RedeemQuote> redeemQuote(Map<String, dynamic> body) async {
+    redeemQuotes.add(body);
     final payable = (body['payableCents'] as num?)?.toInt() ?? 0;
     final asked = (body['points'] as num?)?.toInt() ?? 0;
-    final points = [asked, pointsBalance, payable].reduce((a, b) => a < b ? a : b);
+    final units = [asked, pointsBalance, payable].reduce((a, b) => a < b ? a : b);
     return RedeemQuote(
-      points: points < 10 ? 0 : points,
-      discountCents: points < 10 ? 0 : points,
+      points: units < 100 ? 0 : units,
+      discountCents: units < 100 ? 0 : units,
       balance: pointsBalance,
       pointValueCents: 1,
-      minPoints: 10,
+      minPoints: 100,
     );
   }
 

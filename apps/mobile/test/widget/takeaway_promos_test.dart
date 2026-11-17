@@ -13,10 +13,13 @@ import '../helpers/harness.dart';
 
 /// «Акции takeAway» in the app (docs/takeaway-promos.md §5): the welcome
 /// bonus on the profile, applied at checkout by itself and removable, no
-/// points next to a takeAway promo, and the promo's line on the order.
+/// points next to any promo code (the loyalty spec: one or the other), and
+/// the promo's line on the order.
 void main() {
   const bonusTitle = 'Приветственный бонус −10%';
   const noPoints = 'Баллы нельзя совместить с промокодом';
+  const pointsRemoved = 'Баллы убраны: их нельзя совместить с промокодом';
+  const fivePointsOff = 'Списано 5 баллов · минус 5 MDL';
 
   String location(Harness h) => h.container.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
 
@@ -43,7 +46,8 @@ void main() {
 
   SwitchListTile pointsSwitch(WidgetTester tester) => tester.widget<SwitchListTile>(find.byType(SwitchListTile));
 
-  /// A customer with a 15 MDL croissant in the cart, a card and 500 points.
+  /// A customer with a 15 MDL croissant in the cart, a card and 5 points
+  /// (500 units).
   FakeApi checkoutApi({List<Map<String, dynamic>>? bonuses}) =>
       FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
         ..boundCards = [FakeApi.card()]
@@ -54,7 +58,10 @@ void main() {
 
   group('profile', () {
     testWidgets('shows the welcome bonus while there is one, and a tap leads to ordering', (tester) async {
-      final api = FakeApi()..bonuses = [FakeApi.welcomeBonusJson(expiresAt: DateTime(2026, 11, 17, 12))];
+      // 17 November of next year: always ahead (a fixed day ran out on
+      // 2026-11-17), and the line shows no year.
+      final expiresAt = DateTime(DateTime.now().year + 1, 11, 17, 12);
+      final api = FakeApi()..bonuses = [FakeApi.welcomeBonusJson(expiresAt: expiresAt)];
       final h = await pumpApp(tester, api: api);
       h.container.read(routerProvider).go(Routes.profile);
       await settle(tester);
@@ -157,7 +164,7 @@ void main() {
       expect(find.text(bonusTitle), findsNothing);
       expect(find.widgetWithText(TextField, 'WELCOME10'), findsNothing);
       expect(pointsSwitch(tester).onChanged, isNotNull, reason: 'points are back on offer');
-      expect(find.text('Доступно 500 баллов'), findsOneWidget);
+      expect(find.text('Доступно 5 баллов'), findsOneWidget);
 
       // Back to the cart and into checkout again: not put back.
       h.container.read(routerProvider).pop();
@@ -190,11 +197,12 @@ void main() {
       await tester.tap(find.byType(SwitchListTile));
       await settle(tester);
       expect(pointsSwitch(tester).value, isTrue);
-      expect(find.textContaining('500 баллов · минус'), findsOneWidget);
+      expect(find.text(fivePointsOff), findsOneWidget);
 
       await enterPromo(tester, 'AUTUMN');
       expect(find.text('Акция takeAway −15%'), findsWidgets);
       expect(pointsSwitch(tester).value, isFalse, reason: 'the points came off');
+      expect(find.text(pointsRemoved), findsOneWidget, reason: 'and the customer is told');
       expect(pointsSwitch(tester).onChanged, isNull);
       expect(find.text(noPoints), findsOneWidget);
       expect(find.text('Убрать'), findsNothing, reason: 'a code the customer typed clears with the cross');
@@ -207,7 +215,7 @@ void main() {
       await h.unmount(tester);
     });
 
-    testWidgets('a brand code keeps points on offer and comes off with the cross', (tester) async {
+    testWidgets('a brand code turns points off too, and the cross brings them back', (tester) async {
       final api = checkoutApi(bonuses: const [])
         ..promoAnswers['COFFEE'] = {'valid': true, 'source': 'BRAND', 'discountCents': 200, 'pointsMultiplier': 1};
       final h = await pumpApp(tester, api: api);
@@ -215,8 +223,9 @@ void main() {
 
       await enterPromo(tester, 'COFFEE');
       expect(find.text('Скидка 2 MDL'), findsOneWidget);
-      expect(pointsSwitch(tester).onChanged, isNotNull);
-      expect(find.text(noPoints), findsNothing);
+      expect(pointsSwitch(tester).onChanged, isNull, reason: 'a promo code or points, not both');
+      expect(pointsSwitch(tester).value, isFalse);
+      expect(find.text(noPoints), findsOneWidget);
 
       // The applied field is read-only, but its cross still takes a tap.
       await tester.tap(find.byIcon(Icons.close_rounded));
@@ -224,6 +233,40 @@ void main() {
       expect(find.text('Скидка 2 MDL'), findsNothing);
       expect(find.widgetWithText(TextField, 'COFFEE'), findsNothing);
       expect(api.promoChecks, hasLength(1), reason: 'no bonus is held, nothing comes in its place');
+      expect(pointsSwitch(tester).onChanged, isNotNull, reason: 'points are on offer again');
+      expect(find.text(noPoints), findsNothing);
+      expect(find.text('Доступно 5 баллов'), findsOneWidget);
+      expect(api.redeemQuotes, isEmpty, reason: 'nothing is put back by itself');
+      await h.unmount(tester);
+    });
+
+    testWidgets('a brand code typed over chosen points takes them off, and the order goes with none', (tester) async {
+      final api = checkoutApi(bonuses: const [])
+        ..promoAnswers['COFFEE'] = {'valid': true, 'source': 'BRAND', 'discountCents': 200, 'pointsMultiplier': 1};
+      final h = await pumpApp(tester, api: api);
+      await openCheckout(tester);
+
+      await reveal(tester, find.byType(SwitchListTile));
+      await tester.tap(find.byType(SwitchListTile));
+      await settle(tester);
+      expect(find.text(fivePointsOff), findsOneWidget);
+
+      await enterPromo(tester, 'COFFEE');
+      expect(find.text('Скидка 2 MDL'), findsOneWidget);
+      expect(pointsSwitch(tester).value, isFalse);
+      expect(pointsSwitch(tester).onChanged, isNull);
+      expect(find.text(noPoints), findsOneWidget);
+      expect(find.text(pointsRemoved), findsOneWidget);
+      expect(find.byKey(const ValueKey('points-amount')), findsNothing);
+
+      await reveal(tester, find.text('Итого'));
+      expect(find.text('Баллы'), findsNothing, reason: 'no points line in the summary');
+
+      await tester.tap(find.byType(PrimaryButton));
+      await settle(tester, const Duration(seconds: 2));
+      final order = api.created.single.toJson();
+      expect(order['couponCode'], 'COFFEE');
+      expect(order['pointsToSpend'], 0, reason: 'a promo code goes with no points (PROMO_WITH_POINTS)');
       await h.unmount(tester);
     });
 

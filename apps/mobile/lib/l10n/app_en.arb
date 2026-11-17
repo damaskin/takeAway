@@ -532,6 +532,13 @@
     }
   },
   "pointsNotWithPromo": "Points can't be combined with a promo code",
+  "@pointsNotWithPromo": {
+    "description": "Under «Pay with points», switched off while any promo code is applied; also the PROMO_WITH_POINTS refusal."
+  },
+  "pointsRemovedForPromo": "Points removed: they can't be combined with a promo code",
+  "@pointsRemovedForPromo": {
+    "description": "Brief notice: a promo code was applied while points were chosen, so the points came off."
+  },
   "giftCard": "Gift card",
   "giftCardApplied": "{amount} covered by the gift card",
   "@giftCardApplied": {
@@ -542,30 +549,46 @@
     }
   },
   "payWithPoints": "Pay with points",
-  "pointsAvailable": "{points} points available",
+  "pointsAvailable": "{points} available",
   "@pointsAvailable": {
+    "description": "The balance with its noun, from Points.label: «12.40 points available».",
     "placeholders": {
       "points": {
-        "type": "int"
+        "type": "String"
       }
     }
   },
-  "pointsApplied": "{points} points · {amount} off",
+  "pointsApplied": "{points} used · {amount} off",
   "@pointsApplied": {
+    "description": "The quoted points with their noun (Points.label) and what they take off the order.",
     "placeholders": {
       "points": {
-        "type": "int"
+        "type": "String"
       },
       "amount": {
         "type": "String"
       }
     }
   },
-  "pointsTooFew": "At least {min} points, and no more than the order is worth.",
+  "pointsTooFew": "At least {min}, and no more than the order is worth.",
   "@pointsTooFew": {
+    "description": "The minimum with its noun (Points.label): «At least 1 point…».",
     "placeholders": {
       "min": {
-        "type": "int"
+        "type": "String"
+      }
+    }
+  },
+  "pointsAmount": "Points to use",
+  "@pointsAmount": {
+    "description": "Label of the field where the customer types how many points to spend (up to two decimals)."
+  },
+  "pointsAmountMax": "Up to {points}",
+  "@pointsAmountMax": {
+    "description": "Under the points field: the most that can go on this order, with its noun (Points.label).",
+    "placeholders": {
+      "points": {
+        "type": "String"
       }
     }
   },
@@ -965,19 +988,23 @@
   "tierGold": "Gold",
   "tierPlatinum": "Platinum",
   "tierSignature": "Signature",
-  "pointsCount": "{count, plural, =1{1 point} other{{count} points}}",
+  "pointsCount": "{count, plural, =1{{points} point} other{{points} points}}",
   "@pointsCount": {
+    "description": "A points amount with its noun; use Points.label. count picks the form (a fraction is plural: «12,40 балла»), points is the formatted number.",
     "placeholders": {
       "count": {
-        "type": "int"
+        "type": "num"
+      },
+      "points": {
+        "type": "String"
       }
     }
   },
-  "toNextTier": "{points} points to {tier}",
+  "toNextTier": "{points} more to {tier}",
   "@toNextTier": {
     "placeholders": {
       "points": {
-        "type": "int"
+        "type": "String"
       },
       "tier": {
         "type": "String"
@@ -1267,7 +1294,6 @@
     "description": "PROMO_NOT_ELIGIBLE: a brand code for customers away for a while, or a welcome code the customer was not given."
   },
   "errPromoNotHere": "This promo doesn't apply at this venue",
-  "errPromoWithPoints": "Points can't be combined with a promo code",
   "errGiftCardUnknown": "There is no such gift card",
   "errGiftCardOtherBrand": "This gift card is not valid here",
   "errGiftCardCurrency": "This gift card is in another currency",
