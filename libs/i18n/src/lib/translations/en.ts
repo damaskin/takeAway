@@ -2496,6 +2496,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         noBrand: 'Pick a brand in the header.',
       },
       product: {
+        drinkNoVariants:
+          'This drink has no variants, so the guest cannot pick a size. If it comes in different sizes, add a «Size» group under «Variants». Saving without variants is allowed.',
+        afterSave:
+          'open right after the product is saved: size, serving, milk, syrups. A product without them can be sold too (water, pastries).',
         title: 'Variants and add-ons',
         hint: 'Groups from the catalog: the customer picks the variants first, then the add-ons. Listed are the groups where the brand has something.',
         legacyHint:

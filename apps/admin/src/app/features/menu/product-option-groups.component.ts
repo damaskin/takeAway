@@ -113,6 +113,11 @@ const EMPTY_DRAFT: ProductGroupsDraft = { groupIds: [], deltas: {}, defaults: {}
       @if (loading()) {
         <p class="hint" style="margin: 0">{{ 'common.loading' | translate }}</p>
       }
+      @if (drinkWithoutVariants()) {
+        <p class="notice" role="note" data-testid="product-option-groups-no-variants">
+          {{ 'admin.optionsCatalog.product.drinkNoVariants' | translate }}
+        </p>
+      }
 
       @if (hasVariants()) {
         <p class="hint" style="margin: 0" data-testid="product-option-groups-base">
@@ -251,6 +256,13 @@ export class ProductOptionGroupsComponent {
   readonly currency = input<string | null>(null);
   /** The product still has older options (sizes, extras): attaching a group switches it over. */
   readonly hasLegacyOptions = input(false);
+  /**
+   * The product is a drink (its category is hot or cold drinks): saved without
+   * a variant group — no size to pick — it gets a warning, not a block. A
+   * product may well have no options at all (water, a croissant), so the
+   * editor never refuses one (owner, 2026-11-17, Maxim's list 7, item 5).
+   */
+  readonly isDrink = input(false);
   /** How many groups the product is saved with — after loading and after every save. */
   readonly attachedCount = output<number>();
 
@@ -285,6 +297,12 @@ export class ProductOptionGroupsComponent {
     });
   });
   readonly hasVariants = computed(() => this.attached().some((v) => v.group.kind === 'VARIANT'));
+  /** A drink saved with no variant group, once the catalog is known. */
+  readonly drinkWithoutVariants = computed(() => {
+    if (!this.isDrink() || this.loading() || !this.catalog()) return false;
+    const groups = this.groups();
+    return !this.saved().groups.some((g) => groups.find((c) => c.id === g.groupId)?.kind === 'VARIANT');
+  });
   readonly attachable = computed(() => {
     const list = attachableGroups(this.groups(), this.settings(), new Set(this.draft().groupIds));
     return { VARIANT: groupsOfKind(list, 'VARIANT'), ADDON: groupsOfKind(list, 'ADDON') };
