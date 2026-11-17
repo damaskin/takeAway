@@ -16,6 +16,10 @@ enum LoyaltyTier {
   signature,
 }
 
+/// Loyalty points travel as integer units, a hundredth of a point each (1
+/// point = 1 major currency unit, so a unit is worth a cent): every points
+/// field below — and `CreateOrderRequest.pointsToSpend` — counts units.
+/// The app shows points (`Points` in apps/mobile).
 @JsonSerializable(createToJson: false)
 class LoyaltyEntry {
   const LoyaltyEntry({
@@ -33,6 +37,8 @@ class LoyaltyEntry {
 
   /// EARN / SPEND / EXPIRE / ADJUST.
   final String type;
+
+  /// In units, negative for a spend or an expiry.
   final int amount;
   final String reason;
   final String? orderId;
@@ -55,6 +61,8 @@ class LoyaltyAccount {
   factory LoyaltyAccount.fromJson(Map<String, dynamic> json) => _$LoyaltyAccountFromJson(json);
 
   final String userId;
+
+  /// In units, as are [lifetimePoints] and [pointsToNextTier].
   final int pointsBalance;
   final int lifetimePoints;
   @JsonKey(unknownEnumValue: LoyaltyTier.silver)
@@ -81,9 +89,13 @@ class RedeemQuote {
 
   factory RedeemQuote.fromJson(Map<String, dynamic> json) => _$RedeemQuoteFromJson(json);
 
+  /// Units that may go on the order (0: none — under [minPoints], or no
+  /// balance); [balance] and [minPoints] are in units too.
   final int points;
   final int discountCents;
   final int balance;
+
+  /// Cents per unit (1).
   final int pointValueCents;
   final int minPoints;
 }
@@ -130,8 +142,9 @@ class PromoValidation {
   /// The takeAway promo when [source] is [PromoSource.takeaway].
   final ValidatedTakeawayPromo? takeawayPromo;
 
-  /// A takeAway promo or the welcome bonus: loyalty points cannot be added
-  /// to it (the API refuses the order with `PROMO_WITH_POINTS`).
+  /// A takeAway promo or the welcome bonus. Loyalty points go with no
+  /// promo code at all, a brand's included (the API refuses the order with
+  /// `PROMO_WITH_POINTS`).
   bool get isTakeaway => valid && source == PromoSource.takeaway;
 }
 
@@ -186,6 +199,8 @@ class ReferralSummary {
   final int signupsCount;
   @JsonKey(defaultValue: 0)
   final int rewardedCount;
+
+  /// In units.
   @JsonKey(defaultValue: 0)
   final int pointsEarned;
   final String? appliedCode;
