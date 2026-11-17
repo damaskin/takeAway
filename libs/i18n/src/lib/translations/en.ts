@@ -3251,7 +3251,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         churn: {
           title: 'Inactive customers: how many and the revenue missed',
-          description: "How many regulars haven't ordered for 3, 7 or 14 days, and what that costs.",
+          description: "How many regulars haven't ordered for 14 days, and what that costs.",
         },
         promo: {
           title: 'Promo codes',
@@ -3737,7 +3737,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     churn: {
       title: 'Inactive customers',
-      windowLabel: 'Inactive after no order for',
       window: '{{days}} d',
       hint: 'Ordered from you at least 3 times, then nothing for {{days}} days, and that ran out inside the period.',
       definition: 'An inactive customer has ordered from you at least {{min}} times but not in the last {{days}} days.',

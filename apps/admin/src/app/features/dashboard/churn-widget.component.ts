@@ -10,7 +10,7 @@ import {
   type ChurnWindow,
 } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
-import { INACTIVE_DAYS, INACTIVE_MIN_ORDERS } from '../../core/customers/inactive-segment';
+import { DEFAULT_INACTIVE_DAYS, INACTIVE_MIN_ORDERS } from '../../core/customers/inactive-segment';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { PlanLockComponent } from '../../shared/plan-lock.component';
@@ -18,12 +18,15 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 
 /**
  * «Неактивные клиенты» on the business home, right under the KPIs: regulars
- * (3+ orders) who stopped ordering for 3, 7 or 14 days during the period.
+ * (3+ orders) who went 14 days without an order during the dashboard's
+ * period. The period picked on top of the dashboard is the only choice here,
+ * as on the analytics' «Возврат клиентов» tab (Maxim's list 7, item 1): the
+ * 3 / 7 / 14 threshold stays in «Клиенты», campaigns and promo codes.
  * The money comes first — the revenue missed: what each would have brought
  * coming at their usual pace, days away ÷ usual interval × average check —
  * then how many they are. Every plan sees both; PRO also sees who they are,
  * biggest estimate first, and the «Возврат» button, which opens the
- * win-back tab of the analytics on the same period, store and window.
+ * win-back tab of the analytics on the same period and store.
  */
 @Component({
   selector: 'app-churn-widget',
@@ -33,20 +36,8 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
     <article class="dash-card churn">
       <header class="dash-card-head">
         <h2>{{ 'admin.churn.title' | translate }}</h2>
-        <div class="churn-window" role="group" [attr.aria-label]="'admin.churn.windowLabel' | translate">
-          @for (w of windows; track w) {
-            <button
-              type="button"
-              [class.churn-window-on]="window() === w"
-              [attr.aria-pressed]="window() === w"
-              (click)="window.set(w)"
-            >
-              {{ 'admin.churn.window' | translate: { days: w } }}
-            </button>
-          }
-        </div>
       </header>
-      <p class="dash-muted">{{ 'admin.churn.definition' | translate: { min: minOrders, days: window() } }}</p>
+      <p class="dash-muted">{{ 'admin.churn.definition' | translate: { min: minOrders, days: inactiveDays } }}</p>
 
       <div class="churn-body">
         <div class="churn-figures">
@@ -129,27 +120,6 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
     `
       :host {
         display: block;
-      }
-      .churn-window {
-        display: flex;
-        gap: 4px;
-      }
-      .churn-window button {
-        height: 28px;
-        padding: 0 10px;
-        border-radius: 9999px;
-        border: 1px solid var(--color-border-light);
-        background: var(--color-foam);
-        color: var(--color-text-secondary);
-        font-family: var(--font-sans);
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      .churn-window .churn-window-on {
-        background: var(--color-espresso);
-        border-color: transparent;
-        color: white;
       }
       .churn-body {
         display: grid;
@@ -293,9 +263,9 @@ export class ChurnWidgetComponent {
   readonly period = input.required<AnalyticsPeriod>();
   readonly currency = input<string | null | undefined>(null);
 
-  readonly windows: readonly ChurnWindow[] = INACTIVE_DAYS;
   readonly minOrders = INACTIVE_MIN_ORDERS;
-  readonly window = signal<ChurnWindow>(14);
+  /** Days without an order that make a regular inactive: always 14 here, like the «Возврат клиентов» tab. */
+  readonly inactiveDays: ChurnWindow = DEFAULT_INACTIVE_DAYS;
   readonly stats = signal<ChurnStats | null>(null);
 
   private readonly role = computed(() => this.auth.user()?.role as AdminRole | undefined);
@@ -303,12 +273,11 @@ export class ChurnWidgetComponent {
   readonly canSeeAnalytics = computed(() => canAccess(this.role(), 'analytics'));
   readonly canSeeCustomers = computed(() => canAccess(this.role(), 'customers'));
 
-  /** The win-back tab on the same period, store and window as here. */
+  /** The win-back tab on the same period and store as here (its threshold is 14 days too). */
   readonly retentionQuery = computed(() => {
     const p = this.period();
     return {
       tab: 'retention',
-      window: this.window(),
       ...(p.from || p.to ? { from: p.from, to: p.to } : { days: p.days }),
       storeId: p.storeId ?? undefined,
     };
@@ -337,9 +306,8 @@ export class ChurnWidgetComponent {
     effect(() => {
       const brandId = this.brandId();
       const period = this.period();
-      const window = this.window();
       untracked(() =>
-        this.api.churn(brandId, period, window, 3).subscribe({
+        this.api.churn(brandId, period, this.inactiveDays, 3).subscribe({
           next: (s) => this.stats.set(s),
           error: () => this.stats.set(null),
         }),
