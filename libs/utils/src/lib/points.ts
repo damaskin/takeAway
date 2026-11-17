@@ -15,7 +15,7 @@ import { isRussian } from './money';
 /** Units in one point: a point is worth 100 cents, a unit one cent. */
 export const POINT_UNITS_PER_POINT = 100;
 
-const MINUS = '−';
+const MINUS = '\u2212';
 
 /** Units as points: 1240 → 12.4. For arithmetic and plural rules, not for display. */
 export function pointsFromUnits(units: number): number {
@@ -34,7 +34,7 @@ export function pointUnitsFromInput(raw: string | number): number {
     points = raw;
   } else {
     // Spaces (also the no-break ones a formatted «2 450» carries) are grouping.
-    const text = raw.replace(/[\s  ]/g, '').replace(',', '.');
+    const text = raw.replace(/\s/g, '').replace(',', '.');
     if (!/^(\d+\.?\d*|\.\d+)$/.test(text)) return 0;
     points = Number(text);
   }

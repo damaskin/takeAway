@@ -1,7 +1,7 @@
 import { POINT_UNITS_PER_POINT, formatPoints, pointUnitsFromInput, pointsFromUnits, pointsWord } from './points';
 
 // Intl groups thousands with a no-break space in Russian.
-const NBSP = ' ';
+const NBSP = '\u00a0';
 
 describe('points', () => {
   it('counts a hundred units to the point', () => {
@@ -27,8 +27,8 @@ describe('points', () => {
     });
 
     it('starts a negative amount with a real minus sign', () => {
-      expect(formatPoints(-40)).toBe('−0,40');
-      expect(formatPoints(-100, 'en')).toBe('−1');
+      expect(formatPoints(-40)).toBe('\u22120,40');
+      expect(formatPoints(-100, 'en')).toBe('\u22121');
     });
 
     it('falls back to Russian on a malformed language tag', () => {
