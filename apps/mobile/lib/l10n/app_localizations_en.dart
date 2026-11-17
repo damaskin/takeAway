@@ -694,6 +694,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pointsNotWithPromo => 'Points can\'t be combined with a promo code';
 
   @override
+  String get pointsRemovedForPromo => 'Points removed: they can\'t be combined with a promo code';
+
+  @override
   String get giftCard => 'Gift card';
 
   @override
@@ -705,18 +708,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payWithPoints => 'Pay with points';
 
   @override
-  String pointsAvailable(int points) {
-    return '$points points available';
+  String pointsAvailable(String points) {
+    return '$points available';
   }
 
   @override
-  String pointsApplied(int points, String amount) {
-    return '$points points · $amount off';
+  String pointsApplied(String points, String amount) {
+    return '$points used · $amount off';
   }
 
   @override
-  String pointsTooFew(int min) {
-    return 'At least $min points, and no more than the order is worth.';
+  String pointsTooFew(String min) {
+    return 'At least $min, and no more than the order is worth.';
+  }
+
+  @override
+  String get pointsAmount => 'Points to use';
+
+  @override
+  String pointsAmountMax(String points) {
+    return 'Up to $points';
   }
 
   @override
@@ -1317,14 +1328,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tierSignature => 'Signature';
 
   @override
-  String pointsCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count points', one: '1 point');
+  String pointsCount(num count, String points) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$points points', one: '$points point');
     return '$_temp0';
   }
 
   @override
-  String toNextTier(int points, String tier) {
-    return '$points points to $tier';
+  String toNextTier(String points, String tier) {
+    return '$points more to $tier';
   }
 
   @override
@@ -1815,9 +1826,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errPromoNotHere => 'This promo doesn\'t apply at this venue';
-
-  @override
-  String get errPromoWithPoints => 'Points can\'t be combined with a promo code';
 
   @override
   String get errGiftCardUnknown => 'There is no such gift card';

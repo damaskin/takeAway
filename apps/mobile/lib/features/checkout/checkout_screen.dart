@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../app/router.dart';
+import '../../core/format/points.dart';
 import '../../core/format/tax.dart';
 import '../../core/format/time.dart';
 import '../../core/providers.dart';
@@ -110,6 +111,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // A promo code applied over points takes them off; say so briefly.
+    ref.listen(checkoutProvider, (previous, next) {
+      if ((previous?.points.open ?? false) && !next.points.open && next.pointsBlockedByPromo) {
+        Snack.show(context, l10n.pointsRemovedForPromo, icon: Icons.info_outline_rounded);
+      }
+    });
     final store = ref.watch(activeStoreProvider);
     final live = ref.watch(activeCartProvider).valueOrNull;
     final placed = ref.watch(checkoutProvider.select((s) => s.placedOrderId)) != null;
@@ -485,9 +492,11 @@ class _DiscountsSection extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final controller = ref.read(checkoutProvider.notifier);
+    // Units, a hundredth of a point each; shown as points (Points.label).
     final balance = ref.watch(loyaltyProvider).valueOrNull?.pointsBalance ?? 0;
     final points = state.points;
-    // A takeAway promo or the welcome bonus: no points next to it.
+    // Any promo code — a brand's, takeAway's, the welcome bonus: no points
+    // next to it.
     final pointsBlocked = state.pointsBlockedByPromo;
 
     return CheckoutSection(
@@ -525,19 +534,19 @@ class _DiscountsSection extends ConsumerWidget {
             const SizedBox(height: 6),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              value: points.spent > 0,
-              onChanged: points.busy || pointsBlocked
-                  ? null
-                  : (on) => on ? controller.applyPoints(balance) : controller.clearPoints(),
+              value: points.open && !pointsBlocked,
+              // On: as many as the order takes; the field below changes it.
+              // Off works mid-quote too: a late quote is dropped.
+              onChanged: pointsBlocked ? null : (on) => on ? controller.applyPoints(balance) : controller.clearPoints(),
               title: Text(l10n.payWithPoints, style: context.text.titleSmall),
               subtitle: Text(
                 pointsBlocked
                     ? l10n.pointsNotWithPromo
                     : points.spent > 0
-                    ? l10n.pointsApplied(points.spent, context.money(points.cents, currency))
+                    ? l10n.pointsApplied(Points.label(l10n, points.spent), context.money(points.cents, currency))
                     : points.message != null && points.message!.startsWith('min:')
-                    ? l10n.pointsTooFew(points.min)
-                    : points.message ?? l10n.pointsAvailable(balance),
+                    ? l10n.pointsTooFew(Points.label(l10n, points.min))
+                    : points.message ?? l10n.pointsAvailable(Points.label(l10n, balance)),
                 style: context.text.bodySmall?.copyWith(
                   color: points.spent > 0
                       ? brand.mint
@@ -550,6 +559,12 @@ class _DiscountsSection extends ConsumerWidget {
                   ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(Icons.stars_rounded, color: brand.amber),
             ),
+            if (points.open && !pointsBlocked)
+              PointsAmountField(
+                state: points,
+                capUnits: controller.pointsCap(balance),
+                onApply: (units) => controller.applyPoints(units, typed: true),
+              ),
           ],
         ],
       ),
@@ -561,7 +576,7 @@ class _DiscountsSection extends ConsumerWidget {
 /// «Акция takeAway −10%»; null for a brand's code, which reads as before.
 String? promoLabel(AppLocalizations l10n, CheckoutState state) {
   final promo = state.takeawayPromo;
-  if (!state.pointsBlockedByPromo || promo == null) return null;
+  if (!state.takeawayPromoApplied || promo == null) return null;
   return promo.isWelcome ? l10n.welcomeBonusTitle(promo.percent) : l10n.takeawayPromoLabel(promo.percent);
 }
 

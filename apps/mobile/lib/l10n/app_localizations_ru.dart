@@ -701,6 +701,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get pointsNotWithPromo => 'Баллы нельзя совместить с промокодом';
 
   @override
+  String get pointsRemovedForPromo => 'Баллы убраны: их нельзя совместить с промокодом';
+
+  @override
   String get giftCard => 'Подарочная карта';
 
   @override
@@ -712,18 +715,26 @@ class AppLocalizationsRu extends AppLocalizations {
   String get payWithPoints => 'Оплатить баллами';
 
   @override
-  String pointsAvailable(int points) {
-    return 'Доступно $points баллов';
+  String pointsAvailable(String points) {
+    return 'Доступно $points';
   }
 
   @override
-  String pointsApplied(int points, String amount) {
-    return '$points баллов · минус $amount';
+  String pointsApplied(String points, String amount) {
+    return 'Списано $points · минус $amount';
   }
 
   @override
-  String pointsTooFew(int min) {
-    return 'Минимум $min баллов и не больше суммы заказа.';
+  String pointsTooFew(String min) {
+    return 'Минимум $min и не больше суммы заказа.';
+  }
+
+  @override
+  String get pointsAmount => 'Сколько баллов списать';
+
+  @override
+  String pointsAmountMax(String points) {
+    return 'Не больше $points';
   }
 
   @override
@@ -1324,21 +1335,21 @@ class AppLocalizationsRu extends AppLocalizations {
   String get tierSignature => 'Сигнатур';
 
   @override
-  String pointsCount(int count) {
+  String pointsCount(num count, String points) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count балла',
-      many: '$count баллов',
-      few: '$count балла',
-      one: '$count балл',
+      other: '$points балла',
+      many: '$points баллов',
+      few: '$points балла',
+      one: '$points балл',
     );
     return '$_temp0';
   }
 
   @override
-  String toNextTier(int points, String tier) {
-    return '$points баллов до уровня «$tier»';
+  String toNextTier(String points, String tier) {
+    return 'Ещё $points до уровня «$tier»';
   }
 
   @override
@@ -1834,9 +1845,6 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get errPromoNotHere => 'Акция не действует в этом заведении';
-
-  @override
-  String get errPromoWithPoints => 'Баллы нельзя совместить с промокодом';
 
   @override
   String get errGiftCardUnknown => 'Такой подарочной карты нет';

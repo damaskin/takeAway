@@ -53,10 +53,11 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     // A brand code for customers away for a while, or a welcome code this
     // customer was not given: the API answers both alike.
     'PROMO_NOT_ELIGIBLE' => l10n.errPromoNotEligible,
-    // takeAway promos: one in another currency than the store's, and one
-    // sent with loyalty points (the two do not combine).
+    // A takeAway promo in another currency than the store's.
     'PROMO_NOT_HERE' => l10n.errPromoNotHere,
-    'PROMO_WITH_POINTS' => l10n.errPromoWithPoints,
+    // Any promo code sent with loyalty points (one or the other): the same
+    // words as under the switched-off «Оплатить баллами».
+    'PROMO_WITH_POINTS' => l10n.pointsNotWithPromo,
     'GIFT_CARD_UNKNOWN' => l10n.errGiftCardUnknown,
     'GIFT_CARD_OTHER_BRAND' => l10n.errGiftCardOtherBrand,
     'GIFT_CARD_CURRENCY' => l10n.errGiftCardCurrency,
