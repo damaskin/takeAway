@@ -292,7 +292,9 @@ test.describe('customer journey', () => {
   });
 
   test('a customer with points can spend them, and the total falls', async ({ page }) => {
-    const api = await installFakeApi(page, { pointsBalance: 500 });
+    // The API counts points in units, a hundredth of a point: 550 are 5.50
+    // points, worth 5.50 AED (1 point = 1 currency unit).
+    const api = await installFakeApi(page, { pointsBalance: 550 });
     await signIn(page);
 
     await page.goto('/products/flat-white');
@@ -302,21 +304,22 @@ test.describe('customer journey', () => {
     // 18 AED subtotal, so the total starts there (tax is inside the price).
     await expect(page.getByText('18 AED').first()).toBeVisible();
 
-    await expect(page.getByText(/500 points available/i)).toBeVisible();
-    await page.getByRole('spinbutton').first().fill('500');
+    await expect(page.getByText(/5\.50 points available/i)).toBeVisible();
+    // A comma works as well as a dot.
+    await page.getByTestId('points-input').fill('5,5');
     // A test id rather than copy: promo and gift card have Apply buttons
     // of their own, and every ancestor section contains the heading text.
     await page.getByTestId('points-apply').click();
 
-    await expect(page.getByText(/500 points applied/i)).toBeVisible();
-    // 500 points at a cent each is 5 AED off.
-    await expect(page.getByText('13 AED').first()).toBeVisible();
+    await expect(page.getByText(/5\.50 points applied/i)).toBeVisible();
+    // 5.50 points at a currency unit each is 5.50 AED off.
+    await expect(page.getByText('12.50 AED').first()).toBeVisible();
 
     await placeOrder(page).click();
     await page.waitForURL(/\/orders\/order-1/);
 
     const sent = api.orders[0]?.['_request'] as Record<string, unknown>;
-    expect(sent['pointsToSpend']).toBe(500);
+    expect(sent['pointsToSpend']).toBe(550);
   });
 
   test('a customer with no points never sees the points control', async ({ page }) => {
