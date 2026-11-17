@@ -2,12 +2,13 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { BRAND_LOGO_RULE } from '@takeaway/shared-types';
+import { BRAND_LOGO_RULE, type PaymentTerminalStatus } from '@takeaway/shared-types';
 
 import { formatPhone, normalizePhone } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { PaymentTerminalService } from '../../core/brands/payment-terminal.service';
 import { BRAND_CURRENCIES, type BrandLocale } from '../../core/business/business.service';
 import { apiErrorCode } from '../../core/http/api-error';
 import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
@@ -36,6 +37,18 @@ import { PlanCardComponent } from './plan-card.component';
   imports: [ReactiveFormsModule, TranslatePipe, PlanCardComponent, OnboardingReturnComponent, SupportDialogComponent],
   styles: [
     `
+      .terminal-status {
+        margin: 16px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--color-cream);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--color-text-secondary);
+      }
+      .terminal-own strong {
+        color: var(--color-mint);
+      }
       .status-pill[data-status='PENDING'] {
         background: var(--color-amber);
         color: white;
@@ -252,6 +265,12 @@ import { PlanCardComponent } from './plan-card.component';
             (support)="supportOpen.set(true)"
           />
         }
+        @if (terminal(); as t) {
+          <p class="terminal-status" [class.terminal-own]="t.connected" data-testid="settings-payment-terminal">
+            <strong>{{ 'admin.settings.terminal.label' | translate }}:</strong>
+            {{ (t.connected ? 'admin.settings.terminal.connected' : 'admin.settings.terminal.default') | translate }}
+          </p>
+        }
       } @else if (error()) {
         <p style="color: var(--color-berry)">{{ error() }}</p>
       }
@@ -267,6 +286,9 @@ export class AdminSettingsPage {
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly auth = inject(AuthStore);
   private readonly onboarding = inject(OnboardingFlowService);
+  private readonly terminals = inject(PaymentTerminalService);
+  /** Whether the guests' card money lands on the brand's own terminal — nothing more is shown to the brand. */
+  readonly terminal = signal<PaymentTerminalStatus | null>(null);
 
   readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
   /** «Написать в поддержку», from the plan card. */
@@ -324,12 +346,22 @@ export class AdminSettingsPage {
     });
   }
 
+  private loadTerminal(brandId: string): void {
+    this.terminal.set(null);
+    this.terminals.status(brandId).subscribe({
+      next: (status) => this.terminal.set(status),
+      // An older API without terminals: the line is simply not shown.
+      error: () => this.terminal.set(null),
+    });
+  }
+
   private load(): void {
     this.loading.set(true);
     this.error.set(null);
     this.settings.getMyBrand().subscribe({
       next: (brand) => {
         this.brand.set(brand);
+        this.loadTerminal(brand.id);
         this.form.patchValue({
           name: brand.name,
           contactPhone: brand.contactPhone ? formatPhone(brand.contactPhone) : '',

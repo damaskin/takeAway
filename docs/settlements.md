@@ -25,10 +25,12 @@ Code: `apps/api/src/app/settlements` (arithmetic in `settlement-math.ts`),
 `20261114100000_settlement_netting`). The model and the routes keep the old
 «payout» names; one row is one period's settlement.
 
-> Today the card and QR payments still land on takeAway's single Agroprombank
-> terminal (`AGROPROMBANK_*` env). Routing each brand's money to its own
-> terminal is a separate task; the accounting below already treats the card
-> money as the brand's.
+> Since 2026-11-17 every brand takes card and QR payments on its own
+> Agroprombank terminal, entered by the platform team in the brand's card
+> («Платёжный терминал», docs/agroprombank-payments.md §13), so the money lands
+> on the brand's account. A brand without one still pays through takeAway's
+> default terminal (`AGROPROMBANK_*` env); the accounting below treats the card
+> money as the brand's either way.
 
 ---
 
@@ -263,14 +265,18 @@ promo codes are its discount (migration `20261114110000_analytics_points_funded`
    to the brand, commission on the full price.
 2. **Where the guest's money goes.** Decided 2026-11-14: to the brand
    directly; settlements are netted (one sum, either way, confirmed by the
-   receiver). Per-brand terminals in the payment code are still to do.
+   receiver). Done 2026-11-17: each brand gives takeAway its own bank
+   terminal to attach (Maxim), and every payment, capture and refund goes
+   through the terminal of the order's brand (docs/agroprombank-payments.md
+   §13); a brand without one falls back to takeAway's terminal.
 3. **Gift cards.** Brands issue cards in the admin and sell them themselves,
    so the brand holds that money; no commission on redemptions. If gift cards
    are ever sold online through takeAway, this needs a rule.
 4. **Refunds and commission.** The commission goes back with the refund
    (base is net of refunds). Alternative: keep it on refunds the brand caused.
-5. **Acquiring fee.** Open now that the brand takes the money: whose terminal,
-   whose fee.
+5. **Acquiring fee.** Decided 2026-11-17 (Maxim): the brand's own terminal,
+   so the acquiring fee is between the brand and its bank; takeAway does not
+   touch orders paid at the counter.
 6. **Orders not paid by card** (paid at the counter while cards are off;
    orders at 0). Today: no commission. With the guest's money going to the
    brand anyway, takeAway may want its commission on them too — the formula

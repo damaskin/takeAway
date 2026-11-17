@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import { provideTranslateService } from '@ngx-translate/core';
 import { of } from 'rxjs';
 
+import { PaymentTerminalService } from '../../core/brands/payment-terminal.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
@@ -38,6 +39,10 @@ describe('AdminSettingsPage — the contact phone', () => {
           useValue: { loaded: signal(true), activeId: signal('b1'), refresh: jest.fn() },
         },
         { provide: AuthStore, useValue: { user: signal({ role: 'BRAND_ADMIN' }) } },
+        {
+          provide: PaymentTerminalService,
+          useValue: { status: () => of({ connected: true, flows: { card: 'BRAND', web: 'DEFAULT', qr: 'DEFAULT' } }) },
+        },
         {
           provide: OnboardingFlowService,
           useValue: {
@@ -88,5 +93,13 @@ describe('AdminSettingsPage — the contact phone', () => {
     page.save();
 
     expect(updateMyBrand).toHaveBeenCalledWith(expect.objectContaining({ contactPhone: '069 765 432' }));
+  });
+
+  it('tells the brand only whether its own payment terminal is connected', async () => {
+    const fixture = await render(brand);
+    const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="settings-payment-terminal"]');
+
+    expect(line?.textContent).toContain('admin.settings.terminal.connected');
+    expect(line?.textContent).not.toContain('QRT');
   });
 });
