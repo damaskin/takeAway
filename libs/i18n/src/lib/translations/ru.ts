@@ -1948,6 +1948,15 @@ export const TRANSLATIONS_RU = {
       points: 'Баллы — компенсирует takeAway',
       /** What the order is worth to the business: what the guest paid + what takeAway compensates. */
       businessTotal: 'Сумма для бизнеса',
+      /** takeAway's compensation on the order, as the brand gets it in the settlement. */
+      compensation: {
+        title: 'Компенсация takeAway',
+        total: 'Всего',
+        promo: 'По акциям',
+        points: 'По баллам',
+      },
+      /** A brand's own promo code is the brand's discount. */
+      brandPromo: 'Промокод бренда: скидку даёт бренд, takeAway её не компенсирует.',
       events: {
         STATUS_CHANGED: 'Статус',
         ETA_UPDATED: 'Время готовности изменено',
@@ -2016,6 +2025,7 @@ export const TRANSLATIONS_RU = {
       empty: 'Нет заказов под текущие фильтры.',
       /** Under the amount of an order with discounts takeAway funds (its promo, points). */
       fundedLine: 'гость оплатил {{paid}} · {{funded}} компенсирует takeAway',
+      brandDiscountLine: 'по меню {{menu}} · скидка бренда {{discount}}',
       status: {
         CREATED: 'Новый',
         PAID: 'В очереди',

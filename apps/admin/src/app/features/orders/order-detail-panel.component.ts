@@ -293,8 +293,50 @@ import {
               }}
             </p>
           }
-          <!-- What the business is credited with: the guest's payment + what takeAway compensates. -->
+          <!-- A brand's own promo code: the brand gives that discount, takeAway does not compensate it. -->
+          @if (brandPromoCents() > 0) {
+            <p
+              data-testid="order-brand-promo"
+              style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+            >
+              {{ 'admin.orderDetail.brandPromo' | translate }}
+            </p>
+          }
+          <!-- What takeAway compensates (its promo, the points), then what the business is credited with. -->
           @if (fundedCents() > 0) {
+            <div
+              data-testid="order-takeaway-compensation"
+              class="flex flex-col"
+              style="gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--color-caramel-light)"
+            >
+              <span style="font-size: 13px; font-weight: 700; color: var(--color-espresso)">{{
+                'admin.orderDetail.compensation.title' | translate
+              }}</span>
+              <div data-testid="order-compensation-total" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; font-weight: 600; color: var(--color-espresso)">{{
+                  'admin.orderDetail.compensation.total' | translate
+                }}</span>
+                <span style="font-size: 14px; font-weight: 700; color: var(--color-espresso); white-space: nowrap">{{
+                  money(fundedCents(), o.currency)
+                }}</span>
+              </div>
+              <div data-testid="order-compensation-promo" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.compensation.promo' | translate
+                }}</span>
+                <span style="font-size: 13px; color: var(--color-text-secondary); white-space: nowrap">{{
+                  money(promoCompensationCents(), o.currency)
+                }}</span>
+              </div>
+              <div data-testid="order-compensation-points" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.compensation.points' | translate
+                }}</span>
+                <span style="font-size: 13px; color: var(--color-text-secondary); white-space: nowrap">{{
+                  money(pointsCents(), o.currency)
+                }}</span>
+              </div>
+            </div>
             <div
               data-testid="order-business-total"
               class="flex flex-col"
@@ -522,11 +564,26 @@ export class OrderDetailPanelComponent {
     return Math.max(0, Math.min(o.discountCents, funded - (o.takeawayPromo?.discountCents ?? 0)));
   });
 
-  /** takeAway's promo discount + the points: what takeAway compensates to the business. */
-  readonly fundedCents = computed(() => {
+  /** takeAway's own promo (or welcome bonus): its whole discount is compensated to the business. */
+  readonly promoCompensationCents = computed(() => {
     const o = this.order();
     if (!o || o.status === 'CANCELLED' || o.status === 'EXPIRED') return 0;
-    return Math.max(0, o.takeawayPromo?.discountCents ?? 0) + this.pointsCents();
+    return Math.max(0, o.takeawayPromo?.discountCents ?? 0);
+  });
+
+  /** takeAway's promo discount + the points: what takeAway compensates to the business. */
+  readonly fundedCents = computed(() => this.promoCompensationCents() + this.pointsCents());
+
+  /**
+   * The discount of the brand's own promo code: the brand gives it and
+   * takeAway does not compensate it (Maxim, 2026-11-06, №11) — said on the
+   * order, since a manager testing a code from «Акции → Промокоды» expected
+   * it among takeAway's compensation.
+   */
+  readonly brandPromoCents = computed(() => {
+    const o = this.order();
+    if (!o || o.takeawayPromo || !o.couponCode) return 0;
+    return Math.max(0, o.discountCents - this.pointsCents());
   });
 
   /** Paid by QR: the bank gives it back only whole, so the amount is not editable. */

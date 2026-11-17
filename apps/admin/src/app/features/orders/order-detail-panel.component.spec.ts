@@ -327,6 +327,18 @@ describe('OrderDetailPanelComponent — a takeAway promo order', () => {
     expect(text(el)).toContain('Скидка BRAND5');
     // A brand's own promo code is the brand's: nothing for takeAway to compensate.
     expect(el.querySelector('[data-testid="order-business-total"]')).toBeNull();
+    expect(el.querySelector('[data-testid="order-takeaway-compensation"]')).toBeNull();
+    expect(text(el.querySelector('[data-testid="order-brand-promo"]'))).toBe(
+      'Промокод бренда: скидку даёт бренд, takeAway её не компенсирует.',
+    );
+  });
+
+  it("groups takeAway's compensation: the total, then promotions, then points", async () => {
+    const el = await render(PROMO_ORDER);
+    expect(spaced(el.querySelector('[data-testid="order-takeaway-compensation"]'))).toBe(
+      'Компенсация takeAway Всего 10 MDL По акциям 10 MDL По баллам 0 MDL',
+    );
+    expect(el.querySelector('[data-testid="order-brand-promo"]')).toBeNull();
   });
 
   it('shows the full amount the business is credited with', async () => {
@@ -391,6 +403,14 @@ describe('OrderDetailPanelComponent — an order paid partly with points', () =>
     expect(spaced(el.querySelector('[data-testid="order-business-total"]'))).toBe(
       'Сумма для бизнеса 45 MDL гость оплатил 25 MDL · 20 MDL компенсирует takeAway',
     );
+  });
+
+  it("puts the points into the compensation block and marks the brand code as the brand's", async () => {
+    const el = await render({ ...POINTS_ORDER, pointsDiscountCents: 2000 });
+    expect(spaced(el.querySelector('[data-testid="order-takeaway-compensation"]'))).toBe(
+      'Компенсация takeAway Всего 20 MDL По акциям 0 MDL По баллам 20 MDL',
+    );
+    expect(el.querySelector('[data-testid="order-brand-promo"]')).not.toBeNull();
   });
 
   it('takes the points from the detail once the API sends them', async () => {

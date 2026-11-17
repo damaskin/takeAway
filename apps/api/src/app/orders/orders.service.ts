@@ -678,7 +678,12 @@ export class OrdersService {
       take: Math.min(200, Math.max(1, params.take ?? 50)),
       include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
-    return orders.map((o) => ({ ...this.toSummary(o), takeawayFundedCents: takeawayFundedCents(o) }));
+    return orders.map((o) => ({
+      ...this.toSummary(o),
+      takeawayFundedCents: takeawayFundedCents(o),
+      subtotalCents: o.subtotalCents,
+      brandDiscountCents: brandDiscountCents(o),
+    }));
   }
 
   /**
@@ -1601,4 +1606,17 @@ export function takeawayFundedCents(o: {
 }): number {
   if (o.status === 'CANCELLED' || o.status === 'EXPIRED') return 0;
   return Math.max(0, o.takeawayDiscountCents) + Math.max(0, o.pointsDiscountCents);
+}
+
+/**
+ * The discount of the brand's own promo code: what is left of the order's
+ * discount once takeAway's promo and the points are taken out. The brand
+ * gives it; takeAway does not compensate it (docs/settlements.md §9.1).
+ */
+export function brandDiscountCents(o: {
+  discountCents: number;
+  takeawayDiscountCents: number;
+  pointsDiscountCents: number;
+}): number {
+  return Math.max(0, o.discountCents - Math.max(0, o.takeawayDiscountCents) - Math.max(0, o.pointsDiscountCents));
 }

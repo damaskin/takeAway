@@ -163,6 +163,20 @@ type StatusFilter = OrderStatus | 'ALL';
                         }}</span
                       >
                     }
+                    @if (brandDiscount(o) > 0) {
+                      <span
+                        data-testid="order-brand-discount"
+                        style="display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--color-text-tertiary); white-space: nowrap"
+                        >{{
+                          'admin.orders.brandDiscountLine'
+                            | translate
+                              : {
+                                  menu: price(o.subtotalCents ?? o.totalCents, o.currency),
+                                  discount: price(brandDiscount(o), o.currency),
+                                }
+                        }}</span
+                      >
+                    }
                   </td>
                   <td style="text-align: center">
                     <span
@@ -369,6 +383,14 @@ export class AdminOrdersPage implements OnInit {
    */
   funded(order: AdminOrderSummary): number {
     return Math.max(0, order.takeawayFundedCents ?? 0);
+  }
+
+  /**
+   * The brand's own promo discount: the row shows the full menu price next to
+   * it, since takeAway does not compensate that one (Maxim's list 7, item 4).
+   */
+  brandDiscount(order: AdminOrderSummary): number {
+    return Math.max(0, order.brandDiscountCents ?? 0);
   }
 
   /** On the store's clock: that is the time the barista and the customer agreed on. */

@@ -114,6 +114,15 @@ describe('AdminOrdersPage — the amount column', () => {
     expect(text(amounts[2])).toBe('15 MDL');
   });
 
+  it("shows the menu price next to a brand's own promo discount, which takeAway does not compensate", async () => {
+    const fixture = await render([
+      summary({ id: 'o4', orderCode: '1454', totalCents: 300, subtotalCents: 600, brandDiscountCents: 300 }),
+    ]);
+    const amount = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="order-amount"]');
+    expect(text(amount)).toBe('3 MDL по меню 6 MDL · скидка бренда 3 MDL');
+    expect(amount?.querySelector('[data-testid="order-funded"]')).toBeNull();
+  });
+
   it('hands the funded amount to the detail panel, which splits out the points', async () => {
     const fixture = await render([
       summary({ id: 'o2', orderCode: '1002', totalCents: 3000, takeawayFundedCents: 2000 }),

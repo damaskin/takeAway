@@ -1926,6 +1926,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'takeAway promo −{{percent}}%: the guest paid {{paid}}, takeAway covers the other {{compensation}}',
       points: 'Points — compensated by takeAway',
       businessTotal: 'Total for the business',
+      compensation: {
+        title: 'takeAway compensation',
+        total: 'Total',
+        promo: 'Promotions',
+        points: 'Points',
+      },
+      brandPromo: "The brand's own promo code: the brand gives this discount, takeAway does not compensate it.",
       events: {
         STATUS_CHANGED: 'Status',
         ETA_UPDATED: 'Ready time changed',
@@ -1992,6 +1999,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       empty: 'No orders match the current filter.',
       fundedLine: 'guest paid {{paid}} · takeAway compensates {{funded}}',
+      brandDiscountLine: 'menu price {{menu}} · brand discount {{discount}}',
       status: {
         CREATED: 'New',
         PAID: 'Queued',
