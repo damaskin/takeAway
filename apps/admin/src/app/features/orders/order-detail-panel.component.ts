@@ -4,6 +4,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
 import { LocaleFormatService } from '@takeaway/i18n';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { orderCancelSummary } from '../../core/orders/order-cancel-summary';
 import { orderMoneyPayment, paymentProviderKey, refundsInFullOnly } from '../../core/orders/order-payment-provider';
 import {
@@ -378,9 +379,10 @@ import {
           }
         </section>
 
-        <!-- Refund -->
-        @if (o.refundableCents > 0) {
+        <!-- Refund: the brand's owner or manager gives the money back from the brand's terminal. -->
+        @if (o.refundableCents > 0 && canRefund()) {
           <section
+            data-testid="refund-section"
             class="flex flex-col"
             style="padding: 16px 24px; gap: 10px; border-top: 1px solid var(--color-border-light); background: var(--color-cream)"
           >
@@ -513,6 +515,7 @@ import {
 })
 export class OrderDetailPanelComponent {
   private readonly api = inject(AdminOrdersApi);
+  private readonly auth = inject(AuthStore);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
 
@@ -532,6 +535,19 @@ export class OrderDetailPanelComponent {
    * own `pointsDiscountCents`.
    */
   readonly takeawayFundedCents = input<number | null | undefined>(undefined);
+
+  /**
+   * Whether this screen offers the refund. Refunds are the brand's — its owner
+   * or manager gives the money back from the brand's terminal, in «Заказы»
+   * (owner, 2026-11-17); other screens that open an order (reviews) pass
+   * false. Kitchen staff, who can open the orders list, never see it: the
+   * API refuses them anyway.
+   */
+  readonly allowRefund = input(true);
+  readonly canRefund = computed(() => {
+    const role = this.auth.user()?.role;
+    return this.allowRefund() && (role === 'SUPER_ADMIN' || role === 'BRAND_ADMIN' || role === 'STORE_MANAGER');
+  });
 
   readonly order = signal<AdminOrderDetail | null>(null);
   /** Who cancelled the order, why and where the money went — see `orderCancelSummary`. */

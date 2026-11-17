@@ -1,5 +1,6 @@
 import {
   commissionCents,
+  compensationAfterRefund,
   computeSettlement,
   directionOf,
   emptyTotals,
@@ -109,6 +110,29 @@ describe('commissionCents', () => {
     expect(() => commissionCents(-1, 1500)).toThrow(RangeError);
     expect(() => commissionCents(100, 10_001)).toThrow(RangeError);
     expect(() => commissionCents(100, 12.5)).toThrow(RangeError);
+  });
+});
+
+/** Refunds are the brand's; takeAway's compensation for the refunded part goes with them (owner, 2026-11-17). */
+describe('compensationAfterRefund', () => {
+  it('is the whole compensation without a refund or a capture', () => {
+    expect(compensationAfterRefund(1000, 9000, 0)).toBe(1000);
+    expect(compensationAfterRefund(1000, 0, 0)).toBe(1000);
+  });
+
+  it('keeps the share of the card money the brand kept, rounded half up', () => {
+    // Half the card money back: half the compensation.
+    expect(compensationAfterRefund(1000, 9000, 4500)).toBe(500);
+    // 1000 × 2/3 = 666.67 → 667.
+    expect(compensationAfterRefund(1000, 9000, 3000)).toBe(667);
+    // 25 × 1/2 = 12.5 → 13.
+    expect(compensationAfterRefund(25, 2, 1)).toBe(13);
+  });
+
+  it('is nothing after a full refund, and never negative on odd rows', () => {
+    expect(compensationAfterRefund(1000, 9000, 9000)).toBe(0);
+    expect(compensationAfterRefund(1000, 9000, 12000)).toBe(0);
+    expect(compensationAfterRefund(-5, 9000, 0)).toBe(0);
   });
 });
 
@@ -233,6 +257,53 @@ describe('settleOrder', () => {
       1500,
     );
     expect(settled).toMatchObject({ promoDiscountCents: 500, pointsDiscountCents: 200, takeawayCompensationCents: 0 });
+  });
+});
+
+describe('settleOrder — a refunded order with takeAway compensation', () => {
+  it('cancels the refunded share of the promo and points compensation, and the commission on it', () => {
+    // 100 at the menu: takeAway promo −10, points −20, card 70; the brand gives back 35 (half).
+    const row = order({
+      subtotalCents: 10000,
+      discountCents: 3000,
+      takeawayDiscountCents: 1000,
+      pointsDiscountCents: 2000,
+      takeawayCompensationCents: 1000,
+      pointsCompensationCents: 2000,
+      totalCents: 7000,
+      capturedCents: 7000,
+      refundedCents: 3500,
+      hasCapture: true,
+    });
+    expect(settleOrder(row, 1000)).toMatchObject({
+      cardNetCents: 3500,
+      takeawayCompensationCents: 500,
+      pointsCompensationCents: 1000,
+      compensationCents: 1500,
+      commissionBaseCents: 5000,
+      commissionCents: 500,
+      netCents: -1000,
+    });
+  });
+
+  it('owes nothing either way after a full refund', () => {
+    const row = order({
+      subtotalCents: 10000,
+      discountCents: 1000,
+      takeawayDiscountCents: 1000,
+      takeawayCompensationCents: 1000,
+      totalCents: 9000,
+      capturedCents: 9000,
+      refundedCents: 9000,
+      hasCapture: true,
+    });
+    expect(settleOrder(row, 1500)).toMatchObject({
+      cardNetCents: 0,
+      compensationCents: 0,
+      commissionBaseCents: 0,
+      commissionCents: 0,
+      netCents: 0,
+    });
   });
 });
 

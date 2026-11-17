@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Logger, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
@@ -6,6 +6,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefundOrderDto, RefundOrderResponseDto } from './dto/refund-order.dto';
 import { PaymentsService } from './payments.service';
@@ -19,7 +20,10 @@ export class AdminPaymentsController {
     private readonly payments: PaymentsService,
     private readonly prisma: PrismaService,
     private readonly scope: UserStoreScopeService,
+    private readonly loyalty: LoyaltyService,
   ) {}
+
+  private readonly logger = new Logger(AdminPaymentsController.name);
 
   /**
    * Issue a refund (full or partial) for a paid order.
@@ -44,12 +48,19 @@ export class AdminPaymentsController {
 
     await this.assertCanRefund(user, order.storeId, order.store.brandId);
 
-    return this.payments.refundOrder(orderId, {
+    const result = await this.payments.refundOrder(orderId, {
       amountCents: dto.amountCents,
       reason: dto.reason,
       note: dto.note,
       actorId: user.id,
     });
+    // The refunded share of the points goes back to the guest: takeAway no
+    // longer compensates it to the brand (docs/settlements.md §9.4). The money
+    // is back already; a failure here must not turn the refund into an error.
+    await this.loyalty.returnForRefund(orderId).catch((err: unknown) => {
+      this.logger.error(`[refund] order=${orderId} points not returned: ${String(err)}`);
+    });
+    return result;
   }
 
   private async assertCanRefund(user: AuthenticatedUser, storeId: string, brandId: string): Promise<void> {

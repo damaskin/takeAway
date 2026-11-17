@@ -107,7 +107,11 @@ describe('LoyaltyService.releaseForOrder', () => {
       tier: 'PLATINUM',
     };
     const tx = {
-      pointsLedger: { findFirst: jest.fn().mockResolvedValue(spend), create: jest.fn() },
+      pointsLedger: {
+        findFirst: jest.fn().mockResolvedValue(spend),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(),
+      },
       loyaltyAccount: { upsert: jest.fn().mockResolvedValue(account), update: jest.fn() },
     };
     const service = new LoyaltyService({} as unknown as PrismaService);

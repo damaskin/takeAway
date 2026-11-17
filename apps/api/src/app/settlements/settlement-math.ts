@@ -87,6 +87,28 @@ export function commissionCents(baseCents: number, bps: number): number {
   return Math.floor((baseCents * bps + BPS_DENOMINATOR / 2) / BPS_DENOMINATOR);
 }
 
+/**
+ * What is left of takeAway's compensation on an order once part of its card
+ * money went back to the guest: the same share as the card money kept,
+ * rounded half up to a whole cent. A refund is the brand's, from its own
+ * terminal, and takeAway's compensation (its promo, the points) for the
+ * refunded part is cancelled with it (owner, 2026-11-17) — a full refund
+ * leaves none. Without a capture or a refund it is the whole amount.
+ */
+export function compensationAfterRefund(
+  compensationCents: number,
+  capturedCents: number,
+  refundedCents: number,
+): number {
+  const amount = Math.max(0, compensationCents);
+  const captured = Math.max(0, capturedCents);
+  if (amount === 0 || captured === 0) return amount;
+  const refunded = Math.min(captured, Math.max(0, refundedCents));
+  if (refunded === 0) return amount;
+  const kept = captured - refunded;
+  return Math.floor((2 * amount * kept + captured) / (2 * captured));
+}
+
 export function emptyTotals(): SettlementTotals {
   return {
     orders: 0,
@@ -116,8 +138,9 @@ export function settleOrder(row: SettlementOrderRow, bps: number): SettlementTot
   const captured = row.hasCapture ? Math.max(0, row.capturedCents) : 0;
   // A refund never exceeds what was taken; clamp so base stays captured − refunded.
   const refunded = row.hasCapture ? Math.min(captured, Math.max(0, row.refundedCents)) : 0;
-  const promoCompensation = Math.max(0, row.takeawayCompensationCents);
-  const pointsCompensation = Math.max(0, row.pointsCompensationCents);
+  // takeAway's compensation shrinks with a refund, in the share of the card money given back.
+  const promoCompensation = compensationAfterRefund(row.takeawayCompensationCents, captured, refunded);
+  const pointsCompensation = compensationAfterRefund(row.pointsCompensationCents, captured, refunded);
   const compensation = promoCompensation + pointsCompensation;
   const cardNet = captured - refunded;
   const base = cardNet + compensation;

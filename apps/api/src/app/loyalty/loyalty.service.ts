@@ -34,6 +34,9 @@ const MIN_REDEEMABLE_POINTS = 100;
 
 type PrismaTx = Prisma.TransactionClient;
 
+/** `PointsLedger.metadata.kind` of points given back with a card refund. */
+const REFUND_RETURN = 'refund-return';
+
 @Injectable()
 export class LoyaltyService {
   private readonly logger = new Logger(LoyaltyService.name);
@@ -185,14 +188,76 @@ export class LoyaltyService {
     });
     if (!spend) return;
 
+    // Part of it may have come back already with a card refund (`returnForRefund`).
+    const back = Math.abs(spend.amount) - (await this.returnedForRefund(tx, orderId));
+    if (back <= 0) return;
     const account = await this.ensureAccount(spend.userId, tx);
-    await this.applyDelta(account, Math.abs(spend.amount), 'EARN', `refund:${orderId}`, tx, {
+    await this.applyDelta(account, back, 'EARN', `refund:${orderId}`, tx, {
       orderId,
       type: PointsEntryType.EARN,
-      reason: `Refunded ${Math.abs(spend.amount)} pts from order ${orderId}`,
+      reason: `Refunded ${back} pts from order ${orderId}`,
       metadata: null,
       countsTowardLifetime: false,
     });
+  }
+
+  /**
+   * Give the guest back the share of the points spent on an order that its
+   * card refunds returned: a refund is the brand's, and takeAway stops
+   * compensating the refunded share of the points (owner, 2026-11-17), so the
+   * same share goes back to the guest — half the card money back, half the
+   * points. Counted cumulatively over every refund of the order (rounded half
+   * up), so repeated partial refunds never give back more than was spent.
+   * Nothing for a cancelled or expired order: `releaseForOrder` returned the
+   * points then.
+   */
+  async returnForRefund(orderId: string): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          userId: true,
+          status: true,
+          currency: true,
+          pointsSpent: true,
+          payments: {
+            where: { status: { in: ['SUCCEEDED', 'PARTIALLY_REFUNDED', 'REFUNDED'] } },
+            select: { amountCents: true, refundedCents: true, currency: true },
+          },
+        },
+      });
+      if (!order || order.pointsSpent <= 0) return 0;
+      if (order.status === 'CANCELLED' || order.status === 'EXPIRED') return 0;
+      let captured = 0;
+      let refunded = 0;
+      for (const p of order.payments) {
+        if (p.currency !== order.currency) continue;
+        captured += Math.max(0, p.amountCents);
+        refunded += Math.min(Math.max(0, p.amountCents), Math.max(0, p.refundedCents));
+      }
+      if (captured <= 0 || refunded <= 0) return 0;
+      const due = Math.floor((2 * order.pointsSpent * refunded + captured) / (2 * captured));
+      const back = due - (await this.returnedForRefund(tx, orderId));
+      if (back <= 0) return 0;
+      const account = await this.ensureAccount(order.userId, tx);
+      await this.applyDelta(account, back, 'EARN', `refund-return:${orderId}`, tx, {
+        orderId,
+        type: PointsEntryType.EARN,
+        reason: `Returned ${back} pts with a card refund of order ${orderId}`,
+        metadata: { kind: REFUND_RETURN, refundedCents: refunded, capturedCents: captured },
+        countsTowardLifetime: false,
+      });
+      return back;
+    });
+  }
+
+  /** Points of the order already given back with its card refunds. */
+  private async returnedForRefund(tx: PrismaTx, orderId: string): Promise<number> {
+    const rows = await tx.pointsLedger.findMany({
+      where: { orderId, type: PointsEntryType.EARN, metadata: { path: ['kind'], equals: REFUND_RETURN } },
+      select: { amount: true },
+    });
+    return rows.reduce((sum, r) => sum + Math.max(0, r.amount), 0);
   }
 
   /** Debit points when a promo consumes them. */

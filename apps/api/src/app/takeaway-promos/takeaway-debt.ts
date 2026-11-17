@@ -11,6 +11,8 @@ import type {
 } from '@takeaway/shared-types';
 import { takeawayDebtStatus } from '@takeaway/utils';
 
+import { compensationAfterRefund } from '../settlements/settlement-math';
+
 /**
  * takeAway's debt to the venues for its promos (docs/takeaway-promos.md
  * §2.8), read the one way every report reads it — the platform's promo
@@ -51,7 +53,10 @@ export const COUNTED_REDEMPTION_SELECT = {
       acceptedAt: true,
       currency: true,
       store: { select: { name: true, brand: { select: { name: true } } } },
-      payments: { where: { status: { in: CAPTURED } }, select: { createdAt: true, currency: true } },
+      payments: {
+        where: { status: { in: CAPTURED } },
+        select: { createdAt: true, currency: true, amountCents: true, refundedCents: true },
+      },
     },
   },
 } satisfies Prisma.TakeawayPromoRedemptionSelect;
@@ -75,7 +80,10 @@ export interface CountedRedemption {
   percent: number;
   /** P. */
   menuTotalCents: number;
-  /** D — the compensation. */
+  /**
+   * The compensation: D, less the share of it a refund cancelled (as
+   * settlements count it, `compensationAfterRefund`).
+   */
   discountCents: number;
   payoutId: string | null;
   /** When the order counted (accepted, or first captured). */
@@ -107,6 +115,23 @@ export function countedAt(order: {
   return first;
 }
 
+/** Card money captured for the order in its currency, and how much of it went back. */
+function capturedAndRefunded(order: {
+  currency: string;
+  payments: ReadonlyArray<{ currency: string; amountCents: number; refundedCents: number }>;
+}): [number, number] {
+  let captured = 0;
+  let refunded = 0;
+  for (const p of order.payments) {
+    if (p.currency !== order.currency) continue;
+    const amount = Number.isFinite(p.amountCents) ? Math.max(0, p.amountCents) : 0;
+    const back = Number.isFinite(p.refundedCents) ? Math.max(0, p.refundedCents) : 0;
+    captured += amount;
+    refunded += Math.min(amount, back);
+  }
+  return [captured, refunded];
+}
+
 export function toCountedRedemption(row: RedemptionRead): CountedRedemption | null {
   const settledAt = countedAt(row.order);
   if (!settledAt) return null;
@@ -126,7 +151,7 @@ export function toCountedRedemption(row: RedemptionRead): CountedRedemption | nu
     code: row.code,
     percent: row.percent,
     menuTotalCents: row.menuTotalCents,
-    discountCents: row.discountCents,
+    discountCents: compensationAfterRefund(row.discountCents, ...capturedAndRefunded(row.order)),
     payoutId: row.payoutId,
     settledAt,
     status,
