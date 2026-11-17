@@ -2,7 +2,13 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import type { CustomerBonus, LoyaltyAccount } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { customerBonusTerms, LanguageSwitcherComponent, LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
+import {
+  customerBonusTerms,
+  LanguageSwitcherComponent,
+  LocaleFormatService,
+  PointsPipe,
+  takeawayPromoLabel,
+} from '@takeaway/i18n';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -37,7 +43,7 @@ interface ProfileSection {
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LanguageSwitcherComponent],
+  imports: [RouterLink, TranslatePipe, PointsPipe, LanguageSwitcherComponent],
   template: `
     @if (store.user(); as user) {
       <section
@@ -70,7 +76,7 @@ interface ProfileSection {
               </span>
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.6)"
-                >{{ points() }} {{ 'web.profile.pointsSuffix' | translate }}</span
+                >{{ points() | points }}</span
               >
             </div>
           </div>
@@ -118,7 +124,7 @@ interface ProfileSection {
               >{{ tier() | translate }}</span
             >
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
-              'web.profile.toNextTier' | translate: { points: pointsToNextTier(), tier: nextTier() }
+              'web.profile.toNextTier' | translate: { points: pointsToNextTier() | points, tier: nextTier() }
             }}</span>
           </div>
           <div
