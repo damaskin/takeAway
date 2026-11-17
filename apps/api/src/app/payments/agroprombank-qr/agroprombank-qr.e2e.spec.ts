@@ -17,6 +17,7 @@ import { AgroprombankQrClient, AgroprombankQrError, AgroprombankQrTransportError
 import type { AgroprombankQrConfig } from './agroprombank-qr.config';
 import { AgroprombankQrService } from './agroprombank-qr.service';
 import { DEFAULT_QR_CODE_FORMAT, DEFAULT_QR_NAMESPACE } from './constants';
+import { fakeTerminals } from '../terminals/testing/fake-terminals';
 import { createMemoryDb } from './testing/memory-db';
 import {
   QR_APP_PATH,
@@ -81,7 +82,7 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
   });
 
   function qrConfig(overrides: Record<string, unknown>): AgroprombankQrConfig {
-    return {
+    const fields = {
       enabled: true,
       serviceUrl: `${baseUrl}${QR_SERVICE_PATH}`,
       namespace: DEFAULT_QR_NAMESPACE,
@@ -98,8 +99,20 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
       canCallBank: true,
       currencies: ['RUP'],
       missingSettings: () => [],
+      missingFor: () => [],
+      canCall: () => true,
       ...overrides,
-    } as unknown as AgroprombankQrConfig;
+    } as Record<string, unknown>;
+    // takeAway's default QR terminal, as this config describes it.
+    fields['defaultTerminal'] = () => ({
+      id: null,
+      brandId: null,
+      terminalId: fields['terminalId'],
+      login: fields['login'],
+      password: fields['password'],
+      externalToken: fields['externalToken'] ?? null,
+    });
+    return fields as unknown as AgroprombankQrConfig;
   }
 
   let nextExtid = 7_000_000;
@@ -108,24 +121,24 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
   describe('client', () => {
     it('issues an invoice in kopecks and reads it back unpaid', async () => {
       const extid = freshExtid();
-      const id = await client.createPaymentId(extid, 1250);
+      const id = await client.createPaymentId(extid, 1250, config.defaultTerminal());
 
       expect(id).toMatch(/^\d+$/);
       expect(bank.payments.get(id)).toMatchObject({ externalId: extid, amount: 1250, terminalId: TERMINAL });
-      const record = await client.getPaymentStateExtId(extid);
+      const record = await client.getPaymentStateExtId(extid, config.defaultTerminal());
       expect(record).toMatchObject({ qrPaymentId: id, externalId: extid, state: SANDBOX_QR_STATE.WAITING });
       expect(bank.calls).toContain(`CreatePaymentID ${TERMINAL} 1250 ${extid}`);
     });
 
     it('reads a paid invoice with the RRN that ReversePayment needs, and reverses it', async () => {
       const extid = freshExtid();
-      const id = await client.createPaymentId(extid, 3300);
+      const id = await client.createPaymentId(extid, 3300, config.defaultTerminal());
       const paid = await bank.pay(extid, { silent: true });
 
-      const record = await client.getPaymentStateExtId(extid);
+      const record = await client.getPaymentStateExtId(extid, config.defaultTerminal());
       expect(record).toMatchObject({ state: 2, rrn: paid.rrn, amount: '3300', currencyCode: '000' });
 
-      const after = await client.reverseInvoice(extid, { qrPaymentId: null, rrn: null });
+      const after = await client.reverseInvoice(extid, { qrPaymentId: null, rrn: null }, config.defaultTerminal());
 
       expect(bank.calls).toContain(`ReversePayment ${TERMINAL} ${id} ${paid.rrn}`);
       expect(after?.state).toBe(SANDBOX_QR_STATE.REVERSED);
@@ -133,48 +146,61 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
 
     it('closes an unpaid invoice', async () => {
       const extid = freshExtid();
-      await client.createPaymentId(extid, 500);
-      await client.closePaymentExtId(extid);
-      expect((await client.getPaymentStateExtId(extid))?.state).toBe(SANDBOX_QR_STATE.CLOSED);
+      await client.createPaymentId(extid, 500, config.defaultTerminal());
+      await client.closePaymentExtId(extid, config.defaultTerminal());
+      expect((await client.getPaymentStateExtId(extid, config.defaultTerminal()))?.state).toBe(SANDBOX_QR_STATE.CLOSED);
     });
 
     it('answers null for an invoice the bank does not know', async () => {
-      await expect(client.getPaymentStateExtId('404404')).resolves.toBeNull();
+      await expect(client.getPaymentStateExtId('404404', config.defaultTerminal())).resolves.toBeNull();
     });
 
     it('reports a refused invoice and wrong credentials as the bank saying no', async () => {
-      await expect(client.createPaymentId(freshExtid(), QR_REFUSE_AMOUNT)).rejects.toBeInstanceOf(AgroprombankQrError);
+      await expect(
+        client.createPaymentId(freshExtid(), QR_REFUSE_AMOUNT, config.defaultTerminal()),
+      ).rejects.toBeInstanceOf(AgroprombankQrError);
 
-      const intruder = new AgroprombankQrClient(qrConfig({ password: 'wrong' }));
-      await expect(intruder.createPaymentId(freshExtid(), 100)).rejects.toMatchObject({
-        name: 'AgroprombankQrError',
-        description: expect.stringContaining('авторизации'),
-      });
+      const intruderConfig = qrConfig({ password: 'wrong' });
+      const intruder = new AgroprombankQrClient(intruderConfig);
+      await expect(intruder.createPaymentId(freshExtid(), 100, intruderConfig.defaultTerminal())).rejects.toMatchObject(
+        {
+          name: 'AgroprombankQrError',
+          description: expect.stringContaining('авторизации'),
+        },
+      );
     });
 
     it('signs in with an external token instead, sending login and password empty', async () => {
       const tokenBank = createSandboxQrBank({ login: 'x', password: 'y', externalToken: 'tok-1', callbackUrl: null });
       const port = await tokenBank.listen(0);
       try {
-        const tokenClient = new AgroprombankQrClient(
-          qrConfig({ serviceUrl: `http://127.0.0.1:${port}${QR_SERVICE_PATH}`, externalToken: 'tok-1' }),
+        const tokenConfig = qrConfig({
+          serviceUrl: `http://127.0.0.1:${port}${QR_SERVICE_PATH}`,
+          externalToken: 'tok-1',
+        });
+        const tokenClient = new AgroprombankQrClient(tokenConfig);
+        await expect(tokenClient.createPaymentId(freshExtid(), 100, tokenConfig.defaultTerminal())).resolves.toMatch(
+          /^\d+$/,
         );
-        await expect(tokenClient.createPaymentId(freshExtid(), 100)).resolves.toMatch(/^\d+$/);
       } finally {
         await tokenBank.close();
       }
     });
 
     it('reports a bank it cannot reach as a transport failure', async () => {
-      const unreachable = new AgroprombankQrClient(
-        qrConfig({ serviceUrl: 'http://127.0.0.1:9/mobile/QRMobileService.asmx', timeoutMs: 2_000 }),
+      const unreachableConfig = qrConfig({
+        serviceUrl: 'http://127.0.0.1:9/mobile/QRMobileService.asmx',
+        timeoutMs: 2_000,
+      });
+      const unreachable = new AgroprombankQrClient(unreachableConfig);
+      await expect(unreachable.getPaymentStateExtId('1', unreachableConfig.defaultTerminal())).rejects.toBeInstanceOf(
+        AgroprombankQrTransportError,
       );
-      await expect(unreachable.getPaymentStateExtId('1')).rejects.toBeInstanceOf(AgroprombankQrTransportError);
     });
 
     it('serves a fake bank app that pays the invoice from its QR text', async () => {
       const extid = freshExtid();
-      await client.createPaymentId(extid, 990);
+      await client.createPaymentId(extid, 990, config.defaultTerminal());
       const code = `${TERMINAL}:9.90:${extid}`;
 
       const page = await fetch(`${baseUrl}${QR_APP_PATH}?code=${encodeURIComponent(code)}`);
@@ -187,7 +213,7 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
         body: `extid=${extid}`,
       });
       expect(paid.status).toBe(200);
-      expect((await client.getPaymentStateExtId(extid))?.state).toBe(2);
+      expect((await client.getPaymentStateExtId(extid, config.defaultTerminal()))?.state).toBe(2);
     });
   });
 
@@ -216,6 +242,7 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
         {} as AgroprombankWebClient,
         config,
         client,
+        fakeTerminals({ qr: config }),
       );
       service = new AgroprombankQrService(
         db.prisma as unknown as PrismaService,
@@ -223,6 +250,7 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
         client,
         settlement as unknown as OrderSettlementService,
         holds,
+        fakeTerminals({ qr: config }),
       );
       cards = new CardPaymentsService(holds, {} as AgroprombankService, {} as AgroprombankWebService, service);
       onCallback = (fields) => service.handleCallback(fields);

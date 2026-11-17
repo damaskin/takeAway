@@ -8,9 +8,11 @@ import { type AgroprombankQrClient, AgroprombankQrError, AgroprombankQrTransport
 import type { AgroprombankQrConfig } from './agroprombank-qr.config';
 import { AgroprombankQrService } from './agroprombank-qr.service';
 import type { QrPaymentRecord } from './protocol';
+import { fakeTerminals } from '../terminals/testing/fake-terminals';
 import { type MemoryOrder, createMemoryDb } from './testing/memory-db';
 
 const TERMINAL = 'QRT169007299815722';
+const DEFAULT_QR = { id: null, brandId: null, terminalId: TERMINAL, login: 'l', password: 'p', externalToken: null };
 
 function paidRecord(extid: string, amount = '3300', overrides: Partial<QrPaymentRecord> = {}): QrPaymentRecord {
   return {
@@ -89,6 +91,9 @@ describe('AgroprombankQrService', () => {
       timeoutMs: 15_000,
       invoicePrefix: '1',
       missingSettings: () => [],
+      missingFor: () => [],
+      canCall: () => true,
+      defaultTerminal: () => DEFAULT_QR,
     };
     service = build();
   });
@@ -100,6 +105,7 @@ describe('AgroprombankQrService', () => {
       client as unknown as AgroprombankQrClient,
       settlement as unknown as OrderSettlementService,
       holds as unknown as PaymentHoldsService,
+      fakeTerminals({ qr: config as unknown as AgroprombankQrConfig }),
     );
   }
 
@@ -119,7 +125,7 @@ describe('AgroprombankQrService', () => {
       const row = db.payments.get(started.paymentId) as Payment;
 
       expect(row.invoiceId).toMatch(/^1\d+$/);
-      expect(client.createPaymentId).toHaveBeenCalledWith(row.invoiceId, 1250);
+      expect(client.createPaymentId).toHaveBeenCalledWith(row.invoiceId, 1250, DEFAULT_QR);
       expect(row).toMatchObject({ provider: 'AGROPROMBANK_QR', status: 'PENDING', providerRef: '5229848' });
       expect(started.qr).toEqual({
         code: `${TERMINAL}:12.50:${row.invoiceId}`,
@@ -162,7 +168,7 @@ describe('AgroprombankQrService', () => {
 
       expect(second.paymentId).not.toBe(first.paymentId);
       expect(second.amountCents).toBe(3000);
-      expect(client.closePaymentExtId).toHaveBeenCalledWith(db.payments.get(first.paymentId)?.invoiceId);
+      expect(client.closePaymentExtId).toHaveBeenCalledWith(db.payments.get(first.paymentId)?.invoiceId, DEFAULT_QR);
       expect(db.payments.get(first.paymentId)?.status).toBe('FAILED');
     });
 
@@ -214,7 +220,7 @@ describe('AgroprombankQrService', () => {
 
       const retry = await service.startPayment('user-1', 'order-1');
 
-      expect(client.closePaymentExtId).toHaveBeenCalledWith(lost?.invoiceId);
+      expect(client.closePaymentExtId).toHaveBeenCalledWith(lost?.invoiceId, DEFAULT_QR);
       expect(db.payments.get(lost?.id ?? '')?.rawJson).toMatchObject({ closed: true, closeReason: 'not-issued' });
       expect(retry.paymentId).not.toBe(lost?.id);
     });
@@ -385,8 +391,8 @@ describe('AgroprombankQrService', () => {
 
       const cancelled = await service.cancelPayment('user-1', payment.id);
 
-      expect(client.closePaymentExtId).toHaveBeenCalledWith(payment.invoiceId);
-      expect(client.getPaymentStateExtId).toHaveBeenCalledWith(payment.invoiceId);
+      expect(client.closePaymentExtId).toHaveBeenCalledWith(payment.invoiceId, DEFAULT_QR);
+      expect(client.getPaymentStateExtId).toHaveBeenCalledWith(payment.invoiceId, DEFAULT_QR);
       expect(cancelled).toMatchObject({ status: 'EXPIRED', qr: null });
       expect(db.payments.get(payment.id)?.rawJson).toMatchObject({
         closed: true,
@@ -453,17 +459,18 @@ describe('AgroprombankQrService', () => {
 
       expect(result).toEqual({ checked: 2, settled: 0 });
       expect(client.closePaymentExtId).toHaveBeenCalledTimes(1);
-      expect(client.closePaymentExtId).toHaveBeenCalledWith(closed.invoiceId);
+      expect(client.closePaymentExtId).toHaveBeenCalledWith(closed.invoiceId, DEFAULT_QR);
       expect(db.payments.get(closed.id)?.status).toBe('FAILED');
       expect(db.payments.get(young.id)?.status).toBe('PENDING');
     });
 
-    it('does nothing when the QR service cannot be called', async () => {
-      await startPaid('order-1');
-      config['canCallBank'] = false;
+    it('does not call the bank for an invoice whose terminal cannot be called', async () => {
+      const payment = await startPaid('order-1');
+      config['missingFor'] = () => ['QR terminal id'];
 
-      await expect(service.reconcilePendingPayments(0)).resolves.toEqual({ checked: 0, settled: 0 });
+      await expect(service.reconcilePendingPayments(0)).resolves.toEqual({ checked: 1, settled: 0 });
       expect(client.getPaymentStateExtId).not.toHaveBeenCalled();
+      expect(db.payments.get(payment.id)?.status).toBe('PENDING');
     });
   });
 
@@ -511,10 +518,11 @@ describe('AgroprombankQrService', () => {
 
       const reversed = await service.reverse(payment.id, { actorId: 'admin-1', reason: 'admin' });
 
-      expect(client.reverseInvoice).toHaveBeenCalledWith(payment.invoiceId, {
-        qrPaymentId: '5229848',
-        rrn: '000602981706',
-      });
+      expect(client.reverseInvoice).toHaveBeenCalledWith(
+        payment.invoiceId,
+        { qrPaymentId: '5229848', rrn: '000602981706' },
+        DEFAULT_QR,
+      );
       expect(reversed).toMatchObject({ status: 'REFUNDED', refundedCents: 3300, rrn: '000602981706' });
       expect(db.events).toContainEqual(
         expect.objectContaining({ type: 'REFUND_ISSUED', payload: expect.objectContaining({ kind: 'reversal' }) }),

@@ -48,23 +48,34 @@ export class AgroprombankCronService {
    */
   @Cron(CronExpression.EVERY_5_MINUTES, { name: 'agroprombank-reconcile' })
   async reconcile(): Promise<void> {
-    if (this.config.isConfigured) {
+    // Every payment is asked about on the terminal that took it — a brand's
+    // own or takeAway's default one — so these run whenever the flow is on
+    // (QR: whenever there may be QR money to look after), and a payment whose
+    // terminal cannot be called is skipped with a log line.
+    if (this.config.enabled) {
       await this.pass('bound-card payments', () => this.agro.reconcilePendingPayments(RECONCILE_AFTER_MS));
     }
-    if (this.webConfig.isConfigured) {
+    if (this.webConfig.enabled) {
       await this.pass('Web-платёж invoices', () => this.web.reconcilePendingPayments(RECONCILE_AFTER_MS));
     }
-    if (this.qrConfig.canCallBank) {
+    if (this.qrConfig.enabled || this.qrConfig.canCallBank || (await this.hasQrPayments())) {
       await this.pass('QR invoices', () => this.qr.reconcilePendingPayments(QR_RECONCILE_AFTER_MS));
     }
-    if (this.config.isConfigured || this.webConfig.isConfigured || this.qrConfig.canCallBank) {
-      try {
-        const { checked, released } = await this.holds.retryPendingReleases();
-        if (checked > 0) this.logger.log(`Retried ${checked} hold release(s); ${released} released`);
-      } catch (err) {
-        this.logger.error(`Hold release retry failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+    try {
+      const { checked, released } = await this.holds.retryPendingReleases();
+      if (checked > 0) this.logger.log(`Retried ${checked} hold release(s); ${released} released`);
+    } catch (err) {
+      this.logger.error(`Hold release retry failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /** QR money taken on a brand's terminal is looked after even with the flow switched off here. */
+  private async hasQrPayments(): Promise<boolean> {
+    const any = await this.prisma.payment.findFirst({
+      where: { provider: 'AGROPROMBANK_QR', status: { in: ['PENDING', 'REQUIRES_ACTION'] } },
+      select: { id: true },
+    });
+    return any !== null;
   }
 
   private async pass(label: string, run: () => Promise<{ checked: number; settled: number }>): Promise<void> {

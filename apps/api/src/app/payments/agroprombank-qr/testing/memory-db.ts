@@ -15,6 +15,8 @@ export type MemoryOrder = {
   currency: string;
   orderCode: string;
   cancelMoney: string | null;
+  /** The brand, through the store — what picks the terminal. */
+  store: { brandId: string };
 };
 
 type Where = Record<string, unknown>;
@@ -78,6 +80,7 @@ export function createMemoryDb() {
           tipCents: 0,
           refundedCents: 0,
           cardTokenId: null,
+          paymentTerminalId: null,
           rawJson: null,
           // Strictly increasing, and just in the past, so "older than now" finds it.
           createdAt: new Date(Date.now() - 1_000 + ids),
@@ -131,6 +134,7 @@ export function createMemoryDb() {
       currency: 'RUP',
       orderCode: id,
       cancelMoney: null,
+      store: { brandId: 'brand-1' },
       ...overrides,
     };
     orders.set(id, order);

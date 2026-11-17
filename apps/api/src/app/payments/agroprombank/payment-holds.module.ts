@@ -6,6 +6,7 @@ import { AgroprombankWebClient } from '../agroprombank-web/agroprombank-web.clie
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
 import { AgroprombankClient } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
+import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
 import { PaymentHoldsService } from './payment-holds.service';
 
 /**
@@ -27,6 +28,7 @@ import { PaymentHoldsService } from './payment-holds.service';
     AgroprombankQrConfig,
     AgroprombankQrClient,
     PaymentHoldsService,
+    PaymentTerminalsService,
   ],
   exports: [
     AgroprombankConfig,
@@ -36,6 +38,7 @@ import { PaymentHoldsService } from './payment-holds.service';
     AgroprombankQrConfig,
     AgroprombankQrClient,
     PaymentHoldsService,
+    PaymentTerminalsService,
   ],
 })
 export class PaymentHoldsModule {}

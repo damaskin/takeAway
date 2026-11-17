@@ -21,6 +21,8 @@ import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { stripeClientProvider, StripeConfig } from './stripe.config';
+import { PaymentTerminalsAdminService } from './terminals/payment-terminals-admin.service';
+import { PaymentTerminalsController } from './terminals/payment-terminals.controller';
 
 /**
  * Payment providers and the shared post-payment pipeline.
@@ -52,6 +54,7 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
     AgroprombankAdminController,
     AgroprombankWebController,
     AgroprombankQrController,
+    PaymentTerminalsController,
   ],
   providers: [
     OrderSettlementService,
@@ -63,6 +66,7 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
     AgroprombankQrService,
     CardPaymentsService,
     AgroprombankCronService,
+    PaymentTerminalsAdminService,
   ],
   exports: [
     PaymentsService,

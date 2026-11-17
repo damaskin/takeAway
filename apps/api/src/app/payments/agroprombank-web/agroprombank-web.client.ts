@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import axios, { type AxiosError } from 'axios';
 
+import { type WebTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankWebConfig } from './agroprombank-web.config';
 import type { WebServiceFunction } from './constants';
 import {
@@ -66,40 +67,44 @@ export class AgroprombankWebClient {
 
   paymentPage(
     request: Omit<PaymentPageRequest, 'merchantLogin' | 'merchantPass' | 'isTest' | 'lifetimeMinutes'>,
+    terminal: WebTerminal,
   ): PaymentPage {
-    const { merchantLogin, merchantPass } = this.requireCredentials();
+    const { merchantLogin, merchantPass } = this.requireCredentials(terminal);
     const fields = paymentPageFields({
       ...request,
       merchantLogin,
       merchantPass,
-      isTest: this.config.isTest,
+      isTest: terminal.isTest,
       lifetimeMinutes: this.config.lifetimeMinutes,
     });
     return { action: this.config.paymentUrl, fields, url: paymentPageUrl(this.config.paymentUrl, fields) };
   }
 
-  /** Whether a ResultURL notification really comes from someone holding our MerchantPass. */
-  verifyNotification(params: Record<string, string>): boolean {
-    const pass = this.config.merchantPass;
+  /**
+   * Whether a ResultURL notification really comes from someone holding the
+   * MerchantPass of the registration the invoice was issued on.
+   */
+  verifyNotification(params: Record<string, string>, terminal: WebTerminal): boolean {
+    const pass = terminal.merchantPass;
     return pass !== null && verifyResultSignature(params, pass);
   }
 
-  getState(invoiceId: string): Promise<OperationState> {
-    return this.call('GetState', invoiceId, []);
+  getState(invoiceId: string, terminal: WebTerminal): Promise<OperationState> {
+    return this.call('GetState', invoiceId, [], terminal);
   }
 
   /** Cancels the operation outright — only within the day of payment, per the bank. */
-  cancel(invoiceId: string): Promise<OperationState> {
-    return this.call('CancelOperation', invoiceId, []);
+  cancel(invoiceId: string, terminal: WebTerminal): Promise<OperationState> {
+    return this.call('CancelOperation', invoiceId, [], terminal);
   }
 
-  refund(invoiceId: string, amountCents: number): Promise<OperationState> {
-    return this.call('RefundOperation', invoiceId, [['refundAmount', amountCents]]);
+  refund(invoiceId: string, amountCents: number, terminal: WebTerminal): Promise<OperationState> {
+    return this.call('RefundOperation', invoiceId, [['refundAmount', amountCents]], terminal);
   }
 
   /** Captures a preauthorization, for up to 110% of the amount held. */
-  complete(invoiceId: string, amountCents: number): Promise<OperationState> {
-    return this.call('ComplitionOperation', invoiceId, [['complitionAmount', amountCents]]);
+  complete(invoiceId: string, amountCents: number, terminal: WebTerminal): Promise<OperationState> {
+    return this.call('ComplitionOperation', invoiceId, [['complitionAmount', amountCents]], terminal);
   }
 
   /**
@@ -111,8 +116,9 @@ export class AgroprombankWebClient {
     fn: WebServiceFunction,
     invoiceId: string,
     args: Array<[string, string | number]>,
+    terminal: WebTerminal,
   ): Promise<OperationState> {
-    const { merchantId, merchantPass } = this.requireCredentials();
+    const { merchantId, merchantPass } = this.requireCredentials(terminal);
     const fields: Record<string, string> = { MerchantId: merchantId, InvoiceId: invoiceId };
     for (const [name, value] of args) fields[name] = String(value);
     fields['Signature'] = serviceSignature(merchantId, [invoiceId, ...args.map(([, value]) => value)], merchantPass);
@@ -143,7 +149,7 @@ export class AgroprombankWebClient {
     let state: OperationState;
     try {
       const decoded = decodeServiceResult(fn, unwrapSoapResult(fn, body));
-      this.assertSignature(fn, decoded);
+      this.assertSignature(fn, decoded, terminal);
       const result = readResult(decoded.document);
       if (!isResultOk(result)) {
         throw new AgroprombankWebError(fn, result.code, result.description || `bank returned code ${result.code}`);
@@ -157,7 +163,11 @@ export class AgroprombankWebClient {
     return state;
   }
 
-  private assertSignature(fn: WebServiceFunction, decoded: ReturnType<typeof decodeServiceResult>): void {
+  private assertSignature(
+    fn: WebServiceFunction,
+    decoded: ReturnType<typeof decodeServiceResult>,
+    terminal: WebTerminal,
+  ): void {
     if (!this.config.verifyResponses) {
       this.logger.warn(
         `[${fn}] bank signature check is OFF (AGROPROMBANK_WEB_VERIFY_RESPONSES=false) — ` +
@@ -165,25 +175,31 @@ export class AgroprombankWebClient {
       );
       return;
     }
-    const certificate = this.config.bankCertificatePem;
+    const certificate = terminal.bankCertificatePem;
     if (!certificate) throw new AgroprombankWebTransportError(fn, 'bank certificate is missing');
     const verdict = verifyServiceSignature(decoded, certificate);
     if (!verdict.valid) throw new AgroprombankWebTransportError(fn, `bank signature: ${verdict.reason}`);
     this.logger.debug(`[${fn}] bank signature verified (${verdict.variant})`);
   }
 
-  private requireCredentials(): { merchantLogin: string; merchantId: string; merchantPass: string } {
+  private requireCredentials(terminal: WebTerminal): {
+    merchantLogin: string;
+    merchantId: string;
+    merchantPass: string;
+  } {
     if (!this.config.enabled) {
       throw new ServiceUnavailableException('Web-платёж is disabled on this deployment');
     }
-    const missing = this.config.missingSettings();
+    const missing = this.config.missingFor(terminal);
     if (missing.length > 0) {
-      throw new ServiceUnavailableException(`Web-платёж is not configured: missing ${missing.join(', ')}`);
+      throw new ServiceUnavailableException(
+        `Web-платёж is not configured for ${describeTerminal(terminal)}: missing ${missing.join(', ')}`,
+      );
     }
     return {
-      merchantLogin: this.config.merchantLogin as string,
-      merchantId: this.config.merchantId as string,
-      merchantPass: this.config.merchantPass as string,
+      merchantLogin: terminal.merchantLogin as string,
+      merchantId: (terminal.merchantId ?? terminal.merchantLogin) as string,
+      merchantPass: terminal.merchantPass as string,
     };
   }
 }

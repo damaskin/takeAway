@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 
+import { type CardTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankConfig } from './agroprombank.config';
 import {
   type XmlElement,
@@ -73,11 +74,12 @@ export class AgroprombankClient {
   constructor(private readonly config: AgroprombankConfig) {}
 
   /**
-   * Signs `fields`, calls `fn` and returns the verified response root.
-   * Throws {@link AgroprombankError} when the bank reports `result != 1`.
+   * Signs `fields` with `terminal`'s key, calls `fn` as its merchant and
+   * returns the verified response root. Throws {@link AgroprombankError} when
+   * the bank reports `result != 1`.
    */
-  async invoke(fn: AgroFunction, fields: Record<string, XmlFieldValue>): Promise<XmlElement> {
-    const root = await this.invokeRaw(fn, fields);
+  async invoke(fn: AgroFunction, fields: Record<string, XmlFieldValue>, terminal: CardTerminal): Promise<XmlElement> {
+    const root = await this.invokeRaw(fn, fields, terminal);
     const result = num(root, 'result');
     if (result !== AGRO_RESULT_OK) {
       const code = num(root, 'errorcode') ?? result ?? 0;
@@ -91,12 +93,16 @@ export class AgroprombankClient {
    * Same as {@link invoke} but returns the response even when `result != 1`.
    * Used by reconciliation, which needs to record a refusal rather than throw.
    */
-  async invokeRaw(fn: AgroFunction, fields: Record<string, XmlFieldValue>): Promise<XmlElement> {
-    const { merchantId, privateKeyPem } = this.requireCredentials();
+  async invokeRaw(
+    fn: AgroFunction,
+    fields: Record<string, XmlFieldValue>,
+    terminal: CardTerminal,
+  ): Promise<XmlElement> {
+    const { merchantId, privateKeyPem } = this.requireCredentials(terminal);
 
     const request = signXml(buildElement('root', fields), {
       privateKeyPem,
-      certificatePem: this.config.certificatePem,
+      certificatePem: terminal.certificatePem,
       includeKeyInfo: this.config.includeKeyInfo,
     });
 
@@ -108,27 +114,29 @@ export class AgroprombankClient {
       throw new AgroprombankTransportError(fn, `response is not well-formed XML: ${messageOf(err)}`);
     }
 
-    this.assertResponseSignature(fn, responseXml);
+    this.assertResponseSignature(fn, responseXml, terminal);
     return root;
   }
 
-  /** Throws unless the deployment holds everything needed for a live call. */
-  private requireCredentials(): { merchantId: string; privateKeyPem: string } {
+  /** Throws unless the deployment and the terminal hold everything needed for a live call. */
+  private requireCredentials(terminal: CardTerminal): { merchantId: string; privateKeyPem: string } {
     if (!this.config.enabled) {
       throw new ServiceUnavailableException('Agroprombank payments are disabled on this deployment');
     }
-    const missing = this.config.missingSettings();
+    const missing = this.config.missingFor(terminal);
     if (missing.length > 0) {
-      throw new ServiceUnavailableException(`Agroprombank is not configured: missing ${missing.join(', ')}`);
+      throw new ServiceUnavailableException(
+        `Agroprombank is not configured for ${describeTerminal(terminal)}: missing ${missing.join(', ')}`,
+      );
     }
     return {
-      merchantId: this.config.merchantId as string,
-      privateKeyPem: this.config.privateKeyPem as string,
+      merchantId: terminal.merchantId as string,
+      privateKeyPem: terminal.privateKeyPem as string,
     };
   }
 
-  private assertResponseSignature(fn: AgroFunction, responseXml: string): void {
-    const bankCertificate = this.config.bankCertificatePem;
+  private assertResponseSignature(fn: AgroFunction, responseXml: string, terminal: CardTerminal): void {
+    const bankCertificate = terminal.bankCertificatePem;
     if (!this.config.verifyResponses) {
       this.logger.warn(`[${fn}] response signature check is disabled (AGROPROMBANK_VERIFY_RESPONSES=false)`);
       return;

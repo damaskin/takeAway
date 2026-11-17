@@ -8,6 +8,7 @@ import { qrPaymentRefs } from '../agroprombank-qr/payment-refs';
 import { AgroprombankWebClient, AgroprombankWebError } from '../agroprombank-web/agroprombank-web.client';
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
 import { CARD_PROVIDERS, isDeferredCharge, releaseOutcome } from '../card-providers';
+import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
 import { AgroprombankClient } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
 
@@ -30,7 +31,8 @@ const RETRY_RELEASE_AFTER_MS = 2 * 60_000;
  * Provider-aware: a hold taken through the bound-card flow is released with
  * `ReverseOperation`, one taken on the Web-платёж page with `CancelOperation`,
  * and a paid QR invoice — money taken, parked like a hold — is given back
- * with `ReversePayment`.
+ * with `ReversePayment`. Always on the terminal that took the money
+ * (`Payment.paymentTerminalId`), the brand's own or takeAway's default one.
  */
 @Injectable()
 export class PaymentHoldsService {
@@ -44,6 +46,7 @@ export class PaymentHoldsService {
     private readonly webClient: AgroprombankWebClient,
     private readonly qrConfig: AgroprombankQrConfig,
     private readonly qrClient: AgroprombankQrClient,
+    private readonly terminals: PaymentTerminalsService,
   ) {}
 
   /**
@@ -103,15 +106,17 @@ export class PaymentHoldsService {
     if (!hold.invoiceId) return null;
     const web = hold.provider === 'AGROPROMBANK_WEB';
     const qr = hold.provider === 'AGROPROMBANK_QR';
-    // QR money is given back even with the QR payment switched off for new orders.
-    const reachable = web ? this.webConfig.isConfigured : qr ? this.qrConfig.canCallBank : this.config.isConfigured;
-    if (!reachable) return null;
 
     try {
       if (web) {
-        await this.webClient.cancel(hold.invoiceId);
+        const terminal = await this.terminals.webFor(hold.paymentTerminalId);
+        if (!this.webConfig.canCall(terminal)) return null;
+        await this.webClient.cancel(hold.invoiceId, terminal);
       } else if (qr) {
-        const after = await this.qrClient.reverseInvoice(hold.invoiceId, qrPaymentRefs(hold));
+        // QR money is given back even with the QR payment switched off for new orders.
+        const terminal = await this.terminals.qrFor(hold.paymentTerminalId);
+        if (!this.qrConfig.canCall(terminal)) return null;
+        const after = await this.qrClient.reverseInvoice(hold.invoiceId, qrPaymentRefs(hold), terminal);
         // ReversePayment answers nothing; what the bank says afterwards is
         // logged until it tells us which state a reversal leaves.
         this.logger.log(
@@ -119,7 +124,9 @@ export class PaymentHoldsService {
             `${after?.state ?? '?'} (${after?.stateDescription ?? 'no record'})`,
         );
       } else {
-        await this.client.invoke('ReverseOperation', { invoiceid: hold.invoiceId, amount: hold.amountCents });
+        const terminal = await this.terminals.cardFor(hold.paymentTerminalId);
+        if (!this.config.canCall(terminal)) return null;
+        await this.client.invoke('ReverseOperation', { invoiceid: hold.invoiceId, amount: hold.amountCents }, terminal);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
