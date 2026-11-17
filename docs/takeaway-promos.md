@@ -44,10 +44,11 @@ answer №11: takeAway never pays for those).
    brand promo has, and a brand promo cannot take a takeAway code (both answer
    409 with their usual «code taken» error).
 2. **One promo per order.** A takeAway promo and a brand promo never meet (one
-   field). A takeAway promo and **loyalty points do not combine** (loyalty
-   spec, item 18): `POST /orders` with both answers 400 `PROMO_WITH_POINTS`;
-   the clients disable «Оплатить баллами» with «Баллы нельзя совместить с
-   промокодом». A gift card still pays the rest.
+   field). **Any promo code and loyalty points do not combine** (loyalty spec,
+   item 18; since 2026-11-17 for a brand's own code too, a points-multiplier
+   code included): `POST /orders` with a code and `pointsToSpend > 0` answers
+   400 `PROMO_WITH_POINTS`; the clients disable «Оплатить баллами» with «Баллы
+   нельзя совместить с промокодом». A gift card still pays the rest.
 3. **Currency.** The budget is in one currency (`currency`); the promo works at
    stores selling in it. Elsewhere: 400 `PROMO_NOT_HERE`.
 4. **The budget is taken at checkout, not at the payment.** `POST /orders`
@@ -188,7 +189,7 @@ what part of the settlement is this compensation (docs/settlements.md).
 - `POST /orders` with `couponCode` = a takeAway code: the same checks (at the
   store's currency), then the reservation of §2.4; `couponCode` is stored
   uppercase. With `pointsToSpend > 0` as well → 400 `PROMO_WITH_POINTS`
-  (checked once the code is known valid). The order answer carries
+  (checked once the code is known valid; the same for a brand's code). The order answer carries
   `takeawayPromo: TakeawayPromoLine | null` — `POST /orders`,
   `GET /orders/:id`, and the cancel answer (null there: the cancel gave it
   back). `GET /me/orders` returns summaries without amounts and carries
@@ -230,8 +231,10 @@ now) and the list of promo orders (date, №, promo, по меню, оплати
   into the promo field and is validated by itself; the applied state reads
   «Приветственный бонус −10%» with «Убрать». Removed, it stays removed for
   that checkout (the customer may type the code back).
-- A TAKEAWAY result disables «Оплатить баллами» with «Баллы нельзя совместить с
-  промокодом» and sends `pointsToSpend: 0`.
+- Any applied code (a TAKEAWAY result or a brand's) disables «Оплатить баллами»
+  with «Баллы нельзя совместить с промокодом» and sends `pointsToSpend: 0`;
+  points already applied come off with «Баллы сняты: их нельзя совместить с
+  промокодом».
 - New error texts: `PROMO_NOT_HERE` «Акция не действует в этом заведении»,
   `PROMO_WITH_POINTS` «Баллы нельзя совместить с промокодом».
 - The order screen / receipt: with `takeawayPromo`, the discount line reads

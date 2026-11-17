@@ -21,6 +21,12 @@ export interface LoyaltyEntry {
   createdAt: string;
 }
 
+/**
+ * Every points figure here and in `LoyaltyEntry.amount` is in units: a unit
+ * is a hundredth of a point, and a point is worth one major unit of the
+ * currency (1 балл = 1 руб.). Show them with `formatPoints` / `pointsWord`
+ * from `@takeaway/utils`: 1240 is «12,40 балла».
+ */
 export interface LoyaltyAccount {
   userId: string;
   pointsBalance: number;

@@ -438,6 +438,16 @@ export class AdminOrderSummaryDto extends OrderSummaryDto {
       '0 without either, and for a cancelled or expired order.',
   })
   takeawayFundedCents!: number;
+
+  @ApiProperty({ description: 'The menu price of the items, before any discount — the full amount of the order.' })
+  subtotalCents!: number;
+
+  @ApiProperty({
+    description:
+      "The discount of the brand's own promo code (discountCents minus takeAway's promo and the points): the brand " +
+      'gives it, takeAway does not compensate it. 0 without one.',
+  })
+  brandDiscountCents!: number;
 }
 
 /** A row of the customer's own order history (`GET /me/orders`). */

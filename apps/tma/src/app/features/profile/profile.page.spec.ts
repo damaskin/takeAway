@@ -26,12 +26,13 @@ const USER: AuthUser = {
 
 const ACCOUNT: LoyaltyAccount = {
   userId: 'u-1',
-  pointsBalance: 120,
-  lifetimePoints: 120,
+  // API units: a hundredth of a point (1 балл = 1 руб.).
+  pointsBalance: 1240,
+  lifetimePoints: 1200,
   tier: 'SILVER',
   nextTier: 'GOLD',
-  pointsToNextTier: 380,
-  tierProgressPercent: 24,
+  pointsToNextTier: 300,
+  tierProgressPercent: 80,
   recent: [],
 };
 
@@ -112,12 +113,19 @@ describe('TmaProfilePage', () => {
     expect(byTestId('bonus-banner')).toBeNull();
   });
 
-  it('shows the real loyalty account', async () => {
+  it('shows the real loyalty account, in points with their kopecks', async () => {
     http.expectOne('/api/loyalty/me').flush(ACCOUNT);
     await flushBonuses();
-    expect(byTestId('loyalty-points')?.textContent?.trim()).toBe('120 баллов');
+    expect(byTestId('loyalty-points')?.textContent?.trim()).toBe('12,40 балла');
     expect(byTestId('loyalty-tier')?.textContent).toContain('Серебряный');
-    expect(byTestId('loyalty-card')?.textContent).toContain('380 баллов до уровня «Золотой»');
+    expect(byTestId('loyalty-card')?.textContent).toContain('3 балла до уровня «Золотой»');
+  });
+
+  it('writes whole points without decimals and with the right word', async () => {
+    http.expectOne('/api/loyalty/me').flush({ ...ACCOUNT, pointsBalance: 2100, pointsToNextTier: 500 });
+    await flushBonuses();
+    expect(byTestId('loyalty-points')?.textContent?.trim()).toBe('21 балл');
+    expect(byTestId('loyalty-card')?.textContent).toContain('5 баллов до уровня «Золотой»');
   });
 
   // It used to show «Gold, 2,450 баллов» to everybody.

@@ -20,6 +20,7 @@ import {
   groupSlotsByDay,
   isCartChangedError,
   isStoreInactive,
+  pointUnitsFromInput,
   productKind,
   qrPaymentOffered,
   readyTimeShown,
@@ -34,6 +35,7 @@ import {
   checkoutErrorText,
   LocaleFormatService,
   pickupDayLabel,
+  PointsPipe,
   takeawayPromoLabel,
 } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
@@ -67,7 +69,14 @@ interface Step {
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink, TranslatePipe, ProductImageComponent, FoodSuggestionsComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    TranslatePipe,
+    PointsPipe,
+    ProductImageComponent,
+    FoodSuggestionsComponent,
+  ],
   host: { '(window:pageshow)': 'onPageShow($event)' },
   template: `
     <section class="min-h-screen">
@@ -467,7 +476,7 @@ interface Step {
               @if (pointsDiscountCents() > 0) {
                 <div class="flex items-center justify-between">
                   <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
-                    >🏆 {{ 'web.checkout.pointsSpent' | translate: { points: pointsSpent() } }}</span
+                    >🏆 {{ pointsSpent() | points }}</span
                   >
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
@@ -536,14 +545,18 @@ interface Step {
                     >{{ 'web.checkout.pointsLabel' | translate }}</span
                   >
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
-                    'web.checkout.pointsBalance' | translate: { points: pointsBalance() }
+                    'web.checkout.pointsBalance' | translate: { points: (pointsBalance() | points) }
                   }}</span>
                 </div>
 
-                <!-- Off while a takeAway promo is applied: the two do not combine. -->
+                <!--
+                  Off while any promo code is applied: the two do not combine.
+                  Points with up to two decimals, the comma or the dot; empty means
+                  as many as the balance and the order allow.
+                -->
                 <div
                   class="flex items-center"
-                  [style.opacity]="takeawayPromo() ? 0.5 : 1"
+                  [style.opacity]="promoApplied() ? 0.5 : 1"
                   style="gap: 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 4px 4px 4px 14px"
                 >
                   <span style="color: var(--color-text-tertiary)">🏆</span>
@@ -551,10 +564,12 @@ interface Step {
                     data-testid="points-input"
                     [value]="pointsInput()"
                     (input)="onPointsInput($event)"
-                    [disabled]="takeawayPromo() !== null"
-                    type="number"
-                    min="0"
-                    [max]="pointsBalance()"
+                    [disabled]="promoApplied()"
+                    type="text"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    [placeholder]="pointsBalance() | points: 'number'"
+                    [attr.aria-label]="'web.checkout.pointsLabel' | translate"
                     class="flex-1 outline-none bg-transparent"
                     style="font-family: var(--font-mono); font-size: 14px; color: var(--color-text-primary)"
                   />
@@ -562,7 +577,7 @@ interface Step {
                     type="button"
                     data-testid="points-apply"
                     (click)="pointsSpent() > 0 ? clearPoints() : applyPoints()"
-                    [disabled]="pointsLoading() || takeawayPromo() !== null"
+                    [disabled]="pointsLoading() || promoApplied()"
                     class="flex items-center justify-center disabled:opacity-50"
                     style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
                   >
@@ -575,11 +590,14 @@ interface Step {
                     }
                   </button>
                 </div>
-                @if (takeawayPromo()) {
+                @if (promoApplied()) {
                   <span
                     data-testid="points-blocked"
                     style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                    >{{ 'common.takeawayPromo.noPoints' | translate }}</span
+                    >{{
+                      (pointsDroppedForPromo() ? 'web.checkout.pointsDroppedForPromo' : 'common.pointsWithPromo')
+                        | translate
+                    }}</span
                   >
                 } @else if (pointsStatus()) {
                   <span
@@ -623,7 +641,7 @@ interface Step {
                     …
                   } @else if (takeawayPromo()) {
                     {{ 'common.takeawayPromo.remove' | translate }}
-                  } @else if (discountCents() > 0) {
+                  } @else if (promoApplied()) {
                     {{ 'common.clear' | translate }}
                   } @else {
                     {{ 'common.apply' | translate }}
@@ -992,10 +1010,16 @@ export class CheckoutPage implements OnInit {
   readonly promoLoading = signal(false);
   /**
    * The applied code is takeAway's own promo or the welcome bonus
-   * (`source: TAKEAWAY`): takeAway pays for it, and loyalty points cannot
-   * go on the same order. Null for a brand's code and with none applied.
+   * (`source: TAKEAWAY`): takeAway pays for it. Null for a brand's code and
+   * with none applied.
    */
   readonly takeawayPromo = signal<NonNullable<ValidPromoResult['takeawayPromo']> | null>(null);
+  /**
+   * A promo code is on — a brand's, a takeAway promo or the welcome bonus.
+   * Loyalty points then stay off the order (the loyalty spec: one or the
+   * other; the API refuses both with PROMO_WITH_POINTS).
+   */
+  readonly promoApplied = computed(() => this.promoCode() !== null);
   /** The customer's unused bonuses (`GET /me/bonuses`); checkout puts one on by itself. */
   readonly bonuses = signal<CustomerBonus[]>([]);
   /**
@@ -1006,14 +1030,19 @@ export class CheckoutPage implements OnInit {
   private bonusTriedFor: string | null = null;
 
   // Loyalty points — the balance comes from the server and so does the
-  // quote, because both are server state the client must not invent.
+  // quote, because both are server state the client must not invent. Every
+  // figure is in the API's units, a hundredth of a point (1 балл = 1 руб.);
+  // only the field holds points as the customer typed them.
   readonly pointsBalance = signal(0);
   readonly pointsMin = signal(100);
-  readonly pointsInput = signal(0);
+  /** The points field as typed: «12,4», «12.40»; empty asks for as many as allowed. */
+  readonly pointsInput = signal('');
   readonly pointsSpent = signal(0);
   readonly pointsDiscountCents = signal(0);
   readonly pointsStatus = signal<string | null>(null);
   readonly pointsLoading = signal(false);
+  /** Points were on when a promo code went on, and came off for it. */
+  readonly pointsDroppedForPromo = signal(false);
 
   // Gift card state — same toggle pattern as promo.
   readonly giftCardInput = signal('');
@@ -1352,8 +1381,9 @@ export class CheckoutPage implements OnInit {
   }
 
   applyPromo(): void {
-    // Acting as a toggle: if one is already applied, the button clears it.
-    if (this.discountCents() > 0 || this.takeawayPromo()) {
+    // Acting as a toggle: if one is already applied, the button clears it —
+    // a points-multiplier code too, which has no discount but keeps points off.
+    if (this.promoApplied()) {
       this.removePromo();
       return;
     }
@@ -1379,12 +1409,12 @@ export class CheckoutPage implements OnInit {
         }
         this.promoCode.set(code);
         this.discountCents.set(res.discountCents);
+        // Any promo code and loyalty points do not go on the same order (the
+        // API refuses both with PROMO_WITH_POINTS): points already on come off.
+        this.dropPointsForPromo();
         if (res.source === 'TAKEAWAY' && res.takeawayPromo) {
-          // takeAway pays for this one, and loyalty points do not go on the
-          // same order (the API refuses both with PROMO_WITH_POINTS).
+          // takeAway pays for this one.
           this.takeawayPromo.set(res.takeawayPromo);
-          this.clearPoints();
-          this.pointsInput.set(0);
           this.promoStatus.set(this.takeawayLabel());
           return;
         }
@@ -1412,6 +1442,15 @@ export class CheckoutPage implements OnInit {
     this.discountCents.set(0);
     this.promoStatus.set(null);
     this.takeawayPromo.set(null);
+    this.pointsDroppedForPromo.set(false);
+  }
+
+  /** A promo code went on: points come off, and the line under them says why. */
+  private dropPointsForPromo(): void {
+    const hadPoints = this.pointsSpent() > 0;
+    this.clearPoints();
+    this.pointsInput.set('');
+    this.pointsDroppedForPromo.set(hadPoints);
   }
 
   /**
@@ -1500,20 +1539,22 @@ export class CheckoutPage implements OnInit {
   }
 
   onPointsInput(event: Event): void {
-    const raw = Number((event.target as HTMLInputElement).value);
-    this.pointsInput.set(Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0);
+    this.pointsInput.set((event.target as HTMLInputElement).value);
     if (this.pointsSpent() > 0) this.clearPoints();
   }
 
   applyPoints(): void {
     const cart = this.cart();
-    // Points do not combine with a takeAway promo; the control is off then.
-    if (!cart || this.takeawayPromo()) return;
+    // Points do not combine with a promo code; the control is off then.
+    if (!cart || this.promoApplied()) return;
     const payable = Math.max(0, cart.subtotalCents - this.discountCents());
+    // An empty field asks for the whole balance; the quote cuts it to the order.
+    const typed = this.pointsInput().trim();
+    const units = typed ? pointUnitsFromInput(typed) : this.pointsBalance();
 
     this.pointsLoading.set(true);
     this.pointsStatus.set(null);
-    this.loyalty.quoteRedemption(this.pointsInput(), payable).subscribe({
+    this.loyalty.quoteRedemption(units, payable).subscribe({
       next: (quote) => {
         this.pointsLoading.set(false);
         this.pointsBalance.set(quote.balance);
@@ -1523,13 +1564,15 @@ export class CheckoutPage implements OnInit {
         if (quote.points === 0) {
           // The server refused: too few points, too small an order, or an
           // empty balance. Say which rather than silently doing nothing.
-          this.pointsStatus.set(this.translate.instant('web.checkout.pointsTooFew', { min: quote.minPoints }));
+          this.pointsStatus.set(
+            this.translate.instant('web.checkout.pointsTooFew', { min: this.fmt.points(quote.minPoints) }),
+          );
           return;
         }
-        this.pointsInput.set(quote.points);
+        this.pointsInput.set(this.fmt.pointsNumber(quote.points));
         this.pointsStatus.set(
           this.translate.instant('web.checkout.pointsApplied', {
-            points: quote.points,
+            points: this.fmt.points(quote.points),
             amount: this.price(quote.discountCents),
           }),
         );
@@ -1723,8 +1766,8 @@ export class CheckoutPage implements OnInit {
       notes: v.notes || undefined,
       couponCode: this.promoCode() ?? undefined,
       giftCardCode: this.giftCardCode() ?? undefined,
-      // Explicitly none with a takeAway promo: the API refuses the two together.
-      pointsToSpend: this.takeawayPromo() ? 0 : this.pointsSpent() || undefined,
+      // Explicitly none with a promo code: the API refuses the two together.
+      pointsToSpend: this.promoApplied() ? 0 : this.pointsSpent() || undefined,
       ...(isDelivery
         ? {
             deliveryAddressLine: d.addressLine.trim(),

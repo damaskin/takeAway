@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { KitchenModule } from '../kitchen/kitchen.module';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PosModule } from '../pos/pos.module';
@@ -46,6 +47,7 @@ import { PaymentTerminalsController } from './terminals/payment-terminals.contro
     PosModule,
     PaymentHoldsModule,
     KitchenModule,
+    LoyaltyModule,
   ],
   controllers: [
     PaymentsController,

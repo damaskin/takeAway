@@ -1,12 +1,22 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { LoyaltyAccount, LoyaltyTier, PointsEntryType, Prisma } from '@prisma/client';
 
+import { formatPoints, pointsWord } from '@takeaway/utils';
+
 import { PrismaService } from '../prisma/prisma.service';
 import { LoyaltyAccountDto, LoyaltyEntryDto } from './dto/loyalty.dto';
 
+/*
+ * Every points figure here — balances, ledger amounts, thresholds, quotes —
+ * is an integer number of units: a unit is a hundredth of a point, and a
+ * point is worth one major unit of the currency (1 балл = 1 руб.), so a unit
+ * is worth one cent. The clients show them with `formatPoints` / `pointsWord`
+ * from @takeaway/utils: 1240 units are «12,40 балла».
+ */
+
 /**
- * Lifetime-points thresholds per tier. Ordered ascending — we pick the
- * highest tier a user has cleared.
+ * Lifetime thresholds per tier, in units (Gold from 15 points). Ordered
+ * ascending — we pick the highest tier a user has cleared.
  */
 const TIER_THRESHOLDS: Array<{ tier: LoyaltyTier; min: number }> = [
   { tier: LoyaltyTier.SILVER, min: 0 },
@@ -15,24 +25,37 @@ const TIER_THRESHOLDS: Array<{ tier: LoyaltyTier; min: number }> = [
   { tier: LoyaltyTier.SIGNATURE, min: 10_000 },
 ];
 
-/** 1 point per whole dollar (100 cents). Adjust centrally here. */
+/** One unit per 100 cents of subtotal: 0,01 балла per rouble. Adjust centrally here. */
 const POINTS_PER_CENT = 1 / 100;
 
 /**
- * What a point is worth when spent, in cents. Paired with the earn rate
- * above this is a 1% return, which is deliberately modest: points are a
- * reason to come back, not a discount scheme, and a generous rate is very
- * hard to walk back once customers have banked a balance.
+ * What a unit is worth when spent, in cents — so a point (100 units) is one
+ * currency unit. Paired with the earn rate above this is a 1% return (the
+ * spec's Silver rate), which is deliberately modest: points are a reason to
+ * come back, not a discount scheme, and a generous rate is very hard to walk
+ * back once customers have banked a balance.
  */
 const POINT_VALUE_CENTS = 1;
 
 /**
- * Floor on a redemption. Burning nine points to save nine cents wastes
- * everyone's attention and clutters the ledger.
+ * Floor on a redemption, in units: one point. Burning a few kopecks' worth
+ * wastes everyone's attention and clutters the ledger.
  */
 const MIN_REDEEMABLE_POINTS = 100;
 
+/**
+ * Points in a ledger `reason` the customer reads in the app and on the
+ * website: «0.40 points», «1 point». The reasons are English as they always
+ * were; the figure is points, not units.
+ */
+export function ledgerPoints(units: number): string {
+  return `${formatPoints(units, 'en')} ${pointsWord(units, 'en')}`;
+}
+
 type PrismaTx = Prisma.TransactionClient;
+
+/** `PointsLedger.metadata.kind` of points given back with a card refund. */
+const REFUND_RETURN = 'refund-return';
 
 @Injectable()
 export class LoyaltyService {
@@ -111,7 +134,7 @@ export class LoyaltyService {
     await this.applyDelta(account, amount, 'EARN', `order:${orderId}`, tx, {
       orderId,
       type: PointsEntryType.EARN,
-      reason: `Order ${orderId} · +${amount} pts`,
+      reason: `Order ${orderId} · +${ledgerPoints(amount)}`,
       metadata: { subtotalCents, pointsMultiplier },
     });
   }
@@ -185,14 +208,76 @@ export class LoyaltyService {
     });
     if (!spend) return;
 
+    // Part of it may have come back already with a card refund (`returnForRefund`).
+    const back = Math.abs(spend.amount) - (await this.returnedForRefund(tx, orderId));
+    if (back <= 0) return;
     const account = await this.ensureAccount(spend.userId, tx);
-    await this.applyDelta(account, Math.abs(spend.amount), 'EARN', `refund:${orderId}`, tx, {
+    await this.applyDelta(account, back, 'EARN', `refund:${orderId}`, tx, {
       orderId,
       type: PointsEntryType.EARN,
-      reason: `Refunded ${Math.abs(spend.amount)} pts from order ${orderId}`,
+      reason: `Refunded ${ledgerPoints(back)} from order ${orderId}`,
       metadata: null,
       countsTowardLifetime: false,
     });
+  }
+
+  /**
+   * Give the guest back the share of the points spent on an order that its
+   * card refunds returned: a refund is the brand's, and takeAway stops
+   * compensating the refunded share of the points (owner, 2026-11-17), so the
+   * same share goes back to the guest — half the card money back, half the
+   * points. Counted cumulatively over every refund of the order (rounded half
+   * up), so repeated partial refunds never give back more than was spent.
+   * Nothing for a cancelled or expired order: `releaseForOrder` returned the
+   * points then.
+   */
+  async returnForRefund(orderId: string): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          userId: true,
+          status: true,
+          currency: true,
+          pointsSpent: true,
+          payments: {
+            where: { status: { in: ['SUCCEEDED', 'PARTIALLY_REFUNDED', 'REFUNDED'] } },
+            select: { amountCents: true, refundedCents: true, currency: true },
+          },
+        },
+      });
+      if (!order || order.pointsSpent <= 0) return 0;
+      if (order.status === 'CANCELLED' || order.status === 'EXPIRED') return 0;
+      let captured = 0;
+      let refunded = 0;
+      for (const p of order.payments) {
+        if (p.currency !== order.currency) continue;
+        captured += Math.max(0, p.amountCents);
+        refunded += Math.min(Math.max(0, p.amountCents), Math.max(0, p.refundedCents));
+      }
+      if (captured <= 0 || refunded <= 0) return 0;
+      const due = Math.floor((2 * order.pointsSpent * refunded + captured) / (2 * captured));
+      const back = due - (await this.returnedForRefund(tx, orderId));
+      if (back <= 0) return 0;
+      const account = await this.ensureAccount(order.userId, tx);
+      await this.applyDelta(account, back, 'EARN', `refund-return:${orderId}`, tx, {
+        orderId,
+        type: PointsEntryType.EARN,
+        reason: `Returned ${ledgerPoints(back)} with a card refund of order ${orderId}`,
+        metadata: { kind: REFUND_RETURN, refundedCents: refunded, capturedCents: captured },
+        countsTowardLifetime: false,
+      });
+      return back;
+    });
+  }
+
+  /** Points of the order already given back with its card refunds. */
+  private async returnedForRefund(tx: PrismaTx, orderId: string): Promise<number> {
+    const rows = await tx.pointsLedger.findMany({
+      where: { orderId, type: PointsEntryType.EARN, metadata: { path: ['kind'], equals: REFUND_RETURN } },
+      select: { amount: true },
+    });
+    return rows.reduce((sum, r) => sum + Math.max(0, r.amount), 0);
   }
 
   /** Debit points when a promo consumes them. */

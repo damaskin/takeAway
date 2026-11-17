@@ -24,8 +24,9 @@ import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 
 /**
  * «Акции takeAway» at checkout (docs/takeaway-promos.md §5): the welcome
- * bonus goes on by itself, «Убрать» keeps it off the cart, and a takeAway
- * promo turns «Оплатить баллами» off.
+ * bonus goes on by itself and «Убрать» keeps it off the cart. Any promo code
+ * turns «Оплатить баллами» off (the loyalty spec: one or the other), and
+ * points read with their kopecks — 1 балл = 1 руб. = 100 API units.
  */
 
 const STORE = {
@@ -111,6 +112,19 @@ function takeawayAnswer(code: string, percent: number, isWelcome: boolean, subto
   };
 }
 
+/** What the API answers for a brand's own code worth `discountCents`. */
+function brandAnswer(discountCents: number): ValidPromoResult {
+  return {
+    valid: true,
+    reason: null,
+    reasonCode: null,
+    promo: null,
+    source: 'BRAND',
+    discountCents,
+    pointsMultiplier: 1,
+  };
+}
+
 function refusal(reasonCode: ValidPromoResult['reasonCode']): ValidPromoResult {
   return {
     valid: false,
@@ -136,16 +150,20 @@ describe('CheckoutPage — takeAway promos and the welcome bonus', () => {
   let quote: jest.Mock;
   let dismissed: Set<string>;
 
-  async function open(opts: { bonuses?: CustomerBonus[]; points?: number; answer?: typeof validate } = {}) {
+  async function open(
+    opts: { bonuses?: CustomerBonus[]; points?: number; answer?: typeof validate; quoteAnswer?: jest.Mock } = {},
+  ) {
     dismissed = new Set();
     validate =
       opts.answer ??
       jest.fn((code: string, _brand: string, subtotal: number) => of(takeawayAnswer(code, 10, true, subtotal)));
     orders = { create: jest.fn(() => of({ id: 'order-1' })) };
     cartService = { load: jest.fn(() => of(cart())), updateQuantity: jest.fn((_id: string, q: number) => of(cart(q))) };
-    quote = jest.fn((points: number) =>
-      of({ points, discountCents: points, balance: opts.points ?? 0, pointValueCents: 1, minPoints: 100 }),
-    );
+    quote =
+      opts.quoteAnswer ??
+      jest.fn((points: number) =>
+        of({ points, discountCents: points, balance: opts.points ?? 0, pointValueCents: 1, minPoints: 100 }),
+      );
     TestBed.configureTestingModule({
       providers: [
         // The order page is where a placed order goes; nothing to show of it here.
@@ -269,8 +287,9 @@ describe('CheckoutPage — takeAway promos and the welcome bonus', () => {
     const { page, byTestId, textOf, detect } = await open({ points: 500, answer });
 
     // Points first, then the promo: the points come off.
-    page.pointsInput.set(500);
+    page.pointsInput.set('5');
     page.applyPoints();
+    expect(quote).toHaveBeenCalledWith(500, 4500);
     expect(page.pointsSpent()).toBe(500);
 
     page.promoInput.set('AUTUMN15');
@@ -281,10 +300,10 @@ describe('CheckoutPage — takeAway promos and the welcome bonus', () => {
     expect(textOf('promo-status')).toBe('Акция takeAway −15%');
     expect(page.pointsSpent()).toBe(0);
     expect(page.totalCents(4500)).toBe(3825);
-    expect(byTestId<HTMLInputElement>('points-input')?.value).toBe('0');
+    expect(byTestId<HTMLInputElement>('points-input')?.value).toBe('');
     expect(byTestId<HTMLButtonElement>('points-apply')?.disabled).toBe(true);
     expect(byTestId<HTMLInputElement>('points-input')?.disabled).toBe(true);
-    expect(textOf('points-blocked')).toBe('Баллы нельзя совместить с промокодом');
+    expect(textOf('points-blocked')).toBe('Баллы сняты: их нельзя совместить с промокодом');
 
     page.applyPoints();
     expect(quote).toHaveBeenCalledTimes(1);
@@ -293,18 +312,8 @@ describe('CheckoutPage — takeAway promos and the welcome bonus', () => {
     expect(orders.create).toHaveBeenCalledWith(expect.objectContaining({ couponCode: 'AUTUMN15', pointsToSpend: 0 }));
   });
 
-  it('keeps points for a brand code', async () => {
-    const answer = jest.fn(() =>
-      of({
-        valid: true,
-        reason: null,
-        reasonCode: null,
-        promo: null,
-        source: 'BRAND' as const,
-        discountCents: 500,
-        pointsMultiplier: 1,
-      }),
-    );
+  it('turns points off for a brand code too, and back on once it is removed', async () => {
+    const answer = jest.fn(() => of(brandAnswer(500)));
     const { page, byTestId, textOf, detect } = await open({ points: 500, answer });
     page.promoInput.set('COFFEE5');
     page.applyPromo();
@@ -312,8 +321,98 @@ describe('CheckoutPage — takeAway promos and the welcome bonus', () => {
 
     expect(page.takeawayPromo()).toBeNull();
     expect(textOf('promo-line')).toMatch(/^Промокод · COFFEE5/);
+    expect(byTestId<HTMLButtonElement>('points-apply')?.disabled).toBe(true);
+    expect(byTestId<HTMLInputElement>('points-input')?.disabled).toBe(true);
+    expect(textOf('points-blocked')).toBe('Баллы нельзя совместить с промокодом');
+    page.applyPoints();
+    expect(quote).not.toHaveBeenCalled();
+
+    page.placeOrder();
+    expect(orders.create).toHaveBeenCalledWith(expect.objectContaining({ couponCode: 'COFFEE5', pointsToSpend: 0 }));
+
+    byTestId<HTMLButtonElement>('promo-apply')?.click();
+    detect();
+    expect(page.promoCode()).toBeNull();
     expect(byTestId<HTMLButtonElement>('points-apply')?.disabled).toBe(false);
     expect(byTestId('points-blocked')).toBeNull();
+  });
+
+  it('takes points off when a brand code goes on, and says why', async () => {
+    const answer = jest.fn(() => of(brandAnswer(500)));
+    const { page, textOf, detect } = await open({ points: 1000, answer });
+    page.pointsInput.set('7');
+    page.applyPoints();
+    expect(page.pointsSpent()).toBe(700);
+
+    page.promoInput.set('COFFEE5');
+    page.applyPromo();
+    detect();
+
+    expect(page.pointsSpent()).toBe(0);
+    expect(page.pointsDiscountCents()).toBe(0);
+    expect(page.totalCents(4500)).toBe(4000);
+    expect(textOf('points-blocked')).toBe('Баллы сняты: их нельзя совместить с промокодом');
+  });
+
+  it('keeps points off under a points-multiplier code, and lets the button take that code off', async () => {
+    const answer = jest.fn(() => of({ ...brandAnswer(0), pointsMultiplier: 2 }));
+    const { page, byTestId, textOf, detect } = await open({ points: 500, answer });
+    page.promoInput.set('DOUBLE');
+    page.applyPromo();
+    detect();
+
+    expect(textOf('promo-status')).toBe('Применён · 2× баллов');
+    expect(textOf('promo-apply')).toBe('Очистить');
+    expect(byTestId<HTMLButtonElement>('points-apply')?.disabled).toBe(true);
+
+    byTestId<HTMLButtonElement>('promo-apply')?.click();
+    detect();
+    expect(answer).toHaveBeenCalledTimes(1);
+    expect(page.promoCode()).toBeNull();
+    expect(byTestId<HTMLButtonElement>('points-apply')?.disabled).toBe(false);
+  });
+
+  describe('points with kopecks', () => {
+    it('shows the balance in points, a fraction with two decimals', async () => {
+      const { textOf, byTestId } = await open({ points: 1240 });
+      expect(textOf('points-section')).toContain('Доступно 12,40 балла');
+      expect(byTestId<HTMLInputElement>('points-input')?.placeholder).toBe('12,40');
+    });
+
+    it('takes «5,5» as 5,50 points, and shows the quoted amount back', async () => {
+      const { page, byTestId, textOf, detect } = await open({ points: 1240 });
+      const input = byTestId<HTMLInputElement>('points-input');
+      if (!input) throw new Error('no points field');
+      input.value = '5,5';
+      input.dispatchEvent(new Event('input'));
+      page.applyPoints();
+      detect();
+
+      expect(quote).toHaveBeenCalledWith(550, 4500);
+      expect(page.pointsSpent()).toBe(550);
+      expect(input.value).toBe('5,50');
+      expect(textOf('points-section')).toContain('Списано 5,50 балла — минус 5,50 руб.');
+      expect(page.totalCents(4500)).toBe(3950);
+    });
+
+    it('asks for the whole balance when the field is left empty', async () => {
+      const { page } = await open({ points: 1240 });
+      page.applyPoints();
+      expect(quote).toHaveBeenCalledWith(1240, 4500);
+    });
+
+    it('names the minimum in points when the quote refuses', async () => {
+      const quoteAnswer = jest.fn(() =>
+        of({ points: 0, discountCents: 0, balance: 150, pointValueCents: 1, minPoints: 100 }),
+      );
+      const { page, textOf, detect } = await open({ points: 150, quoteAnswer });
+      page.pointsInput.set('0,5');
+      page.applyPoints();
+      detect();
+
+      expect(quoteAnswer).toHaveBeenCalledWith(50, 4500);
+      expect(textOf('points-section')).toContain('Минимум 1 балл, и не больше суммы заказа');
+    });
   });
 
   it('says a takeAway promo does not work at this venue', async () => {

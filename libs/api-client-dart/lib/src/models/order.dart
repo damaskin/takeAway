@@ -587,6 +587,9 @@ class CreateOrderRequest {
   final String? notes;
   final String? couponCode;
   final String? giftCardCode;
+
+  /// Loyalty units (hundredths of a point) to spend; 0 with a [couponCode],
+  /// which points do not combine with (`PROMO_WITH_POINTS`).
   final int? pointsToSpend;
   final String? deliveryAddressLine;
   final String? deliveryCity;

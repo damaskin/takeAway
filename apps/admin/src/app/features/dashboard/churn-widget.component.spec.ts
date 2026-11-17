@@ -103,23 +103,21 @@ describe('ChurnWidgetComponent', () => {
     expect(item).not.toContain('130 MDL');
   });
 
-  it('offers 3, 7 and 14 days and asks again for the one picked', async () => {
+  it('has no threshold picker: always 14 days, like «Возврат клиентов»', async () => {
     const fixture = await render();
-    const buttons = [...(fixture.nativeElement as HTMLElement).querySelectorAll('.churn-window button')];
-    expect(buttons.map((b) => text(b))).toEqual(['3 дн.', '7 дн.', '14 дн.']);
-    (buttons[0] as HTMLButtonElement).click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    expect(churn).toHaveBeenLastCalledWith('b1', { days: 30, storeId: 's1' }, 3, 3);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.churn-window')).toBeNull();
+    expect(text(el.querySelector('.dash-muted'))).toContain('14 дн.');
+    expect(churn).toHaveBeenLastCalledWith('b1', { days: 30, storeId: 's1' }, 14, 3);
   });
 
-  it('opens «Возврат» on the same period, store and window', async () => {
+  it('opens «Возврат» on the same period and store', async () => {
     const fixture = await render();
     const link = (fixture.nativeElement as HTMLElement).querySelector('a.churn-cta') as HTMLAnchorElement;
     expect(text(link)).toBe('Возврат клиентов');
     const url = new URL(link.href);
     expect(url.pathname).toBe('/analytics');
-    expect(Object.fromEntries(url.searchParams)).toEqual({ tab: 'retention', window: '14', days: '30', storeId: 's1' });
+    expect(Object.fromEntries(url.searchParams)).toEqual({ tab: 'retention', days: '30', storeId: 's1' });
   });
 
   it('keeps a custom range in the link', async () => {
@@ -127,7 +125,6 @@ describe('ChurnWidgetComponent', () => {
     const link = (fixture.nativeElement as HTMLElement).querySelector('a.churn-cta') as HTMLAnchorElement;
     expect(Object.fromEntries(new URL(link.href).searchParams)).toEqual({
       tab: 'retention',
-      window: '14',
       from: '2026-09-01',
       to: '2026-09-30',
     });

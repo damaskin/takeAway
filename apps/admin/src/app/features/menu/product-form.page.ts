@@ -66,6 +66,7 @@ import { ProductOptionGroupsComponent } from './product-option-groups.component'
             [basePriceCents]="product()?.basePriceCents ?? 0"
             [currency]="currency()"
             [hasLegacyOptions]="hasLegacyOptions()"
+            [isDrink]="isDrink()"
             (attachedCount)="catalogGroups.set($event)"
           />
           @if (catalogGroups() > 0) {
@@ -85,6 +86,16 @@ import { ProductOptionGroupsComponent } from './product-option-groups.component'
               {{ 'admin.menu.product.options' | translate }}
             </a>
           }
+        } @else {
+          <!-- A new product: the options are the next step, shown so nobody thinks there are none. -->
+          <p
+            role="note"
+            data-testid="product-options-after-save"
+            style="margin: 16px 0 0; padding: 12px 14px; background: var(--color-cream); border: 1px dashed var(--color-border-light); border-radius: 12px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+          >
+            <strong style="color: var(--color-espresso)">{{ 'admin.optionsCatalog.product.title' | translate }}</strong>
+            — {{ 'admin.optionsCatalog.product.afterSave' | translate }}
+          </p>
         }
       }
     </section>
@@ -114,6 +125,12 @@ export class ProductFormPage {
   readonly brandId = computed(() => this.activeBrand.activeId());
   readonly currency = computed(() => this.activeBrand.active()?.currency ?? null);
   readonly categoryId = computed(() => this.product()?.categoryId ?? this.category() ?? this.categories()[0]?.id ?? '');
+  /** Hot or cold drinks: saved without a variant group, the options block warns (no size to pick). */
+  readonly isDrink = computed(() => {
+    const p = this.product();
+    const kind = p?.category?.kind ?? this.categories().find((c) => c.id === p?.categoryId)?.kind;
+    return kind === 'HOT_DRINKS' || kind === 'COLD_DRINKS';
+  });
 
   constructor() {
     effect(() => {
