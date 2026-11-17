@@ -40,7 +40,7 @@ import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { QueuePolicyService, asapVerdict, basketOf } from '../kitchen/queue-policy.service';
 import type { StoreAvailabilityView } from '../kitchen/store-availability.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
+import { LoyaltyService, ledgerPoints } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
 import { ReceiptPdfService } from '../mail/receipt-pdf.service';
 import { ReferralsService } from '../referrals/referrals.service';
@@ -289,13 +289,17 @@ export class OrdersService {
       });
     }
 
-    // A takeAway promo (docs/takeaway-promos.md): D comes off the menu price
-    // like any discount, and takeAway owes it to the venue. Loyalty points do
-    // not combine with it (§2.2) — the clients switch them off already.
-    const takeaway = promoResult?.source === 'TAKEAWAY' ? (promoResult.takeawayPromo ?? null) : null;
-    if (takeaway && (dto.pointsToSpend ?? 0) > 0) {
-      throw checkoutError('PROMO_WITH_POINTS', 'Loyalty points do not combine with a takeAway promo');
+    // Any promo code — the brand's own, a takeAway promo or the welcome
+    // bonus — and loyalty points do not go on the same order (the loyalty
+    // spec: one or the other; docs/takeaway-promos.md §2.2). The clients
+    // switch points off once a code is applied. A gift card still combines.
+    if (promoResult && (dto.pointsToSpend ?? 0) > 0) {
+      throw checkoutError('PROMO_WITH_POINTS', 'Loyalty points do not combine with a promo code');
     }
+
+    // A takeAway promo (docs/takeaway-promos.md): D comes off the menu price
+    // like any discount, and takeAway owes it to the venue.
+    const takeaway = promoResult?.source === 'TAKEAWAY' ? (promoResult.takeawayPromo ?? null) : null;
 
     const promoDiscountCents = promoResult?.discountCents ?? 0;
     const takeawayDiscountCents = takeaway ? promoDiscountCents : 0;
@@ -454,7 +458,7 @@ export class OrdersService {
             userId,
             created.id,
             pointsQuote.points,
-            `Order ${created.orderCode} · −${pointsQuote.points} pts`,
+            `Order ${created.orderCode} · −${ledgerPoints(pointsQuote.points)}`,
             tx,
           );
         }
