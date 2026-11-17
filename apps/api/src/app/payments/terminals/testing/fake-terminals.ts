@@ -24,7 +24,7 @@ export function fakeTerminals(
   defaults: Defaults,
   brands: Record<string, FakeBrandTerminal> = {},
   retired: FakeBrandTerminal[] = [],
-): PaymentTerminalsService & Record<string, jest.Mock> {
+): PaymentTerminalsService {
   // Read on every call: a test may give a brand its terminal after the fake is built.
   const byId = <K extends keyof FakeBrandTerminal>(flow: K, id: string): NonNullable<FakeBrandTerminal[K]> => {
     const found = [...Object.values(brands), ...retired].map((b) => b[flow]).find((t) => t?.id === id);
@@ -37,17 +37,17 @@ export function fakeTerminals(
     return config.defaultTerminal() as ReturnType<NonNullable<Defaults[K]>['defaultTerminal']>;
   };
   const fake = {
-    cardForBrand: jest.fn(async (brandId: string) => brands[brandId]?.card ?? def('card')),
-    webForBrand: jest.fn(async (brandId: string) => brands[brandId]?.web ?? def('web')),
-    qrForBrand: jest.fn(async (brandId: string) => brands[brandId]?.qr ?? def('qr')),
-    cardFor: jest.fn(async (id: string | null) => (id ? byId('card', id) : def('card'))),
-    webFor: jest.fn(async (id: string | null) => (id ? byId('web', id) : def('web'))),
-    qrFor: jest.fn(async (id: string | null) => (id ? byId('qr', id) : def('qr'))),
-    cardMerchantIds: jest.fn(async (ids: ReadonlyArray<string | null>) => {
+    cardForBrand: async (brandId: string) => brands[brandId]?.card ?? def('card'),
+    webForBrand: async (brandId: string) => brands[brandId]?.web ?? def('web'),
+    qrForBrand: async (brandId: string) => brands[brandId]?.qr ?? def('qr'),
+    cardFor: async (id: string | null) => (id ? byId('card', id) : def('card')),
+    webFor: async (id: string | null) => (id ? byId('web', id) : def('web')),
+    qrFor: async (id: string | null) => (id ? byId('qr', id) : def('qr')),
+    cardMerchantIds: async (ids: ReadonlyArray<string | null>) => {
       const out = new Map<string | null, string | null>();
       for (const id of ids) out.set(id, id ? byId('card', id).merchantId : def('card').merchantId);
       return out;
-    }),
+    },
   };
-  return fake as unknown as PaymentTerminalsService & Record<string, jest.Mock>;
+  return fake as unknown as PaymentTerminalsService;
 }
