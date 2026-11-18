@@ -13,6 +13,67 @@
   "carbsGrams": null,
   "imageUrls": ["/upload/pos_cdb_282207/menu/product_1668843413_16_original.jpeg"],
   "sortOrder": 0,
+  "hasRequiredOptions": false,
   "variations": [],
-  "modifiers": []
+  "modifiers": [],
+  "optionGroups": [
+    {
+      "id": "cmqi99qyz0050p007size0001",
+      "kind": "VARIANT",
+      "type": "A",
+      "name": "Размер",
+      "minSelect": 1,
+      "maxSelect": 1,
+      "showIfOptionId": null,
+      "options": [
+        {
+          "id": "cmqi99qyz0051p007opt00001",
+          "name": "M",
+          "note": "300 мл",
+          "isDefault": true,
+          "minQty": null,
+          "maxQty": null,
+          "defaultQty": null,
+          "priceCents": 0,
+          "available": true,
+          "sortOrder": 0
+        },
+        {
+          "id": "cmqi99qyz0052p007opt00002",
+          "name": "L",
+          "note": "400 мл",
+          "isDefault": false,
+          "minQty": null,
+          "maxQty": null,
+          "defaultQty": null,
+          "priceCents": 700,
+          "available": true,
+          "sortOrder": 1
+        }
+      ]
+    },
+    {
+      "id": "cmqi99qyz0060p007syrup001",
+      "kind": "ADDON",
+      "type": "A",
+      "name": "Сиропы",
+      "minSelect": 0,
+      "maxSelect": 2,
+      "showIfOptionId": null,
+      "options": [
+        {
+          "id": "cmqi99qyz0061p007opt00003",
+          "name": "Ваниль",
+          "note": null,
+          "isDefault": false,
+          "minQty": null,
+          "maxQty": null,
+          "defaultQty": null,
+          "priceCents": 800,
+          "available": true,
+          "sortOrder": 0
+        }
+      ]
+    }
+  ]
 }

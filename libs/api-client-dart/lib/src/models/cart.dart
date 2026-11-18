@@ -11,8 +11,6 @@ class CartItem {
     required this.productId,
     required this.productName,
     required this.quantity,
-    required this.variationIds,
-    required this.modifiers,
     required this.unitPriceCents,
     required this.unitPrepSeconds,
     this.notes,
@@ -25,14 +23,10 @@ class CartItem {
   final String productId;
   final String productName;
   final int quantity;
-  @JsonKey(defaultValue: <String>[])
-  final List<String> variationIds;
-  @JsonKey(fromJson: _modifierCounts)
-  final Map<String, int> modifiers;
 
-  /// Picks from the options catalog, for a product with catalog groups (then
-  /// [variationIds] and [modifiers] are empty), with names and prices. Empty
-  /// otherwise and from API versions that predate the catalog.
+  /// Picks from the options catalog, with names and prices, in page order.
+  /// The older options' `variationIds` and `modifiers`, still sent empty for
+  /// older app builds, are not read (deleted on 2026-11-18).
   @JsonKey(fromJson: OptionLine.listFrom)
   final List<OptionLine> options;
   final int unitPriceCents;
@@ -77,8 +71,6 @@ class AddCartItemRequest {
     required this.storeId,
     required this.productId,
     required this.quantity,
-    this.variationIds,
-    this.modifiers,
     this.options,
     this.notes,
   });
@@ -86,11 +78,10 @@ class AddCartItemRequest {
   final String storeId;
   final String productId;
   final int quantity;
-  final List<String>? variationIds;
-  final Map<String, int>? modifiers;
 
-  /// Picks from the options catalog, for a product with catalog groups; the
-  /// API then ignores [variationIds] and [modifiers].
+  /// Picks from the options catalog. Left out, the API takes every default
+  /// (and refuses the add with 400 `OPTIONS_REQUIRED` when that is not a
+  /// valid choice).
   final List<OptionSelection>? options;
   final String? notes;
 
@@ -100,26 +91,13 @@ class AddCartItemRequest {
 /// Body of `PATCH /cart/items/{itemId}`: what to change, the rest left out.
 @JsonSerializable(createFactory: false, includeIfNull: false, explicitToJson: true)
 class UpdateCartItemRequest {
-  const UpdateCartItemRequest({this.quantity, this.variationIds, this.modifiers, this.options, this.notes});
+  const UpdateCartItemRequest({this.quantity, this.options, this.notes});
 
   final int? quantity;
-  final List<String>? variationIds;
-  final Map<String, int>? modifiers;
 
   /// See [AddCartItemRequest.options].
   final List<OptionSelection>? options;
   final String? notes;
 
   Map<String, dynamic> toJson() => _$UpdateCartItemRequestToJson(this);
-}
-
-/// Modifier counts arrive as `{ modifierId: count }` where count is a JSON
-/// number — tolerate doubles and junk rather than failing the whole cart.
-Map<String, int> _modifierCounts(Object? raw) {
-  if (raw is! Map) return const {};
-  final result = <String, int>{};
-  raw.forEach((key, value) {
-    if (key is String && value is num) result[key] = value.toInt();
-  });
-  return result;
 }

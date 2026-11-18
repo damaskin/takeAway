@@ -25,8 +25,6 @@ import '../cart/upsell_row.dart';
 import '../catalog/catalog_providers.dart';
 import '../menu/product_card.dart';
 import 'catalog_options.dart';
-import 'option_widgets.dart';
-import 'product_options.dart';
 
 /// Product detail and customisation.
 class ProductScreen extends ConsumerStatefulWidget {
@@ -43,19 +41,12 @@ class ProductScreen extends ConsumerStatefulWidget {
 }
 
 class _ProductScreenState extends ConsumerState<ProductScreen> {
-  final Map<VariationType, String> _variations = {};
-  final Map<String, int> _modifiers = {};
-
-  /// The choice from the options catalog, for a product with catalog groups
-  /// (then [_variations] and [_modifiers] stay empty).
+  /// The choice from the options catalog.
   OptionPicks _picks = const {};
 
   /// The customer changed [_picks]: a fresher copy of the product keeps
   /// their choice instead of starting over from the defaults.
   bool _picksTouched = false;
-
-  /// Add-on groups shown open, by [AddonGroup.key].
-  final Set<String> _expanded = {};
   final _notes = TextEditingController();
   int _quantity = 1;
   ProductDetail? _optionsFrom;
@@ -85,47 +76,14 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
 
   /// Picks the defaults, and again whenever a fresher copy of the product
   /// arrives: choices that are still on offer stay as the customer left
-  /// them, ones that ran out fall back to the default or are dropped. The
-  /// first copy also opens the add-on groups with something to be taken.
+  /// them, ones that ran out fall back to the default or are dropped.
   void _initDefaults(ProductDetail product) {
     if (identical(product, _optionsFrom)) return;
     final first = _optionsFrom == null;
     _optionsFrom = product;
     final groups = orderOptionGroups(product.optionGroups);
     _picks = first || !_picksTouched ? defaultOptionPicks(groups) : keepOfferedPicks(groups, _picks);
-    final types = <VariationType>{};
-    for (final type in variationOrder) {
-      final group = variationsOf(product, type);
-      if (group.isEmpty) continue;
-      types.add(type);
-      final chosen = _variations[type];
-      if (chosen != null && group.any((v) => v.id == chosen)) continue;
-      _variations[type] = (group.firstWhere((v) => v.isDefault, orElse: () => group.first)).id;
-    }
-    _variations.removeWhere((type, _) => !types.contains(type));
-    final offered = {for (final m in product.modifiers) m.id: m};
-    _modifiers.removeWhere((id, _) => !offered.containsKey(id));
-    for (final m in product.modifiers) {
-      _modifiers.putIfAbsent(m.id, () => m.minCount);
-    }
-    if (first) {
-      _expanded.addAll([
-        for (final group in addonGroups(product))
-          if (group.isRequired) group.key,
-      ]);
-    }
   }
-
-  /// One add-on group open at a time: opening one closes the others.
-  void _toggleGroup(String key) => setState(() {
-    if (_expanded.contains(key)) {
-      _expanded.remove(key);
-    } else {
-      _expanded
-        ..clear()
-        ..add(key);
-    }
-  });
 
   void _togglePick(ProductDetail product, String optionId) => setState(() {
     _picksTouched = true;
@@ -137,19 +95,8 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     _picks = setOptionQty(orderOptionGroups(product.optionGroups), _picks, optionId, qty);
   });
 
-  int _unitPrice(ProductDetail product) {
-    if (product.hasOptionGroups) {
-      return priceWithOptionPicks(product.basePriceCents, orderOptionGroups(product.optionGroups), _picks);
-    }
-    var total = product.basePriceCents;
-    for (final v in product.variations) {
-      if (_variations[v.type] == v.id) total += v.priceDeltaCents;
-    }
-    for (final m in product.modifiers) {
-      total += (_modifiers[m.id] ?? 0) * m.priceDeltaCents;
-    }
-    return total;
-  }
+  int _unitPrice(ProductDetail product) =>
+      priceWithOptionPicks(product.basePriceCents, orderOptionGroups(product.optionGroups), _picks);
 
   /// A cart only takes products of its store's brand. Prefer the store the
   /// customer is browsing; a product opened some other way falls back to
@@ -169,28 +116,28 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     if (_adding || !store.takesOrders) return;
     if (!await ensureSignedIn(context, ref)) return;
     setState(() => _adding = true);
-    final catalog = product.hasOptionGroups;
     try {
       await ref
           .read(cartProvider(store.id).notifier)
-          .add(
-            productId: product.id,
-            quantity: _quantity,
-            variationIds: catalog ? const [] : _variations.values.toList(),
-            modifiers: catalog ? const {} : _modifiers,
-            options: catalog ? toOptionSelections(_picks) : null,
-            notes: _notes.text,
-          );
+          .add(productId: product.id, quantity: _quantity, options: toOptionSelections(_picks), notes: _notes.text);
       unawaited(HapticFeedback.mediumImpact());
       // Back to the menu, where the cart bar acknowledges the add.
       if (mounted) context.pop();
     } on Object catch (error) {
       if (mounted) {
         setState(() => _adding = false);
-        Snack.error(context, error);
+        final apiError = ApiError.from(error);
+        final gone = apiError.kind == ApiErrorKind.notFound;
+        if (gone) {
+          // In the app's words: the API's 404 says "Product not found".
+          Snack.show(context, AppLocalizations.of(context).productGone);
+        } else {
+          Snack.error(context, error);
+        }
         // The cart refused the choice — most likely something ran out a
-        // moment ago: fetch the product again so the screen shows it.
-        if (ApiError.from(error).code == OptionsErrorBody.codeInvalid) {
+        // moment ago, or the product was taken off sale: fetch it again so
+        // the screen shows it.
+        if (gone || apiError.code == OptionsErrorBody.codeInvalid) {
           ref.invalidate(storeProductProvider((productId: widget.productId, storeId: ref.read(activeStoreIdProvider))));
         }
       }
@@ -203,7 +150,11 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     final activeStoreId = ref.watch(activeStoreIdProvider);
     final key = (productId: widget.productId, storeId: activeStoreId);
     final async = ref.watch(storeProductProvider(key));
-    final product = async.valueOrNull;
+    // Not sold: the API answers 404 for a product customers cannot order —
+    // off the menu, or without a variant and an add-on (since 2026-11-18).
+    // That outranks a copy fetched earlier in the session.
+    final gone = async.hasError && ApiError.from(async.error!).kind == ApiErrorKind.notFound;
+    final product = gone ? null : async.valueOrNull;
     if (product != null) _initDefaults(product);
     final preview = product ?? widget.preview;
     final brand = context.brand;
@@ -212,11 +163,8 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     final menu = menuStoreId == null ? null : ref.watch(menuProvider(menuStoreId)).valueOrNull?.value;
     final kind = preview == null ? null : productKindOf(preview, menu: menu);
     final groups = orderOptionGroups(product?.optionGroups ?? const []);
-    final catalog = groups.isNotEmpty;
-    final summary = catalog
-        ? describeOptionLines(optionLinesFor(groups, _picks))
-        : optionsSummary(product, _variations.values, _modifiers, onlyChoices: true);
-    final pickErrors = catalog ? validateOptionPicks(groups, _picks) : const <OptionPickError>[];
+    final summary = describeOptionLines(optionLinesFor(groups, _picks));
+    final pickErrors = validateOptionPicks(groups, _picks);
     final hint = optionsHint(AppLocalizations.of(context), groups, pickErrors);
     // No photo, no picture: the screen starts with the name under a plain
     // bar instead of a stand-in image.
@@ -263,7 +211,13 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                   : null,
               transform: hasPhoto ? Matrix4.translationValues(0, -24, 0) : null,
               padding: EdgeInsets.fromLTRB(20, hasPhoto ? 24 : 8, 20, 0),
-              child: async.hasError && preview == null
+              child: gone
+                  ? EmptyState(
+                      icon: Icons.no_food_outlined,
+                      title: AppLocalizations.of(context).productGone,
+                      compact: true,
+                    )
+                  : async.hasError && product == null
                   ? ErrorState(error: async.error!, onRetry: () => ref.invalidate(storeProductProvider(key)))
                   : _Details(
                       preview: preview,
@@ -271,12 +225,6 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                       kind: kind,
                       summary: summary,
                       currency: store?.currency ?? ref.watch(activeStoreProvider)?.currency ?? 'USD',
-                      variations: _variations,
-                      modifiers: _modifiers,
-                      expanded: _expanded,
-                      onVariation: (type, id) => setState(() => _variations[type] = id),
-                      onModifier: (id, count) => setState(() => _modifiers[id] = count),
-                      onToggleGroup: _toggleGroup,
                       optionGroups: groups,
                       picks: _picks,
                       missingGroups: missingOptionGroups(pickErrors),
@@ -342,12 +290,6 @@ class _Details extends StatelessWidget {
     required this.kind,
     required this.summary,
     required this.currency,
-    required this.variations,
-    required this.modifiers,
-    required this.expanded,
-    required this.onVariation,
-    required this.onModifier,
-    required this.onToggleGroup,
     required this.optionGroups,
     required this.picks,
     required this.missingGroups,
@@ -366,15 +308,8 @@ class _Details extends StatelessWidget {
   /// The chosen options in a line, empty when there is nothing to choose.
   final String summary;
   final String currency;
-  final Map<VariationType, String> variations;
-  final Map<String, int> modifiers;
-  final Set<String> expanded;
-  final void Function(VariationType type, String id) onVariation;
-  final void Function(String id, int count) onModifier;
-  final ValueChanged<String> onToggleGroup;
 
-  /// The product's catalog groups, variants first; empty for a product on
-  /// the older options.
+  /// The product's catalog groups, variants first.
   final List<ProductOptionGroup> optionGroups;
   final OptionPicks picks;
 
@@ -387,14 +322,8 @@ class _Details extends StatelessWidget {
   final VoidCallback onShowNotes;
   final Widget? pairing;
 
-  /// A drink by its category; on an API without kinds, anything with a size,
-  /// temperature, milk or cup to choose. (The caffeine level used to count
-  /// too; it left the menu on 2026-11-05.)
-  bool get _isDrink {
-    final known = kind;
-    if (known != null) return known.isDrink;
-    return product?.variations.isNotEmpty ?? false;
-  }
+  /// A drink by its category; unknown (an API without kinds): not one.
+  bool get _isDrink => kind?.isDrink ?? false;
 
   @override
   Widget build(BuildContext context) {
@@ -488,28 +417,6 @@ class _Details extends StatelessWidget {
                     )
                   : const SizedBox(width: double.infinity),
             ),
-          for (final type in variationOrder)
-            if (variationsOf(product!, type) case final options when options.isNotEmpty)
-              VariationChips(
-                title: _variationTitle(l10n, type),
-                options: options,
-                selected: variations[type],
-                currency: currency,
-                onSelect: (id) => onVariation(type, id),
-              ),
-          if (product!.modifiers.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            for (final group in addonGroups(product!))
-              AddonGroupTile(
-                key: ValueKey('addons-${group.key}'),
-                group: group,
-                counts: modifiers,
-                currency: currency,
-                expanded: expanded.contains(group.key),
-                onToggle: () => onToggleGroup(group.key),
-                onChanged: onModifier,
-              ),
-          ],
           const SizedBox(height: 12),
           AnimatedSwitcher(
             duration: Motion.medium,
@@ -547,14 +454,6 @@ class _Details extends StatelessWidget {
     if (value == null) return '—';
     return value == value.roundToDouble() ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
   }
-
-  static String _variationTitle(AppLocalizations l10n, VariationType type) => switch (type) {
-    VariationType.size => l10n.variationSize,
-    VariationType.temperature => l10n.variationTemperature,
-    VariationType.milk => l10n.variationMilk,
-    VariationType.cup => l10n.variationCup,
-    VariationType.unknown => l10n.variationOther,
-  };
 }
 
 class _MetaChip extends StatelessWidget {

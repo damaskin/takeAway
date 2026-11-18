@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/features/menu/quick_add.dart';
 import 'package:takeaway_mobile/features/product/catalog_options.dart';
-import 'package:takeaway_mobile/features/product/product_options.dart';
 import 'package:takeaway_mobile/l10n/app_localizations.dart';
 import 'package:takeaway_mobile/shared/checkout_errors.dart';
 
@@ -17,16 +16,6 @@ void main() {
     test('opens a catalog product whose defaults are not a choice, adds one whose defaults are', () {
       expect(needsChoosing(cappuccino()), isTrue, reason: 'no size by default');
       expect(needsChoosing(shawarma()), isFalse, reason: 'chicken and one portion by default');
-    });
-  });
-
-  group('options summary', () {
-    final lines = optionLinesFor(coffee, cappuccinoExample);
-
-    test('reads catalog lines as the kitchen does, without the product details', () {
-      expect(optionsSummary(null, const [], const {}, optionLines: lines), cappuccinoExampleText);
-      expect(optionsSummary(cappuccino(), const [], const {}, optionLines: lines), cappuccinoExampleText);
-      expect(optionsSummary(null, const [], const {}), '');
     });
   });
 

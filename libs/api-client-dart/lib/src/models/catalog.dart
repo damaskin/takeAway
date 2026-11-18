@@ -69,19 +69,6 @@ enum StorePauseReason {
   unknown,
 }
 
-@JsonEnum(alwaysCreate: true)
-enum VariationType {
-  @JsonValue('SIZE')
-  size,
-  @JsonValue('TEMPERATURE')
-  temperature,
-  @JsonValue('MILK')
-  milk,
-  @JsonValue('CUP')
-  cup,
-  unknown,
-}
-
 @JsonSerializable(explicitToJson: true)
 class Store {
   const Store({
@@ -311,73 +298,6 @@ class StoreDetail extends Store {
   final BrandInfo brand;
 }
 
-@JsonSerializable(explicitToJson: true)
-class Variation {
-  const Variation({
-    required this.id,
-    required this.type,
-    required this.name,
-    required this.priceDeltaCents,
-    required this.prepTimeDeltaSeconds,
-    required this.sortOrder,
-    required this.isDefault,
-  });
-
-  factory Variation.fromJson(Map<String, dynamic> json) => _$VariationFromJson(json);
-
-  Map<String, dynamic> toJson() => _$VariationToJson(this);
-
-  final String id;
-  @JsonKey(unknownEnumValue: VariationType.unknown)
-  final VariationType type;
-  final String name;
-  final int priceDeltaCents;
-  @JsonKey(defaultValue: 0)
-  final int prepTimeDeltaSeconds;
-  @JsonKey(defaultValue: 0)
-  final int sortOrder;
-  @JsonKey(defaultValue: false)
-  final bool isDefault;
-}
-
-@JsonSerializable(explicitToJson: true)
-class Modifier {
-  const Modifier({
-    required this.id,
-    required this.slug,
-    required this.name,
-    required this.priceDeltaCents,
-    required this.prepTimeDeltaSeconds,
-    required this.minCount,
-    required this.maxCount,
-    required this.sortOrder,
-    this.group,
-  });
-
-  factory Modifier.fromJson(Map<String, dynamic> json) => _$ModifierFromJson(json);
-
-  Map<String, dynamic> toJson() => _$ModifierToJson(this);
-
-  final String id;
-  final String slug;
-  final String name;
-  final int priceDeltaCents;
-  @JsonKey(defaultValue: 0)
-  final int prepTimeDeltaSeconds;
-  @JsonKey(defaultValue: 0)
-  final int minCount;
-  @JsonKey(defaultValue: 1)
-  final int maxCount;
-  @JsonKey(defaultValue: 0)
-  final int sortOrder;
-
-  /// Display group of the add-on — «Сиропы», «Соусы», «Убрать». Null (or
-  /// blank, or from API versions that predate it) means the generic
-  /// «Добавки».
-  @JsonKey(fromJson: _labelFromJson)
-  final String? group;
-}
-
 /// A menu item. Caffeine, allergens and diet tags left the menu on
 /// 2026-11-05; an older API build (or a menu cached before) that still sends
 /// them is read without them.
@@ -454,8 +374,6 @@ class ProductDetail extends Product {
     required super.imageUrls,
     required super.sortOrder,
     required this.brandId,
-    required this.variations,
-    required this.modifiers,
     super.description,
     super.calories,
     super.proteinsGrams,
@@ -473,20 +391,15 @@ class ProductDetail extends Product {
   Map<String, dynamic> toJson() => _$ProductDetailToJson(this);
 
   final String brandId;
-  @JsonKey(defaultValue: <Variation>[])
-  final List<Variation> variations;
-  @JsonKey(defaultValue: <Modifier>[])
-  final List<Modifier> modifiers;
 
   /// Groups from the options catalog attached to the product, variants
-  /// first. When non-empty the product is ordered through them alone and
-  /// [variations] / [modifiers] are empty. Missing (an API that predates the
-  /// catalog) reads as none; groups this build cannot show are left out.
+  /// first — the only options a product has since 2026-11-18, when the older
+  /// per-product ones (`variations`, `modifiers`, still sent empty for older
+  /// app builds) were deleted. A product customers can order has at least
+  /// one variant group and one add-on group; the API answers 404 for the
+  /// rest. Missing reads as none; groups this build cannot show are left out.
   @JsonKey(fromJson: ProductOptionGroup.listFrom)
   final List<ProductOptionGroup> optionGroups;
-
-  /// Ordered through the options catalog rather than the older options.
-  bool get hasOptionGroups => optionGroups.isNotEmpty;
 }
 
 @JsonSerializable(explicitToJson: true)

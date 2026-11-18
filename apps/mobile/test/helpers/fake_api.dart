@@ -3,6 +3,8 @@ import 'package:dio/dio.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
+import 'catalog_fixtures.dart';
+
 /// In-memory stand-in for the REST API: a store, a small menu, a server-side
 /// cart and orders — enough for the app's flows to run end to end in widget
 /// tests. Records what the app sent so tests can assert on it.
@@ -279,67 +281,25 @@ class FakeApi extends Fake implements TakeAwayApi {
     updatedAt: DateTime.utc(2026, 9, 22),
   );
 
+  /// S or M, cow's or oat milk — see [latteGroups].
   static ProductDetail latte() => ProductDetail.fromJson({
     ...productJson('p_latte', 'Латте', 2000),
     'brandId': 'br_1',
-    'variations': [
-      {
-        'id': 'v_s',
-        'type': 'SIZE',
-        'name': 'S',
-        'priceDeltaCents': 0,
-        'prepTimeDeltaSeconds': 0,
-        'sortOrder': 0,
-        'isDefault': true,
-      },
-      {
-        'id': 'v_m',
-        'type': 'SIZE',
-        'name': 'M',
-        'priceDeltaCents': 500,
-        'prepTimeDeltaSeconds': 20,
-        'sortOrder': 1,
-        'isDefault': false,
-      },
-      {
-        'id': 'v_oat',
-        'type': 'MILK',
-        'name': 'Овсяное',
-        'priceDeltaCents': 800,
-        'prepTimeDeltaSeconds': 0,
-        'sortOrder': 1,
-        'isDefault': false,
-      },
-      {
-        'id': 'v_cow',
-        'type': 'MILK',
-        'name': 'Коровье',
-        'priceDeltaCents': 0,
-        'prepTimeDeltaSeconds': 0,
-        'sortOrder': 0,
-        'isDefault': true,
-      },
-    ],
-    'modifiers': [
-      {
-        'id': 'm_shot',
-        'slug': 'shot',
-        'name': 'Доп. шот',
-        'priceDeltaCents': 600,
-        'prepTimeDeltaSeconds': 25,
-        'minCount': 0,
-        'maxCount': 3,
-        'sortOrder': 0,
-      },
-    ],
+    'optionGroups': latteGroups,
   });
 
+  /// As it is or warmed up, jam on the side — see [croissantGroups].
   static ProductDetail croissant() => ProductDetail.fromJson({
     ...productJson('p_croissant', 'Круассан', 1500, category: 'cat_food'),
     'brandId': 'br_1',
-    'variations': <Object>[],
-    'modifiers': <Object>[],
+    'optionGroups': croissantGroups,
   });
+
+  /// What the API sells since 2026-11-18: a product with a variant group and
+  /// an add-on group. Any other is not found — on its page and in the cart.
+  static bool isSold(ProductDetail product) =>
+      product.optionGroups.any((g) => g.kind == OptionGroupKind.variant) &&
+      product.optionGroups.any((g) => g.kind == OptionGroupKind.addon);
 
   /// A line already in the cart; a catalog product with [picks] carries its
   /// option lines and price, as the API makes them.
@@ -351,8 +311,6 @@ class FakeApi extends Fake implements TakeAwayApi {
         productId: product.id,
         productName: product.name,
         quantity: quantity,
-        variationIds: const [],
-        modifiers: const {},
         options: picks == null ? const [] : optionLinesFor(groups, picks),
         unitPriceCents: picks == null
             ? product.basePriceCents
@@ -572,18 +530,14 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<ProductDetail> product(String idOrSlug, {String? store}) async {
     productStores.add(store);
     final detail = products[idOrSlug] ?? (idOrSlug == 'p_latte' ? latte() : croissant());
+    if (!isSold(detail)) {
+      throw _apiError('/products/$idOrSlug', 404, {'error': 'Not Found', 'message': 'Product not found'});
+    }
     final soldOut = {...this.soldOut, ...?soldOutAt[store]};
     if (soldOut.isEmpty) return detail;
-    // What the API does for an add-in marked out of stock: the option is
-    // left out, the product stays. An option of the catalog stays on the
-    // product, greyed out (`available: false`).
+    // What the API does for an add-in marked out of stock: the option stays
+    // on the product, greyed out (`available: false`).
     final json = jsonDecode(jsonEncode(detail)) as Map<String, dynamic>;
-    for (final key in ['variations', 'modifiers']) {
-      json[key] = [
-        for (final option in json[key] as List<dynamic>)
-          if (!soldOut.contains((option as Map<String, dynamic>)['id'])) option,
-      ];
-    }
     for (final group in json['optionGroups'] as List<dynamic>) {
       for (final option in (group as Map<String, dynamic>)['options'] as List<dynamic>) {
         final item = option as Map<String, dynamic>;
@@ -642,34 +596,14 @@ class FakeApi extends Fake implements TakeAwayApi {
       cartRefusal = null;
       throw _apiError('/cart/items', 400, refusal);
     }
+    // A product the API does not sell is a 404 here too.
     final product = await this.product(body.productId);
-    if (product.hasOptionGroups) return _addWithOptions(product, body);
-    var price = product.basePriceCents;
-    for (final v in product.variations) {
-      if (body.variationIds?.contains(v.id) ?? false) price += v.priceDeltaCents;
-    }
-    for (final m in product.modifiers) {
-      price += (body.modifiers?[m.id] ?? 0) * m.priceDeltaCents;
-    }
-    _cartItems.add(
-      CartItem(
-        id: 'ci_${++_itemSeq}',
-        productId: product.id,
-        productName: product.name,
-        quantity: body.quantity,
-        variationIds: body.variationIds ?? const [],
-        modifiers: body.modifiers ?? const {},
-        unitPriceCents: price,
-        unitPrepSeconds: product.prepTimeSeconds,
-        notes: body.notes,
-      ),
-    );
-    return _cart();
+    return _addWithOptions(product, body);
   }
 
-  /// What the API does for a product on the options catalog: the options
-  /// sent (the defaults when none were), checked and priced by the shared
-  /// rules; a refused choice is a 400 `OPTIONS_REQUIRED` / `OPTIONS_INVALID`.
+  /// What the API does with the options: the ones sent (the defaults when
+  /// none were), checked and priced by the shared rules; a refused choice is
+  /// a 400 `OPTIONS_REQUIRED` / `OPTIONS_INVALID`.
   Cart _addWithOptions(ProductDetail product, AddCartItemRequest body) {
     final groups = product.optionGroups;
     final sent = body.options;
@@ -703,8 +637,6 @@ class FakeApi extends Fake implements TakeAwayApi {
         productId: product.id,
         productName: product.name,
         quantity: body.quantity,
-        variationIds: const [],
-        modifiers: const {},
         options: optionLinesFor(groups, picks),
         unitPriceCents: priceWithOptionPicks(product.basePriceCents, groups, picks),
         unitPrepSeconds: product.prepTimeSeconds,
@@ -724,8 +656,6 @@ class FakeApi extends Fake implements TakeAwayApi {
       productId: item.productId,
       productName: item.productName,
       quantity: patch['quantity'] as int? ?? item.quantity,
-      variationIds: item.variationIds,
-      modifiers: item.modifiers,
       options: item.options,
       unitPriceCents: item.unitPriceCents,
       unitPrepSeconds: item.unitPrepSeconds,

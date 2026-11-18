@@ -11,8 +11,6 @@ CartItem _$CartItemFromJson(Map<String, dynamic> json) => CartItem(
   productId: json['productId'] as String,
   productName: json['productName'] as String,
   quantity: (json['quantity'] as num).toInt(),
-  variationIds: (json['variationIds'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
-  modifiers: _modifierCounts(json['modifiers']),
   unitPriceCents: (json['unitPriceCents'] as num).toInt(),
   unitPrepSeconds: (json['unitPrepSeconds'] as num?)?.toInt() ?? 0,
   notes: json['notes'] as String?,
@@ -33,16 +31,12 @@ Map<String, dynamic> _$AddCartItemRequestToJson(AddCartItemRequest instance) => 
   'storeId': instance.storeId,
   'productId': instance.productId,
   'quantity': instance.quantity,
-  'variationIds': ?instance.variationIds,
-  'modifiers': ?instance.modifiers,
   'options': ?instance.options?.map((e) => e.toJson()).toList(),
   'notes': ?instance.notes,
 };
 
 Map<String, dynamic> _$UpdateCartItemRequestToJson(UpdateCartItemRequest instance) => <String, dynamic>{
   'quantity': ?instance.quantity,
-  'variationIds': ?instance.variationIds,
-  'modifiers': ?instance.modifiers,
   'options': ?instance.options?.map((e) => e.toJson()).toList(),
   'notes': ?instance.notes,
 };

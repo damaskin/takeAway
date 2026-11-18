@@ -123,8 +123,7 @@ void main() {
     await settle(tester);
     final sent = h.api.added.single;
     expect(sent.options, toOptionSelections(cappuccinoExample));
-    expect(sent.variationIds, isNull, reason: 'the older options are left out');
-    expect(sent.modifiers, isNull);
+    expect(sent.toJson().keys, isNot(anyOf(contains('variationIds'), contains('modifiers'))));
     expect(find.byType(ProductScreen), findsNothing, reason: 'back to the menu');
     await h.unmount(tester);
   });

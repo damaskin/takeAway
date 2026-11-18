@@ -4,7 +4,9 @@ import 'fake_api.dart';
 
 // Products on the options catalog, as the API sends them (2026-11-09): the
 // cappuccino of the spec's example and a shawarma, priced as in
-// `libs/utils/src/lib/option-groups.spec.ts`.
+// `libs/utils/src/lib/option-groups.spec.ts`. Since 2026-11-18 every product
+// customers see has a variant group and an add-on group (the API answers 404
+// for the rest, see `FakeApi.isSold`), and the older options are sent empty.
 
 Map<String, dynamic> optionJson(
   String id,
@@ -48,6 +50,40 @@ Map<String, dynamic> groupJson(
   'showIfOptionId': showIf,
   'options': options,
 };
+
+/// The latte of the default menu, 20 MDL: S by default, M at 5 more; cow's
+/// milk by default, oat at 8 more. Its defaults are a whole choice.
+final latteGroups = [
+  groupJson(
+    'g_latte_size',
+    'Размер',
+    [optionJson('o_latte_s', 'S', isDefault: true), optionJson('o_latte_m', 'M', price: 500)],
+    kind: 'VARIANT',
+    minSelect: 1,
+    maxSelect: 1,
+  ),
+  groupJson(
+    'g_latte_milk',
+    'Молоко',
+    [optionJson('o_latte_cow', 'Коровье', isDefault: true), optionJson('o_latte_oat', 'Овсяное', price: 800)],
+    minSelect: 1,
+    maxSelect: 1,
+  ),
+];
+
+/// The croissant of the default menu, 15 MDL: as it is by default, or warmed
+/// up; jam at 5 more as a switch. Its defaults are a whole choice.
+final croissantGroups = [
+  groupJson(
+    'g_croissant_serving',
+    'Подача',
+    [optionJson('o_croissant_plain', 'Как есть', isDefault: true), optionJson('o_croissant_warm', 'Разогреть')],
+    kind: 'VARIANT',
+    minSelect: 1,
+    maxSelect: 1,
+  ),
+  groupJson('g_croissant_extras', 'Добавки', [optionJson('o_croissant_jam', 'Джем', price: 500)], type: 'B'),
+];
 
 /// Size with no default (so it has to be picked), serving hot by default,
 /// cow's milk by default (coconut has run out), up to two syrups at 8,
