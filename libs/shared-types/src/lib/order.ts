@@ -176,12 +176,10 @@ export interface CartItem {
   productId: string;
   productName: string;
   quantity: number;
-  variationIds: string[];
-  modifiers: Record<string, number>;
   /**
-   * Picks from the options catalog, for a product with catalog groups
-   * attached (then `variationIds` and `modifiers` are empty), with names and
-   * prices. Empty otherwise. Optional for older API builds.
+   * Picks from the options catalog, with names and prices. Optional for
+   * older API builds. (The API still sends `variationIds: []` and
+   * `modifiers: {}` for app builds from before 2026-11-18.)
    */
   options?: OptionLine[];
   unitPriceCents: number;
@@ -203,8 +201,6 @@ export interface AddCartItemInput {
   storeId: string;
   productId: string;
   quantity: number;
-  variationIds?: string[];
-  modifiers?: Record<string, number>;
   /**
    * Picks from the options catalog (a product with catalog groups). Omitted
    * by clients that predate the catalog: the API then picks every default
@@ -216,8 +212,6 @@ export interface AddCartItemInput {
 
 export interface UpdateCartItemInput {
   quantity?: number;
-  variationIds?: string[];
-  modifiers?: Record<string, number>;
   /**
    * Picks from the options catalog (a product with catalog groups). Omitted
    * by clients that predate the catalog: the API then picks every default
@@ -291,9 +285,10 @@ export type OrderItemModifier = {
  * `OrderItem.productSnapshot` — the line exactly as it was bought, so a later
  * menu edit cannot rewrite what the kitchen makes or what the receipt says.
  *
- * `variations` and `modifierLines` are empty on orders placed before options
- * were snapshotted; those still carry the ids (`variationIds`, `modifiers`)
- * and the line's notes.
+ * `variationIds`, `modifiers`, `variations` and `modifierLines` are the older
+ * per-product options, deleted on 2026-11-18: only orders placed before carry
+ * them, newer lines write them empty. `variations` and `modifierLines` are
+ * also empty on orders placed before options were snapshotted.
  */
 export type OrderItemSnapshot = {
   /** Product id. */

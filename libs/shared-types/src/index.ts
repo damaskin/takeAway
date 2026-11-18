@@ -16,6 +16,5 @@ export * from './lib/inbox';
 export * from './lib/settlements';
 export * from './lib/promo-status';
 export * from './lib/images';
-export * from './lib/option-presets/option-presets';
 export * from './lib/takeaway-promo';
 export * from './lib/payment-terminal';
