@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { OptionGroupKind, OptionGroupType } from '@prisma/client';
+import { OptionGroupKind, OptionGroupScope, OptionGroupType } from '@prisma/client';
 import {
+  type ApplyGroupPriceRequest,
   type BrandOptionCatalog,
   type BrandOptionSetting,
+  type BrandProductOptionPrice,
   type CatalogGroup,
   type CatalogOption,
-  type LegacyOptionsSummary,
   OPTION_NAME_MAX_LENGTH,
   OPTION_NOTE_MAX_LENGTH,
   type ProductOptionGroupLink,
@@ -61,6 +62,11 @@ export class CatalogGroupDto implements CatalogGroup {
   maxSelect!: number | null;
   @ApiProperty({ type: String, nullable: true, description: 'Shown only while this option is picked' })
   showIfOptionId!: string | null;
+  @ApiProperty({
+    enum: OptionGroupScope,
+    description: 'Drinks, food or both: the product editor offers it for products of a matching category kind',
+  })
+  scope!: OptionGroupScope;
   @ApiProperty() sortOrder!: number;
   @ApiProperty({ type: [CatalogOptionDto] }) options!: CatalogOptionDto[];
   @ApiPropertyOptional({ description: 'How many products (all brands) have it attached; the catalog list only' })
@@ -106,6 +112,14 @@ export class CreateCatalogGroupDto {
   @IsString()
   @MaxLength(64)
   showIfOptionId?: string | null;
+
+  @ApiPropertyOptional({
+    enum: OptionGroupScope,
+    description: 'Drinks, food or both (omitted on create: BOTH). Drinks: hot and cold drinks; food: food, bakery',
+  })
+  @IsOptional()
+  @IsEnum(OptionGroupScope)
+  scope?: OptionGroupScope;
 
   @ApiPropertyOptional({ description: 'Omitted on create: after the last group' })
   @IsOptional()
@@ -166,7 +180,10 @@ export class UpdateCatalogOptionDto extends PartialType(CreateCatalogOptionDto) 
 
 export class BrandOptionSettingDto implements BrandOptionSetting {
   @ApiProperty() optionId!: string;
-  @ApiProperty({ description: 'ADDON price for the whole brand (C: per unit above defaultQty); not read for VARIANT' })
+  @ApiProperty({
+    description:
+      'ADDON price for the whole brand (C: per unit above defaultQty); a product may set its own. Not read for VARIANT',
+  })
   priceCents!: number;
   @ApiProperty({ description: 'False = the brand does not have it: hidden from its customers' })
   enabled!: boolean;
@@ -174,10 +191,33 @@ export class BrandOptionSettingDto implements BrandOptionSetting {
   stoppedStoreIds!: string[];
 }
 
+export class BrandProductOptionPriceDto implements BrandProductOptionPrice {
+  @ApiProperty() optionId!: string;
+  @ApiProperty() productId!: string;
+  @ApiProperty() productName!: string;
+  @ApiProperty({ description: "VARIANT: added to the product's base price (0 = base). ADDON: the product's own price" })
+  priceCents!: number;
+}
+
 export class BrandOptionCatalogDto implements BrandOptionCatalog {
   @ApiProperty({ type: [CatalogGroupDto] }) groups!: CatalogGroupDto[];
   @ApiProperty({ type: [BrandOptionSettingDto], description: 'One per catalog option (no row = enabled at 0)' })
   settings!: BrandOptionSettingDto[];
+  @ApiProperty({
+    type: [BrandProductOptionPriceDto],
+    description:
+      'Read-only prices set in product cards: every variant option of a group attached to a product of the brand ' +
+      'with what it adds there, and every add-on a product prices on its own. By product name',
+  })
+  productPrices!: BrandProductOptionPriceDto[];
+}
+
+export class ApplyGroupPriceDto implements ApplyGroupPriceRequest {
+  @ApiProperty({ description: 'Minor units, one price for every option of the group (an add-on group)' })
+  @IsInt()
+  @Min(0)
+  @Max(100_000_000)
+  priceCents!: number;
 }
 
 export class UpdateBrandOptionDto {
@@ -237,7 +277,9 @@ export class ProductOptionOverrideDto implements ProductOptionOverride {
   @ApiProperty({
     type: Number,
     nullable: true,
-    description: 'VARIANT options only: added to the base price (may be < 0); null = 0',
+    description:
+      "VARIANT: added to the base price; null = 0. ADDON: the product's own price instead of the brand's " +
+      "(not below 0); null = the brand's",
   })
   @IsOptional()
   @IsInt()
@@ -253,6 +295,15 @@ export class ProductOptionOverrideDto implements ProductOptionOverride {
   @IsOptional()
   @IsBoolean()
   isDefault!: boolean | null;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    nullable: true,
+    description: 'False = not offered on this product; null or omitted = offered when the brand has it',
+  })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean | null;
 }
 
 export class ProductOptionGroupsConfigDto implements ProductOptionGroupsConfig {
@@ -269,14 +320,4 @@ export class ProductOptionGroupsConfigDto implements ProductOptionGroupsConfig {
   @ValidateNested({ each: true })
   @Type(() => ProductOptionOverrideDto)
   overrides!: ProductOptionOverrideDto[];
-}
-
-// ─── Older per-product options (SUPER_ADMIN) ────────────────────────────────
-
-export class LegacyOptionsSummaryDto implements LegacyOptionsSummary {
-  @ApiProperty({ description: 'Products with older options (variations or extras)' }) products!: number;
-  @ApiProperty() variations!: number;
-  @ApiProperty() modifiers!: number;
-  @ApiProperty({ description: "Options of the brand's category option sets" }) categoryOptions!: number;
-  @ApiProperty({ description: 'Entries of the brand add-ons library' }) ingredients!: number;
 }

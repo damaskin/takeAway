@@ -1,6 +1,7 @@
 import { BrandModerationStatus, OrderStatus, type Prisma } from '@prisma/client';
 import { BRAND_LAUNCH_STEPS, brandLaunch } from '@takeaway/utils';
 
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
 import { hasSection } from '../payments/terminals/payment-terminals.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
@@ -11,9 +12,11 @@ export const READY_STORE_WHERE = {
 } satisfies Prisma.StoreWhereInput;
 
 /**
- * A product customers can see: shown, in a shown category that is sold on
- * its own (not «только как добавка»). It may have no photo — the app shows
- * it as a text row, the website and Telegram with an illustration.
+ * A product customers could see as far as the menu goes: shown, in a shown
+ * category that is sold on its own (not «только как добавка»). It may have
+ * no photo — the app shows it as a text row, the website and Telegram with
+ * an illustration. It also needs a variant and an add-on (owner,
+ * 2026-11-18), which a `where` cannot say: {@link listedProductCounts}.
  */
 export const LISTED_PRODUCT_WHERE = {
   visible: true,
@@ -41,7 +44,7 @@ export interface OnboardingProgress {
   brandProfile: boolean;
   /** A store with an address and opening hours. */
   store: boolean;
-  /** A product customers can see (photo or not). */
+  /** A product customers can see (photo or not): listed, with a variant and an add-on. */
   menu: boolean;
   /** Recommended: at least one product has a photo. Not counted towards the launch. */
   photos: boolean;
@@ -89,9 +92,9 @@ export async function onboardingFactsOf(
   prisma: PrismaService,
   brand: { id: string; logoUrl: string | null; moderationStatus: BrandModerationStatus },
 ): Promise<OnboardingFacts> {
-  const [readyStores, listedProducts, photographedProducts, sold, terminals] = await Promise.all([
+  const [readyStores, listed, photographedProducts, sold, terminals] = await Promise.all([
     prisma.store.count({ where: { brandId: brand.id, ...READY_STORE_WHERE } }),
-    prisma.product.count({ where: { brandId: brand.id, ...LISTED_PRODUCT_WHERE } }),
+    listedProductCounts(prisma, [brand.id]),
     prisma.product.count({ where: { brandId: brand.id, ...PHOTOGRAPHED_PRODUCT_WHERE } }),
     prisma.order.findFirst({ where: { store: { brandId: brand.id }, ...SOLD_ORDER_WHERE }, select: { id: true } }),
     prisma.paymentTerminal.findMany({ where: { brandId: brand.id, retiredAt: null } }),
@@ -100,7 +103,7 @@ export async function onboardingFactsOf(
     logoUrl: brand.logoUrl,
     moderationStatus: brand.moderationStatus,
     readyStores,
-    listedProducts,
+    listedProducts: listed.get(brand.id) ?? 0,
     photographedProducts,
     paymentTerminal: terminals.some(terminalConnected),
     hasOrders: sold !== null,
@@ -110,6 +113,27 @@ export async function onboardingFactsOf(
 /** A terminal that takes money for at least one flow. */
 function terminalConnected(row: Parameters<typeof hasSection>[0]): boolean {
   return hasSection(row, 'card') || hasSection(row, 'web') || hasSection(row, 'qr');
+}
+
+/**
+ * Per brand, the products customers can see: listed ({@link
+ * LISTED_PRODUCT_WHERE}) and offering a variant and an add-on — the rule the
+ * API applies to every menu (`offersVariantAndAddon`), read through the same
+ * builder. A brand with none is absent.
+ */
+export async function listedProductCounts(
+  prisma: PrismaService,
+  brandIds: readonly string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (brandIds.length === 0) return counts;
+  const products = await prisma.product.findMany({
+    where: { brandId: { in: [...brandIds] }, ...LISTED_PRODUCT_WHERE },
+    select: { id: true, brandId: true },
+  });
+  const shown = await new ProductOptionGroupsService(prisma).offeringVariantAndAddon(products);
+  for (const p of products) if (shown.has(p.id)) counts.set(p.brandId, (counts.get(p.brandId) ?? 0) + 1);
+  return counts;
 }
 
 /**
@@ -128,11 +152,7 @@ export async function onboardingProgressOf(
       where: { brandId: { in: ids }, ...READY_STORE_WHERE },
       _count: { _all: true },
     }),
-    prisma.product.groupBy({
-      by: ['brandId'],
-      where: { brandId: { in: ids }, ...LISTED_PRODUCT_WHERE },
-      _count: { _all: true },
-    }),
+    listedProductCounts(prisma, ids),
     prisma.product.groupBy({
       by: ['brandId'],
       where: { brandId: { in: ids }, ...PHOTOGRAPHED_PRODUCT_WHERE },
@@ -157,7 +177,7 @@ export async function onboardingProgressOf(
         logoUrl: b.logoUrl,
         moderationStatus: b.moderationStatus,
         readyStores: count(stores, b.id),
-        listedProducts: count(listed, b.id),
+        listedProducts: listed.get(b.id) ?? 0,
         photographedProducts: count(photographed, b.id),
         paymentTerminal: paying.has(b.id),
         hasOrders: sold.has(b.id),

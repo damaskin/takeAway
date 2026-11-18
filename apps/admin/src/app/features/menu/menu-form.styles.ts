@@ -38,4 +38,9 @@ export const MENU_FORM_STYLES = `
   .link { padding: 0; font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel); }
   .link.danger { color: var(--color-berry); font-weight: 500; }
   .link.muted { color: var(--color-text-secondary); font-weight: 500; }
+  .tab {
+    height: 32px; padding: 0 12px; border-radius: 9999px; font-family: var(--font-sans); font-size: 13px;
+    color: var(--color-text-secondary); background: transparent; border: 1px solid var(--color-border-light);
+  }
+  .tab.active { background: var(--color-caramel-light); color: var(--color-caramel); border-color: transparent; }
 `;

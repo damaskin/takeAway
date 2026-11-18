@@ -26,10 +26,6 @@ const VIEW: StoreAvailabilityDto = {
       stop: { expiresAt: null },
     },
   ],
-  ingredients: [
-    { id: 'ing-cheddar', name: 'Чеддер', isAvailable: true, stop: null, productNames: ['Чизбургер'] },
-    { id: 'ing-oat', name: 'Овсяное молоко', isAvailable: false, stop: null, productNames: ['Латте'] },
-  ],
   // The catalog options the store uses and the brand has (switched-off ones are not sent).
   options: [
     {
@@ -40,6 +36,15 @@ const VIEW: StoreAvailabilityDto = {
       groupName: 'Молоко',
       stop: null,
       productNames: ['Латте'],
+    },
+    {
+      id: 'opt-cheddar',
+      name: 'Сыр',
+      note: null,
+      groupId: 'g-extras',
+      groupName: 'Добавить в блюдо',
+      stop: null,
+      productNames: ['Чизбургер'],
     },
   ],
 };
@@ -71,8 +76,6 @@ function setup(
       of({ expiresAt: input.expiresAt ?? null }),
     ),
     removeStopListEntry: jest.fn().mockReturnValue(of(undefined)),
-    stopIngredientInStore: jest.fn().mockReturnValue(of({ expiresAt: null })),
-    resumeIngredientInStore: jest.fn().mockReturnValue(of(undefined)),
     ...api,
   };
   TestBed.configureTestingModule({
@@ -137,28 +140,6 @@ describe('StopListPage', () => {
     expect(page.stopped(at(page.productRows(), 1))).toBe(false);
   });
 
-  it('stops an add-in in this store only', () => {
-    const { page, mocks } = setup();
-    page.tab.set('addons');
-
-    page.toggle(at(page.addonRows(), 0));
-
-    expect(mocks.stopIngredientInStore).toHaveBeenCalledWith('s1', 'ing-cheddar', undefined);
-    expect(page.stopped(at(page.addonRows(), 0))).toBe(true);
-  });
-
-  it('marks an add-in switched off brand-wide and offers no switch for it', () => {
-    const { fixture, page } = setup();
-    page.tab.set('addons');
-    fixture.detectChanges();
-
-    const toggles = (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>(
-      '[data-testid="stop-toggle"]',
-    );
-    expect(toggles[1]?.disabled).toBe(true);
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Выключено во всём бренде');
-  });
-
   it('filters by name and by what is stopped', () => {
     const { page } = setup();
 
@@ -170,16 +151,15 @@ describe('StopListPage', () => {
     expect(page.shown().map((r) => r.id)).toEqual(['p-burger']);
   });
 
-  it('lists the catalog options the store uses under their groups, after the old add-ins', () => {
+  it('lists the catalog options the store uses under their groups', () => {
     const { page } = setup();
     page.tab.set('addons');
 
     expect(page.addonRows().map((r) => [r.source, r.name, r.heading])).toEqual([
-      ['ingredient', 'Чеддер', null],
-      ['ingredient', 'Овсяное молоко', null],
       ['option', 'Овсяное', 'Молоко'],
+      ['option', 'Сыр', 'Добавить в блюдо'],
     ]);
-    expect(page.stopped(at(page.addonRows(), 2))).toBe(false);
+    expect(page.stopped(at(page.addonRows(), 0))).toBe(false);
   });
 
   it('stops a catalog option in this store until the end of its day, and lifts it', () => {
@@ -187,18 +167,18 @@ describe('StopListPage', () => {
     page.tab.set('addons');
     page.pickUntil('endOfDay');
 
-    page.toggle(at(page.addonRows(), 2));
+    page.toggle(at(page.addonRows(), 0));
     expect(options.stopInStore).toHaveBeenCalledWith(
       's1',
       'opt-oat',
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/),
     );
-    expect(page.stopped(at(page.addonRows(), 2))).toBe(true);
-    expect(page.status(at(page.addonRows(), 2))).toMatch(/^В стопе до \d{2}:\d{2}$/);
+    expect(page.stopped(at(page.addonRows(), 0))).toBe(true);
+    expect(page.status(at(page.addonRows(), 0))).toMatch(/^В стопе до \d{2}:\d{2}$/);
 
-    page.toggle(at(page.addonRows(), 2));
+    page.toggle(at(page.addonRows(), 0));
     expect(options.resumeInStore).toHaveBeenCalledWith('s1', 'opt-oat');
-    expect(page.stopped(at(page.addonRows(), 2))).toBe(false);
+    expect(page.stopped(at(page.addonRows(), 0))).toBe(false);
   });
 
   it('shows the catalog options to kitchen staff and a PIN session too', () => {
@@ -206,15 +186,15 @@ describe('StopListPage', () => {
       TestBed.resetTestingModule();
       const { page } = setup({}, session);
       page.tab.set('addons');
-      expect(page.addonRows().map((r) => r.source)).toEqual(['ingredient', 'ingredient', 'option']);
+      expect(page.addonRows().map((r) => r.source)).toEqual(['option', 'option']);
     }
   });
 
-  it('shows the old add-ins only when the API sends no catalog options', () => {
+  it('shows no add-ins when the API sends no catalog options', () => {
     const older: StoreAvailabilityDto = { ...VIEW, options: undefined };
     const { page } = setup({ getStoreAvailability: jest.fn().mockReturnValue(of(older)) });
     page.tab.set('addons');
-    expect(page.addonRows().map((r) => r.source)).toEqual(['ingredient', 'ingredient']);
+    expect(page.addonRows()).toEqual([]);
     expect(page.error()).toBeNull();
   });
 });

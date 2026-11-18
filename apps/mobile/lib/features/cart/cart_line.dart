@@ -6,9 +6,7 @@ import '../../core/theme/tokens.dart';
 import '../../shared/money_text.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/quantity_stepper.dart';
-import '../catalog/catalog_providers.dart';
 import '../catalog/product_visual.dart';
-import '../product/product_options.dart';
 
 class CartLine extends ConsumerWidget {
   const CartLine({
@@ -27,9 +25,9 @@ class CartLine extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final brand = context.brand;
-    final detail = ref.watch(productDetailProvider(item.productId)).valueOrNull;
-    final options = optionsSummary(detail, item.variationIds, item.modifiers, optionLines: item.options);
-    final photo = productPhotoFor(ref, storeId, item.productId, detail: detail);
+    // The picks carry their names: "M, Горячий · Овсяное · Ваниль".
+    final options = describeOptionLines(item.options);
+    final photo = productPhotoFor(ref, storeId, item.productId);
 
     return Container(
       padding: const EdgeInsets.all(12),

@@ -88,7 +88,6 @@ void main() {
       );
 
       expect(product.hasRequiredOptions, isTrue);
-      expect(product.hasOptionGroups, isTrue);
       final [sizes, iceGroup] = product.optionGroups;
       expect(sizes.kind, OptionGroupKind.variant);
       expect(sizes.isVariant, isTrue);
@@ -107,7 +106,6 @@ void main() {
     test('reads a product without groups from an API that predates the catalog', () {
       final product = ProductDetail.fromJson(_product());
       expect(product.optionGroups, isEmpty);
-      expect(product.hasOptionGroups, isFalse);
       expect(product.hasRequiredOptions, isFalse);
       expect(Product.fromJson(_product()).hasRequiredOptions, isFalse);
       expect(Product.fromJson(_product(extra: {'hasRequiredOptions': true})).hasRequiredOptions, isTrue);

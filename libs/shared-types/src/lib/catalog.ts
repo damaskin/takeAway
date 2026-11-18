@@ -7,6 +7,11 @@ import type { PickupPointType } from './shared-types';
 
 export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
 export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
+/**
+ * The type of an older per-product variation. Those were deleted on
+ * 2026-11-18; the type stays for orders placed before, whose snapshots still
+ * carry them (`OrderItemVariation`).
+ */
 export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
 export type StoreKind = 'COFFEE' | 'FOOD';
 
@@ -14,11 +19,11 @@ export type StoreKind = 'COFFEE' | 'FOOD';
 export const STORE_KINDS: readonly StoreKind[] = ['COFFEE', 'FOOD'];
 
 /**
- * What a menu category holds. Decides which choice groups the product's
- * options editor offers (milk and cups are for drinks), which ready-made
- * option sets the admin offers (see `OPTION_PRESETS`), which placeholder a
- * product without a photo gets and whether it counts as a drink or food.
- * OTHER offers every group and no set.
+ * What a menu category holds. Decides which catalog option groups the
+ * product editor offers (drinks: `DRINKS` and `BOTH` groups, food and
+ * bakery: `FOOD` and `BOTH`, OTHER: every group — see `OptionGroupScope`),
+ * which placeholder a product without a photo gets and whether it counts as
+ * a drink or food.
  */
 export type CategoryKind = 'HOT_DRINKS' | 'COLD_DRINKS' | 'FOOD' | 'BAKERY' | 'OTHER';
 
@@ -173,36 +178,6 @@ export interface StoreDetail extends StoreListItem {
   brand: BrandTheme;
 }
 
-export interface Variation {
-  id: string;
-  type: VariationType;
-  name: string;
-  priceDeltaCents: number;
-  prepTimeDeltaSeconds: number;
-  sortOrder: number;
-  isDefault: boolean;
-}
-
-/** Longest add-on group label («Сиропы», «Убрать»): fits one line on a phone. */
-export const MODIFIER_GROUP_MAX_LENGTH = 40;
-
-export interface Modifier {
-  id: string;
-  slug: string;
-  name: string;
-  priceDeltaCents: number;
-  prepTimeDeltaSeconds: number;
-  minCount: number;
-  maxCount: number;
-  sortOrder: number;
-  /**
-   * The group the add-on is shown under on the product screen («Сиропы»,
-   * «Соусы», «Убрать»). Null or missing = the generic «Добавки» group.
-   * Add-ons of one group sit together, in `sortOrder`.
-   */
-  group?: string | null;
-}
-
 export interface ProductSummary {
   id: string;
   categoryId: string;
@@ -236,13 +211,14 @@ export interface ProductSummary {
 export interface ProductDetail extends ProductSummary {
   /** Brand that owns this product — only a store of this brand can make it. */
   brandId: string;
-  variations: Variation[];
-  modifiers: Modifier[];
   /**
    * Groups from the options catalog attached to the product, variants first,
-   * in the product's order. When non-empty the product is ordered through
-   * them alone and `variations` / `modifiers` are empty. Optional for older
-   * API builds: treat missing as empty.
+   * in the product's order — the only options a product has. A product
+   * customers see always has at least one variant and one add-on group.
+   * Optional for older API builds: treat missing as empty.
+   *
+   * (The API still sends `variations: []` and `modifiers: []` for app builds
+   * from before 2026-11-18 that read them; nothing fills them any more.)
    */
   optionGroups?: ProductOptionGroup[];
 }

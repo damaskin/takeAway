@@ -4,6 +4,7 @@ import { LocaleFormatService } from '@takeaway/i18n';
 import {
   type BrandOptionCatalog,
   type BrandOptionSetting,
+  type BrandProductOptionPrice,
   type CatalogGroup,
   type CatalogOption,
   OPTION_GROUP_KINDS,
@@ -12,7 +13,15 @@ import type { Observable } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
-import { groupsOfKind, settingFor, settingsById, sortCatalog } from '../../core/catalog/option-catalog';
+import {
+  type ScopeFilter,
+  SCOPE_FILTERS,
+  groupsOfKind,
+  matchesScopeFilter,
+  settingFor,
+  settingsById,
+  sortCatalog,
+} from '../../core/catalog/option-catalog';
 import { type BrandOptionChange, OptionCatalogApi } from '../../core/catalog/option-catalog.service';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { MENU_FORM_STYLES } from '../menu/menu-form.styles';
@@ -33,12 +42,16 @@ interface GroupView {
 
 /**
  * The options catalog as one brand has it (`GET /admin/brands/:id/options`):
- * every group of the platform's catalog with its options. Per option the
- * brand says whether it has it («Есть у нас» — off hides it from its
- * customers and its product editor), prices an add-on once for the whole
- * brand (a variant's price lives on each product), and — for those who run
- * the stop-list — stops it in one of its stores, for the same durations as
- * the stop-list: until put back, or until the store's midnight.
+ * every group of the platform's catalog with its options, filtered by whom
+ * it is for (Напитки / Еда / Все — a café that sells only food never wades
+ * through syrups). Per option the brand says whether it has it («Есть у нас»
+ * — off hides it from its customers and its product editor), prices an
+ * add-on once for the whole brand («Ко всем» gives the whole group that
+ * price; a product card may set its own, listed under the field), sees what
+ * each variant adds in its product cards (read-only: «меняется в карточке
+ * товара»), and — for those who run the stop-list — stops it in one of its
+ * stores, for the same durations as the stop-list: until put back, or until
+ * the store's midnight.
  *
  * Groups fold: the catalog runs to a couple of hundred options. A search
  * opens every group that matches.
@@ -106,21 +119,6 @@ interface GroupView {
       .stop:disabled {
         opacity: 0.5;
       }
-      .tab {
-        height: 32px;
-        padding: 0 12px;
-        border-radius: 9999px;
-        font-family: var(--font-sans);
-        font-size: 13px;
-        color: var(--color-text-secondary);
-        background: transparent;
-        border: 1px solid var(--color-border-light);
-      }
-      .tab.active {
-        background: var(--color-caramel-light);
-        color: var(--color-caramel);
-        border-color: transparent;
-      }
     `,
   ],
   template: `
@@ -128,6 +126,21 @@ interface GroupView {
       <p class="hint" style="margin: 0; font-size: 13px; color: var(--color-text-secondary)">
         {{ 'admin.optionsCatalog.brand.hint' | translate }}
       </p>
+
+      <div class="flex items-center flex-wrap" style="gap: 8px" role="group" data-testid="brand-options-scope">
+        @for (f of scopeFilters; track f) {
+          <button
+            type="button"
+            class="tab"
+            [class.active]="scopeFilter() === f"
+            [attr.aria-pressed]="scopeFilter() === f"
+            (click)="scopeFilter.set(f)"
+            [attr.data-testid]="'scope-filter-' + f"
+          >
+            {{ 'admin.optionsCatalog.scope.filter.' + f | translate }}
+          </button>
+        }
+      </div>
 
       <div class="flex items-center flex-wrap" style="gap: 8px">
         <button type="button" class="tab" [class.active]="filter() === 'all'" (click)="filter.set('all')">
@@ -162,6 +175,11 @@ interface GroupView {
 
       @if (error(); as message) {
         <p role="alert" class="error" style="margin: 0; font-size: 13px" data-testid="brand-options-error">
+          {{ message }}
+        </p>
+      }
+      @if (notice(); as message) {
+        <p role="status" class="hint" style="margin: 0; font-size: 13px" data-testid="brand-options-notice">
           {{ message }}
         </p>
       }
@@ -212,14 +230,29 @@ interface GroupView {
                         autocomplete="off"
                         placeholder="0"
                         [value]="priceText(s.priceCents)"
-                        [disabled]="pending().has(o.id)"
+                        [disabled]="pending().has(o.id) || pending().has(view.group.id)"
                         (change)="savePrice(o, $event)"
                         (keydown.enter)="$any($event.target).blur()"
                         data-testid="brand-option-price"
                       />
                     </label>
-                  } @else {
-                    <span class="hint">{{ 'admin.optionsCatalog.brand.variantPrice' | translate }}</span>
+                    @if (view.group.options.length > 1) {
+                      <button
+                        type="button"
+                        class="link"
+                        [disabled]="pending().has(view.group.id)"
+                        [title]="'admin.optionsCatalog.applyAllHint' | translate"
+                        (click)="applyToGroup(view.group, o)"
+                        data-testid="brand-price-apply-all"
+                      >
+                        {{ 'admin.optionsCatalog.applyAll' | translate }}
+                      </button>
+                    }
+                  }
+                  @if (productPricesText(view.group, o); as text) {
+                    <span class="hint" style="flex-basis: 100%" data-testid="brand-option-product-prices">{{
+                      text
+                    }}</span>
                   }
                   <button
                     type="button"
@@ -289,6 +322,10 @@ export class BrandOptionCatalogComponent {
   readonly error = signal<string | null>(null);
   readonly pending = signal<ReadonlySet<string>>(new Set());
   readonly filter = signal<Filter>('all');
+  readonly scopeFilters = SCOPE_FILTERS;
+  /** Напитки / Еда / Все: a group for both shows under each. */
+  readonly scopeFilter = signal<ScopeFilter>('ALL');
+  readonly notice = signal<string | null>(null);
   readonly query = signal('');
   readonly until = signal<Until>('manual');
   /** Groups opened by hand. */
@@ -298,6 +335,14 @@ export class BrandOptionCatalogComponent {
 
   private readonly groups = computed(() => sortCatalog(this.catalog()?.groups ?? []));
   private readonly settings = computed(() => settingsById(this.catalog()?.settings ?? []));
+  /** What the product cards set, by option: every variant's surcharge, the add-ons a product prices itself. */
+  private readonly productPrices = computed(() => {
+    const byOption = new Map<string, BrandProductOptionPrice[]>();
+    for (const price of this.catalog()?.productPrices ?? []) {
+      byOption.set(price.optionId, [...(byOption.get(price.optionId) ?? []), price]);
+    }
+    return byOption;
+  });
 
   readonly counts = computed(() => {
     const all = this.groups().flatMap((g) => g.options);
@@ -310,9 +355,10 @@ export class BrandOptionCatalogComponent {
     const filter = this.filter();
     const settings = this.settings();
     const narrowed = q !== '' || filter !== 'all';
+    const scoped = this.groups().filter((g) => matchesScopeFilter(g, this.scopeFilter()));
     return OPTION_GROUP_KINDS.map((kind) => ({
       kind,
-      groups: groupsOfKind(this.groups(), kind)
+      groups: groupsOfKind(scoped, kind)
         .map<GroupView>((group) => {
           const groupMatches = q !== '' && group.name.toLocaleLowerCase().includes(q);
           const options = group.options.filter((o) => {
@@ -378,6 +424,46 @@ export class BrandOptionCatalogComponent {
 
   priceText(cents: number): string {
     return cents === 0 ? '' : formatMoneyInput(cents, this.separator());
+  }
+
+  /**
+   * Under a variant: what it adds in each product card — «Латте +10 ₽,
+   * Капучино без доплаты · меняется в карточке товара» (or where its price is
+   * set, when no product has it yet). Under an add-on: the products that
+   * charge their own price. Null when there is nothing to say.
+   */
+  productPricesText(group: CatalogGroup, option: CatalogOption): string | null {
+    const t = (key: string, params?: Record<string, unknown>) =>
+      this.translate.instant(`admin.optionsCatalog.brand.${key}`, params);
+    const prices = this.productPrices().get(option.id) ?? [];
+    const item = (p: BrandProductOptionPrice, sign: string) =>
+      p.priceCents === 0
+        ? `${p.productName} — ${t('free')}`
+        : `${p.productName} ${sign}${this.money(Math.abs(p.priceCents))}`;
+    if (group.kind === 'VARIANT') {
+      if (prices.length === 0) return t('variantPrice');
+      return t('variantPrices', { list: prices.map((p) => item(p, p.priceCents < 0 ? '−' : '+')).join(', ') });
+    }
+    return prices.length === 0 ? null : t('addonOwn', { list: prices.map((p) => item(p, '')).join(', ') });
+  }
+
+  /** «Ко всем»: this option's brand price for every option of the group. */
+  applyToGroup(group: CatalogGroup, option: CatalogOption): void {
+    const priceCents = this.setting(option.id).priceCents;
+    this.notice.set(null);
+    this.track(group.id, this.api.applyGroupPrice(this.brandId(), group.id, priceCents), () => {
+      for (const o of group.options) this.patch(o.id, (s) => ({ ...s, priceCents }));
+      this.notice.set(
+        this.translate.instant('admin.optionsCatalog.brand.applied', {
+          group: group.name,
+          price: this.money(priceCents),
+        }),
+      );
+    });
+  }
+
+  private money(cents: number): string {
+    return this.fmt.money(cents, this.currency());
   }
 
   stopText(optionId: string, store: StoreAdminDto, out: boolean): string {

@@ -6,9 +6,6 @@ import { ProductImageComponent } from '@takeaway/ui-kit';
 import type { ProductDetail } from '@takeaway/shared-types';
 import {
   defaultOptionPicks,
-  defaultVariationSelection,
-  hasRequiredOptions,
-  initialModifierCounts,
   needsOptionChoice,
   orderOptionGroups,
   toOptionSelections,
@@ -216,24 +213,14 @@ export class TmaFoodSuggestionsComponent {
 
 /**
  * Whether the «+» has to open the product: a choice from the options catalog
- * its defaults do not make (a size to pick), or an older add-on that must be
- * taken.
+ * its defaults do not make (a size to pick, an add-on that must be taken).
  */
 function needsChoice(detail: ProductDetail): boolean {
-  const groups = detail.optionGroups ?? [];
-  return groups.length > 0 ? needsOptionChoice(groups) : hasRequiredOptions(detail);
+  return needsOptionChoice(detail.optionGroups ?? []);
 }
 
 /** One of the product with what its page would start with. */
 function defaultChoice(detail: ProductDetail): Omit<AddToCartInput, 'storeId'> {
   const groups = orderOptionGroups(detail.optionGroups ?? []);
-  if (groups.length > 0) {
-    return { productId: detail.id, quantity: 1, options: toOptionSelections(defaultOptionPicks(groups)) };
-  }
-  return {
-    productId: detail.id,
-    quantity: 1,
-    variationIds: Object.values(defaultVariationSelection(detail.variations)).filter((id): id is string => Boolean(id)),
-    modifiers: initialModifierCounts(detail.modifiers),
-  };
+  return { productId: detail.id, quantity: 1, options: toOptionSelections(defaultOptionPicks(groups)) };
 }

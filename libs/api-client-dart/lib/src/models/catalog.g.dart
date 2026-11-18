@@ -218,58 +218,6 @@ Map<String, dynamic> _$StoreDetailToJson(StoreDetail instance) => <String, dynam
   'brand': instance.brand.toJson(),
 };
 
-Variation _$VariationFromJson(Map<String, dynamic> json) => Variation(
-  id: json['id'] as String,
-  type: $enumDecode(_$VariationTypeEnumMap, json['type'], unknownValue: VariationType.unknown),
-  name: json['name'] as String,
-  priceDeltaCents: (json['priceDeltaCents'] as num).toInt(),
-  prepTimeDeltaSeconds: (json['prepTimeDeltaSeconds'] as num?)?.toInt() ?? 0,
-  sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
-  isDefault: json['isDefault'] as bool? ?? false,
-);
-
-Map<String, dynamic> _$VariationToJson(Variation instance) => <String, dynamic>{
-  'id': instance.id,
-  'type': _$VariationTypeEnumMap[instance.type]!,
-  'name': instance.name,
-  'priceDeltaCents': instance.priceDeltaCents,
-  'prepTimeDeltaSeconds': instance.prepTimeDeltaSeconds,
-  'sortOrder': instance.sortOrder,
-  'isDefault': instance.isDefault,
-};
-
-const _$VariationTypeEnumMap = {
-  VariationType.size: 'SIZE',
-  VariationType.temperature: 'TEMPERATURE',
-  VariationType.milk: 'MILK',
-  VariationType.cup: 'CUP',
-  VariationType.unknown: 'unknown',
-};
-
-Modifier _$ModifierFromJson(Map<String, dynamic> json) => Modifier(
-  id: json['id'] as String,
-  slug: json['slug'] as String,
-  name: json['name'] as String,
-  priceDeltaCents: (json['priceDeltaCents'] as num).toInt(),
-  prepTimeDeltaSeconds: (json['prepTimeDeltaSeconds'] as num?)?.toInt() ?? 0,
-  minCount: (json['minCount'] as num?)?.toInt() ?? 0,
-  maxCount: (json['maxCount'] as num?)?.toInt() ?? 1,
-  sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
-  group: _labelFromJson(json['group']),
-);
-
-Map<String, dynamic> _$ModifierToJson(Modifier instance) => <String, dynamic>{
-  'id': instance.id,
-  'slug': instance.slug,
-  'name': instance.name,
-  'priceDeltaCents': instance.priceDeltaCents,
-  'prepTimeDeltaSeconds': instance.prepTimeDeltaSeconds,
-  'minCount': instance.minCount,
-  'maxCount': instance.maxCount,
-  'sortOrder': instance.sortOrder,
-  'group': instance.group,
-};
-
 Product _$ProductFromJson(Map<String, dynamic> json) => Product(
   id: json['id'] as String,
   categoryId: json['categoryId'] as String,
@@ -318,10 +266,6 @@ ProductDetail _$ProductDetailFromJson(Map<String, dynamic> json) => ProductDetai
   imageUrls: (json['imageUrls'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
   sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
   brandId: json['brandId'] as String,
-  variations:
-      (json['variations'] as List<dynamic>?)?.map((e) => Variation.fromJson(e as Map<String, dynamic>)).toList() ?? [],
-  modifiers:
-      (json['modifiers'] as List<dynamic>?)?.map((e) => Modifier.fromJson(e as Map<String, dynamic>)).toList() ?? [],
   description: json['description'] as String?,
   calories: (json['calories'] as num?)?.toInt(),
   proteinsGrams: (json['proteinsGrams'] as num?)?.toDouble(),
@@ -351,8 +295,6 @@ Map<String, dynamic> _$ProductDetailToJson(ProductDetail instance) => <String, d
   'categoryKind': instance.categoryKind,
   'hasRequiredOptions': instance.hasRequiredOptions,
   'brandId': instance.brandId,
-  'variations': instance.variations.map((e) => e.toJson()).toList(),
-  'modifiers': instance.modifiers.map((e) => e.toJson()).toList(),
   'optionGroups': instance.optionGroups.map((e) => e.toJson()).toList(),
 };
 

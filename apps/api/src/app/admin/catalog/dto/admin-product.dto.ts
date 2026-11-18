@@ -1,14 +1,10 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
-import { VariationType } from '@prisma/client';
-import { MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
-import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsBoolean,
-  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -20,11 +16,9 @@ import {
   Max,
   MaxLength,
   Min,
-  ValidateIf,
 } from 'class-validator';
 
 import { SLUG_MESSAGE, SLUG_PATTERN } from './admin-category.dto';
-import { trimGroup } from './option-group';
 
 /** Photos per product: enough for a gallery, few enough to keep a menu card light. */
 export const MAX_PRODUCT_IMAGES = 6;
@@ -36,13 +30,6 @@ export const MAX_PRODUCT_IMAGES = 6;
 // 10 000 000 in currency units: room for rupiah prices, still far below the column's limit.
 export const MAX_PRICE_CENTS = 1_000_000_000;
 const MAX_PREP_SECONDS = 24 * 60 * 60;
-
-/**
- * An option picked from the add-ons library may leave its name out: it takes
- * the library entry's. Everything else needs one.
- */
-const nameRequired = (o: { name?: unknown; ingredientId?: unknown }) =>
-  o.name !== undefined || typeof o.ingredientId !== 'string';
 
 /**
  * Caffeine, allergens and diet tags are gone from the menu since 2026-11-05:
@@ -160,15 +147,15 @@ export class CreateProductDto {
   @ApiPropertyOptional({
     default: true,
     description:
-      "Create only: copy the category's option set onto the new product (and, when `prepTimeSeconds` is omitted, " +
-      "start at the category's default preparation time). False = a bare product",
+      "Create only: when `prepTimeSeconds` is omitted, start at the category's default preparation time. " +
+      'False = the form default. (It also copied the category option set, deleted on 2026-11-18.)',
   })
   @IsOptional()
   @IsBoolean()
   applyCategoryOptions?: boolean;
 }
 
-/** A product stays in its brand: `brandId` is not updatable. The category's set is copied on create only. */
+/** A product stays in its brand: `brandId` is not updatable. The category's default applies on create only. */
 export class UpdateProductDto extends PartialType(
   OmitType(CreateProductDto, ['brandId', 'applyCategoryOptions'] as const),
 ) {}
@@ -210,135 +197,3 @@ export class ReorderProductImagesDto {
   @IsString({ each: true })
   urls!: string[];
 }
-
-export class CreateVariationDto {
-  @ApiProperty({ enum: VariationType })
-  @IsEnum(VariationType)
-  type!: VariationType;
-
-  @ApiPropertyOptional({ description: "Required unless `ingredientId` is given: then the add-on's name" })
-  @ValidateIf(nameRequired)
-  @IsString()
-  @Length(1, 60)
-  name?: string;
-
-  @ApiPropertyOptional({
-    minimum: 0,
-    description: "Omitted: the linked add-on's usual price (`Ingredient.priceCents`), else 0",
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(MAX_PRICE_CENTS)
-  priceDeltaCents?: number;
-
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @IsInt()
-  @Min(-MAX_PREP_SECONDS)
-  @Max(MAX_PREP_SECONDS)
-  prepTimeDeltaSeconds?: number;
-
-  @ApiPropertyOptional({ description: 'Appended after the last variation of the same type when omitted' })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number;
-
-  @ApiPropertyOptional({ default: false, description: 'At most one default per type; setting one clears the rest' })
-  @IsOptional()
-  @IsBoolean()
-  isDefault?: boolean;
-
-  @ApiPropertyOptional({
-    nullable: true,
-    description:
-      'Ingredient from the brand library this option is made of; hidden from customers while it is out of stock. ' +
-      'On create, omitted = linked to the library entry of the same name (created if missing) for milk, other types stay untracked; null = not tracked',
-  })
-  @IsOptional()
-  @IsString()
-  ingredientId?: string | null;
-}
-
-export class UpdateVariationDto extends PartialType(CreateVariationDto) {}
-
-export class CreateModifierDto {
-  @ApiPropertyOptional({
-    description: 'Generated from the name (transliterated) when omitted; unique within the product',
-    pattern: SLUG_PATTERN.source,
-  })
-  @IsOptional()
-  @IsString()
-  @Length(2, 60)
-  @Matches(SLUG_PATTERN, { message: SLUG_MESSAGE })
-  slug?: string;
-
-  @ApiPropertyOptional({ description: "Required unless `ingredientId` is given: then the add-on's name" })
-  @ValidateIf(nameRequired)
-  @IsString()
-  @Length(1, 80)
-  name?: string;
-
-  @ApiPropertyOptional({
-    minimum: 0,
-    description: "Omitted: the linked add-on's usual price (`Ingredient.priceCents`), else 0",
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(MAX_PRICE_CENTS)
-  priceDeltaCents?: number;
-
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @IsInt()
-  @Min(-MAX_PREP_SECONDS)
-  @Max(MAX_PREP_SECONDS)
-  prepTimeDeltaSeconds?: number;
-
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(99)
-  minCount?: number;
-
-  @ApiPropertyOptional({ default: 1 })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(99)
-  maxCount?: number;
-
-  @ApiPropertyOptional({ description: 'Appended after the last modifier when omitted' })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number;
-
-  @ApiPropertyOptional({
-    nullable: true,
-    description:
-      'Ingredient from the brand library this option is made of; hidden from customers while it is out of stock. ' +
-      'On create, omitted = linked to the library entry of the same name (created if missing); null = not tracked',
-  })
-  @IsOptional()
-  @IsString()
-  ingredientId?: string | null;
-
-  @ApiPropertyOptional({
-    nullable: true,
-    maxLength: MODIFIER_GROUP_MAX_LENGTH,
-    description:
-      'Group the add-on is shown under («Сиропы», «Убрать»); null = the generic «Добавки». ' +
-      "On create, omitted = the library entry's group",
-  })
-  @IsOptional()
-  @Transform(trimGroup)
-  @IsString()
-  @MaxLength(MODIFIER_GROUP_MAX_LENGTH)
-  group?: string | null;
-}
-
-export class UpdateModifierDto extends PartialType(CreateModifierDto) {}

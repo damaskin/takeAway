@@ -10,12 +10,9 @@ export interface CartItemView {
   productId: string;
   productName: string;
   quantity: number;
-  variationIds: string[];
-  modifiers: Record<string, number>;
   /**
-   * Picks from the options catalog with their names and prices, for a
-   * product with catalog groups; empty or missing otherwise (and from an API
-   * that predates the catalog).
+   * Picks from the options catalog with their names and prices; missing from
+   * an API that predates the catalog.
    */
   options?: OptionLine[];
   unitPriceCents: number;
@@ -45,14 +42,12 @@ export interface AddToCartInput {
   storeId: string;
   productId: string;
   quantity: number;
-  variationIds?: string[];
-  modifiers?: Record<string, number>;
-  /** The choice from the options catalog (`toOptionSelections`), for a product with catalog groups. */
+  /** The choice from the options catalog (`toOptionSelections`). */
   options?: OptionSelection[];
   notes?: string;
 }
 
-/** A cart line's choice from the options catalog in the form the cart takes it; empty for other lines. */
+/** A cart line's choice from the options catalog in the form the cart takes it. */
 export function lineSelections(item: Pick<CartItemView, 'options'>): OptionSelection[] {
   return (item.options ?? []).map((line) => ({ optionId: line.optionId, qty: line.qty }));
 }

@@ -66,65 +66,6 @@ export const STORE = {
   brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway', logoUrl: null, themeOverrides: null },
 };
 
-/**
- * Shaped to `ProductDetail` in @takeaway/shared-types. Every array field is
- * present even when empty: the product template reads `.length` on
- * variations and modifiers, and an omitted key throws during change
- * detection rather than rendering an empty section.
- */
-export const PRODUCT = {
-  id: 'product-1',
-  categoryId: 'cat-1',
-  // The product page matches this against the stores it lists to find one
-  // that can actually make the item — `STORE.brandId` has to agree.
-  brandId: 'brand-1',
-  slug: 'flat-white',
-  name: 'Flat White',
-  description: 'Double ristretto, steamed milk.',
-  basePriceCents: 1800,
-  prepTimeSeconds: 120,
-  // A drink: the API sends calories and nutrition for meals only (2026-11-06).
-  calories: null,
-  proteinsGrams: null,
-  fatsGrams: null,
-  carbsGrams: null,
-  imageUrls: [],
-  sortOrder: 0,
-  onStopList: false,
-  variations: [],
-  modifiers: [],
-};
-
-/**
- * Something to eat from the same brand, in a bakery category. Only on the
- * menu when a test asks for kinds (`menuKinds`): the menu of an API without
- * them stays the one-category menu the other journeys were written against.
- */
-export const CROISSANT = {
-  ...PRODUCT,
-  id: 'product-2',
-  categoryId: 'cat-2',
-  slug: 'croissant',
-  name: 'Croissant',
-  description: 'Butter croissant.',
-  basePriceCents: 1200,
-  categoryKind: 'BAKERY',
-};
-
-/** A product as the fake serves it: what the cart prices, plus whatever else the detail carries. */
-export interface FakeProduct {
-  id: string;
-  slug: string;
-  name: string;
-  basePriceCents: number;
-  prepTimeSeconds: number;
-  variations: Array<{ id: string; priceDeltaCents: number }>;
-  modifiers: Array<{ id: string; priceDeltaCents: number }>;
-  /** Groups from the options catalog; the cart then takes `options` and ignores the rest. */
-  optionGroups?: ProductOptionGroup[];
-  [field: string]: unknown;
-}
-
 function optionGroup(
   id: string,
   kind: OptionGroupKind,
@@ -160,6 +101,100 @@ function optionItem(id: string, name: string, extra: Partial<ProductOptionItem> 
     sortOrder: 0,
     ...extra,
   };
+}
+
+/**
+ * Shaped to `ProductDetail` in @takeaway/shared-types. Like every product
+ * customers see (owner, 2026-11-18), it has a variant group and an add-on
+ * group: M by default (L +3 AED) and up to two syrups (+2 AED each), none
+ * taken — so it goes in the cart at once at its base price.
+ */
+export const PRODUCT = {
+  id: 'product-1',
+  categoryId: 'cat-1',
+  // The product page matches this against the stores it lists to find one
+  // that can actually make the item — `STORE.brandId` has to agree.
+  brandId: 'brand-1',
+  slug: 'flat-white',
+  name: 'Flat White',
+  description: 'Double ristretto, steamed milk.',
+  basePriceCents: 1800,
+  prepTimeSeconds: 120,
+  // A drink: the API sends calories and nutrition for meals only (2026-11-06).
+  calories: null,
+  proteinsGrams: null,
+  fatsGrams: null,
+  carbsGrams: null,
+  imageUrls: [],
+  sortOrder: 0,
+  onStopList: false,
+  optionGroups: [
+    optionGroup(
+      'og-fw-size',
+      'VARIANT',
+      'A',
+      'Size',
+      [
+        optionItem('opt-fw-m', 'M', { isDefault: true }),
+        optionItem('opt-fw-l', 'L', { priceCents: 300, sortOrder: 1 }),
+      ],
+      { minSelect: 1, maxSelect: 1 },
+    ),
+    optionGroup(
+      'og-fw-syrups',
+      'ADDON',
+      'A',
+      'Syrups',
+      [
+        optionItem('opt-fw-vanilla', 'Vanilla', { priceCents: 200 }),
+        optionItem('opt-fw-caramel', 'Caramel', { priceCents: 200, sortOrder: 1 }),
+      ],
+      { minSelect: 0, maxSelect: 2 },
+    ),
+  ],
+};
+
+/**
+ * Something to eat from the same brand, in a bakery category. Only on the
+ * menu when a test asks for kinds (`menuKinds`): the menu of an API without
+ * them stays the one-category menu the other journeys were written against.
+ */
+export const CROISSANT = {
+  ...PRODUCT,
+  id: 'product-2',
+  categoryId: 'cat-2',
+  slug: 'croissant',
+  name: 'Croissant',
+  description: 'Butter croissant.',
+  basePriceCents: 1200,
+  categoryKind: 'BAKERY',
+  // Warm by default, jam if asked: a tap on «+» adds it at its base price.
+  optionGroups: [
+    optionGroup(
+      'og-cr-serving',
+      'VARIANT',
+      'A',
+      'Serving',
+      [optionItem('opt-cr-warm', 'Warm', { isDefault: true }), optionItem('opt-cr-plain', 'As is', { sortOrder: 1 })],
+      { minSelect: 1, maxSelect: 1 },
+    ),
+    optionGroup('og-cr-extras', 'ADDON', 'A', 'Extras', [optionItem('opt-cr-jam', 'Jam', { priceCents: 100 })]),
+  ],
+};
+
+/** A product as the fake serves it: what the cart prices, plus whatever else the detail carries. */
+export interface FakeProduct {
+  id: string;
+  slug: string;
+  name: string;
+  basePriceCents: number;
+  prepTimeSeconds: number;
+  /**
+   * Groups from the options catalog, the only options a product has. One
+   * customers see has at least one VARIANT group and one ADDON group.
+   */
+  optionGroups: ProductOptionGroup[];
+  [field: string]: unknown;
 }
 
 /**
@@ -246,8 +281,6 @@ interface CartItem {
   quantity: number;
   unitPriceCents: number;
   unitPrepSeconds: number;
-  variationIds: string[];
-  modifiers: Record<string, number>;
   options: OptionLine[];
   /** `optionSelectionKey` of the choice: the same product with the same key is one line. */
   optionKey: string;
@@ -435,8 +468,6 @@ export async function installFakeApi(
         quantity: i.quantity,
         unitPriceCents: i.unitPriceCents,
         totalCents: i.unitPriceCents * i.quantity,
-        variationIds: i.variationIds,
-        modifiers: i.modifiers,
         options: i.options,
         notes: i.notes,
       })),
@@ -455,10 +486,11 @@ export async function installFakeApi(
         id: i.productId,
         slug: i.productSlug,
         name: i.productName,
-        variationIds: i.variationIds,
-        modifiers: i.modifiers,
         notes: i.notes,
         unitPrepSeconds: i.unitPrepSeconds,
+        // The older per-product options: written empty since 2026-11-18.
+        variationIds: [],
+        modifiers: {},
         variations: [],
         modifierLines: [],
         optionLines: i.options,
@@ -728,25 +760,20 @@ export async function installFakeApi(
       const body = request.postDataJSON() as {
         productId: string;
         quantity: number;
-        variationIds?: string[];
-        modifiers?: Record<string, number>;
         options?: OptionSelection[];
         notes?: string;
       };
       cartAdds.push(body);
       const product = products.find((p) => p.id === body.productId) ?? drink;
-      const groups = orderOptionGroups(product.optionGroups ?? []);
-      // Like the server: a product on the options catalog is priced from its
-      // choice by the same rules the page uses, and a choice that breaks them
-      // is refused.
-      const picks =
-        groups.length > 0 ? (body.options ? fromOptionSelections(body.options) : defaultOptionPicks(groups)) : {};
-      if (groups.length > 0) {
-        const errors = validateOptionPicks(groups, picks);
-        if (errors.length > 0) {
-          const code = body.options ? 'OPTIONS_INVALID' : 'OPTIONS_REQUIRED';
-          return json(route, { statusCode: 400, error: 'Bad Request', code, message: code, errors }, 400);
-        }
+      const groups = orderOptionGroups(product.optionGroups);
+      // Like the server: the product is priced from its choice by the same
+      // rules the page uses (every default when none is sent), and a choice
+      // that breaks them is refused.
+      const picks = body.options ? fromOptionSelections(body.options) : defaultOptionPicks(groups);
+      const errors = validateOptionPicks(groups, picks);
+      if (errors.length > 0) {
+        const code = body.options ? 'OPTIONS_INVALID' : 'OPTIONS_REQUIRED';
+        return json(route, { statusCode: 400, error: 'Bad Request', code, message: code, errors }, 400);
       }
       const optionKey = optionSelectionKey(toOptionSelections(picks));
       const notes = body.notes ?? null;
@@ -756,16 +783,7 @@ export async function installFakeApi(
         same.quantity += body.quantity ?? 1;
         return json(route, cart());
       }
-      const variationIds = groups.length > 0 ? [] : (body.variationIds ?? []);
-      const modifiers = groups.length > 0 ? {} : (body.modifiers ?? {});
-      const unitPriceCents =
-        groups.length > 0
-          ? priceWithOptionPicks(product.basePriceCents, groups, picks)
-          : product.basePriceCents +
-            product.variations
-              .filter((v) => variationIds.includes(v.id))
-              .reduce((sum, v) => sum + v.priceDeltaCents, 0) +
-            product.modifiers.reduce((sum, m) => sum + (modifiers[m.id] ?? 0) * m.priceDeltaCents, 0);
+      const unitPriceCents = priceWithOptionPicks(product.basePriceCents, groups, picks);
       items.push({
         id: `item-${nextId++}`,
         productId: product.id,
@@ -774,8 +792,6 @@ export async function installFakeApi(
         quantity: body.quantity ?? 1,
         unitPriceCents,
         unitPrepSeconds: product.prepTimeSeconds,
-        variationIds,
-        modifiers,
         options: optionLinesFor(groups, picks),
         optionKey,
         notes,

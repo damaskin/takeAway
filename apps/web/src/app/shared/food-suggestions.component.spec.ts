@@ -8,7 +8,7 @@ import type { ProductDetail, ProductSummary } from '@takeaway/shared-types';
 import type { ProductSuggestion } from '@takeaway/utils';
 
 import { API_CONFIG } from '../core/api/api.config';
-import { catalogGroup, catalogOption, COFFEE_GROUPS } from '../features/product/option-groups.testing';
+import { catalogGroup, catalogOption, COFFEE_GROUPS, READY_GROUPS } from '../features/product/option-groups.testing';
 import { FoodSuggestionsComponent } from './food-suggestions.component';
 
 function summary(id: string, name: string): ProductSummary {
@@ -30,7 +30,7 @@ function summary(id: string, name: string): ProductSummary {
 }
 
 function detail(base: ProductSummary, over: Partial<ProductDetail> = {}): ProductDetail {
-  return { ...base, brandId: 'brand-1', variations: [], modifiers: [], ...over };
+  return { ...base, brandId: 'brand-1', optionGroups: READY_GROUPS, ...over };
 }
 
 describe('FoodSuggestionsComponent', () => {
@@ -80,7 +80,7 @@ describe('FoodSuggestionsComponent', () => {
     expect(cards[0]?.textContent).toContain('25');
   });
 
-  it('adds one with the default options in a tap', async () => {
+  it('adds one in a tap with what its page starts with', async () => {
     const changed: unknown[] = [];
     fixture.componentInstance.cartChanged.subscribe((cart) => changed.push(cart));
 
@@ -89,28 +89,24 @@ describe('FoodSuggestionsComponent', () => {
       .expectOne((r) => r.url === '/api/products/croissant' && r.params.get('store') === 'centre')
       .flush(
         detail(croissant, {
-          variations: [
-            {
-              id: 'warm',
-              type: 'TEMPERATURE',
-              name: 'Тёплый',
-              priceDeltaCents: 0,
-              prepTimeDeltaSeconds: 0,
-              sortOrder: 0,
-              isDefault: true,
-            },
-          ],
-          modifiers: [
-            {
-              id: 'jam',
-              slug: 'jam',
-              name: 'Джем',
-              priceDeltaCents: 300,
-              prepTimeDeltaSeconds: 0,
-              minCount: 0,
-              maxCount: 1,
-              sortOrder: 0,
-            },
+          optionGroups: [
+            catalogGroup(
+              'serving',
+              'VARIANT',
+              'A',
+              'Подача',
+              [catalogOption('warm', 'Тёплый', { isDefault: true }), catalogOption('cold', 'Холодный')],
+              { minSelect: 1 },
+            ),
+            catalogGroup(
+              'sauce',
+              'ADDON',
+              'A',
+              'Соус',
+              [catalogOption('jam', 'Джем', { isDefault: true }), catalogOption('honey', 'Мёд')],
+              { maxSelect: 2 },
+            ),
+            catalogGroup('remove', 'ADDON', 'B', 'Убрать ингредиент', [catalogOption('no-sugar', 'Без сахара')]),
           ],
         }),
       );
@@ -119,8 +115,10 @@ describe('FoodSuggestionsComponent', () => {
       storeId: 'store-1',
       productId: 'croissant',
       quantity: 1,
-      variationIds: ['warm'],
-      modifiers: { jam: 0 },
+      options: [
+        { optionId: 'jam', qty: 1 },
+        { optionId: 'warm', qty: 1 },
+      ],
     });
     add.flush({ id: 'cart-1', storeId: 'store-1', items: [], subtotalCents: 2500 });
     await fixture.whenStable();
@@ -129,7 +127,30 @@ describe('FoodSuggestionsComponent', () => {
     expect(plus('Круассан')?.textContent?.trim()).toBe('✓');
   });
 
-  it('opens the product instead when an add-on has to be taken', async () => {
+  it('opens one the menu says has something to choose, without fetching it first', async () => {
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentRef.setInput('suggestions', [
+      { product: { ...sandwich, hasRequiredOptions: true }, kind: 'FOOD' },
+    ]);
+    await fixture.whenStable();
+
+    plus('Сэндвич')?.click();
+    expect(navigate).toHaveBeenCalledWith(['/products', 'sandwich'], { queryParams: { store: 'centre' } });
+    http.expectNone((r) => r.url === '/api/products/sandwich');
+  });
+
+  it('opens one whose defaults are no choice yet (a size to pick)', async () => {
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    plus('Сэндвич')?.click();
+    http.expectOne((r) => r.url === '/api/products/sandwich').flush(detail(sandwich, { optionGroups: COFFEE_GROUPS }));
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(['/products', 'sandwich'], { queryParams: { store: 'centre' } });
+    http.expectNone('/api/cart/items');
+  });
+
+  it('opens one with an add-on that has to be taken', async () => {
     const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
     plus('Сэндвич')?.click();
@@ -137,17 +158,9 @@ describe('FoodSuggestionsComponent', () => {
       .expectOne((r) => r.url === '/api/products/sandwich')
       .flush(
         detail(sandwich, {
-          modifiers: [
-            {
-              id: 'sauce',
-              slug: 'sauce',
-              name: 'Соус',
-              priceDeltaCents: 0,
-              prepTimeDeltaSeconds: 0,
-              minCount: 1,
-              maxCount: 1,
-              sortOrder: 0,
-            },
+          optionGroups: [
+            ...READY_GROUPS.filter((g) => g.kind === 'VARIANT'),
+            catalogGroup('sauce', 'ADDON', 'A', 'Соус', [catalogOption('garlic', 'Чесночный')], { minSelect: 1 }),
           ],
         }),
       );
@@ -156,64 +169,6 @@ describe('FoodSuggestionsComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['/products', 'sandwich'], { queryParams: { store: 'centre' } });
     http.expectNone('/api/cart/items');
     expect(plus('Сэндвич')?.disabled).toBe(false);
-  });
-
-  describe('a product on the options catalog', () => {
-    it('adds one with what its page starts with', async () => {
-      plus('Сэндвич')?.click();
-      http
-        .expectOne((r) => r.url === '/api/products/sandwich')
-        .flush(
-          detail(sandwich, {
-            optionGroups: [
-              catalogGroup(
-                'sauce',
-                'ADDON',
-                'A',
-                'Соус в блюдо',
-                [catalogOption('garlic', 'Чесночный', { isDefault: true }), catalogOption('bbq', 'Барбекю')],
-                { maxSelect: 2 },
-              ),
-              catalogGroup('remove', 'ADDON', 'B', 'Убрать ингредиент', [catalogOption('no-onion', 'Без лука')]),
-            ],
-          }),
-        );
-      const add = http.expectOne('/api/cart/items');
-      expect(add.request.body).toEqual({
-        storeId: 'store-1',
-        productId: 'sandwich',
-        quantity: 1,
-        options: [{ optionId: 'garlic', qty: 1 }],
-      });
-      add.flush({ id: 'cart-1', storeId: 'store-1', items: [], subtotalCents: 2500 });
-      await fixture.whenStable();
-      expect(plus('Сэндвич')?.textContent?.trim()).toBe('✓');
-    });
-
-    it('opens one the menu says has something to choose, without fetching it first', async () => {
-      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-      fixture.componentRef.setInput('suggestions', [
-        { product: { ...sandwich, hasRequiredOptions: true }, kind: 'FOOD' },
-      ]);
-      await fixture.whenStable();
-
-      plus('Сэндвич')?.click();
-      expect(navigate).toHaveBeenCalledWith(['/products', 'sandwich'], { queryParams: { store: 'centre' } });
-      http.expectNone((r) => r.url === '/api/products/sandwich');
-    });
-
-    it('opens one whose defaults are no choice yet (a size to pick)', async () => {
-      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-
-      plus('Сэндвич')?.click();
-      http
-        .expectOne((r) => r.url === '/api/products/sandwich')
-        .flush(detail(sandwich, { optionGroups: COFFEE_GROUPS }));
-      await fixture.whenStable();
-
-      expect(navigate).toHaveBeenCalledWith(['/products', 'sandwich'], { queryParams: { store: 'centre' } });
-      http.expectNone('/api/cart/items');
-    });
   });
 
   it('has no «+» for a customer who cannot order', async () => {

@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import type { FeatureFlagsService } from '../config/feature-flags.service';
 import type { FeedbackService } from '../feedback/feedback.service';
 import type { OnboardingNotifier } from '../onboarding/onboarding-notifier.service';
+import { optionTablesFake } from '../option-groups/testing/option-tables.fake';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageService } from '../storage/storage.service';
 import { BrandOwnerService } from './brand-owner.service';
@@ -32,7 +33,8 @@ describe('BrandOwnerService', () => {
     order: { findFirst: jest.Mock };
     store: { count: jest.Mock };
     category: { count: jest.Mock };
-    product: { count: jest.Mock };
+    product: { count: jest.Mock; findMany: jest.Mock };
+    productOptionGroup?: unknown;
     paymentTerminal: { findMany: jest.Mock };
   };
   let notifier: { brandResubmitted: jest.Mock };
@@ -52,7 +54,7 @@ describe('BrandOwnerService', () => {
       order: { findFirst: jest.fn().mockResolvedValue(null) },
       store: { count: jest.fn().mockResolvedValue(0) },
       category: { count: jest.fn().mockResolvedValue(0) },
-      product: { count: jest.fn().mockResolvedValue(0) },
+      product: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       paymentTerminal: { findMany: jest.fn().mockResolvedValue([]) },
     };
     notifier = { brandResubmitted: jest.fn().mockResolvedValue(undefined) };
@@ -253,11 +255,16 @@ describe('BrandOwnerService', () => {
     function brandState(logoUrl: string | null, moderationStatus: BrandModerationStatus) {
       prisma.brand.findUniqueOrThrow.mockResolvedValue({ id: 'b1', logoUrl, moderationStatus, moderationNote: null });
     }
-    /** Products customers can see, and how many of them have a photo. */
-    function products(listed: number, photographed: number) {
-      prisma.product.count.mockImplementation(({ where }: { where: Record<string, unknown> }) =>
-        Promise.resolve('imageUrls' in where ? photographed : listed),
-      );
+    /**
+     * Products on the menu (`listed`), how many of them customers can see —
+     * with a variant and an add-on (owner, 2026-11-18; all of them unless
+     * said) — and how many have a photo.
+     */
+    function products(listed: number, photographed: number, sellable = listed) {
+      const ids = Array.from({ length: listed }, (_, i) => `p${i}`);
+      prisma.product.findMany.mockResolvedValue(ids.map((id) => ({ id, brandId: 'b1' })));
+      prisma.product.count.mockImplementation(() => Promise.resolve(photographed));
+      Object.assign(prisma, optionTablesFake(ids.slice(0, sellable), ids.slice(sellable)));
     }
 
     it('reports a fresh brand as having everything still to do', async () => {
@@ -288,8 +295,9 @@ describe('BrandOwnerService', () => {
       expect(prisma.store.count).toHaveBeenCalledWith({
         where: { brandId: 'b1', addressLine: { not: '' }, workingHours: { some: { isClosed: false } } },
       });
-      expect(prisma.product.count).toHaveBeenCalledWith({
-        where: { brandId: 'b1', visible: true, category: { visible: true, addOnsOnly: false } },
+      expect(prisma.product.findMany).toHaveBeenCalledWith({
+        where: { brandId: { in: ['b1'] }, visible: true, category: { visible: true, addOnsOnly: false } },
+        select: { id: true, brandId: true },
       });
       expect(result).toEqual(expect.objectContaining({ brandProfile: true, store: true, menu: true, photos: true }));
       // Everything is set up, but the brand is still waiting for review.
@@ -328,6 +336,18 @@ describe('BrandOwnerService', () => {
       await expect(service.onboarding(owner)).resolves.toEqual(
         expect.objectContaining({ menu: false, complete: false }),
       );
+    });
+
+    // Owner, 2026-11-18: a product without a variant and an add-on is not shown.
+    it('counts only products with a variant and an add-on', async () => {
+      brandState('https://cdn/logo.png', BrandModerationStatus.APPROVED);
+      prisma.store.count.mockResolvedValue(1);
+
+      products(3, 0, 0);
+      await expect(service.onboarding(owner)).resolves.toEqual(expect.objectContaining({ menu: false }));
+
+      products(3, 0, 1);
+      await expect(service.onboarding(owner)).resolves.toEqual(expect.objectContaining({ menu: true }));
     });
 
     it('counts a brand that has sold as launched, whatever the checklist says', async () => {

@@ -8,10 +8,7 @@ import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
   defaultOptionPicks,
-  defaultVariationSelection,
-  describeChoice,
   describeOptionLines,
-  initialModifierCounts,
   isDrinkKind,
   isStoreInactive,
   normalizeOptionPicks,
@@ -19,12 +16,10 @@ import {
   optionLinesFor,
   orderOptionGroups,
   priceWithOptionPicks,
-  priceWithOptions,
   productKind,
   suggestionRow,
   toOptionSelections,
   type SuggestionRow,
-  type VariationSelection,
 } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
@@ -35,7 +30,6 @@ import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 import { optionChoiceProblem, TmaProductOptionGroupsComponent } from './product-option-groups.component';
-import { TmaProductOptionsComponent } from './product-options.component';
 
 /**
  * TMA Product Detail — pencil XJUmz.
@@ -45,10 +39,8 @@ import { TmaProductOptionsComponent } from './product-options.component';
  *   infoRow — title (Fraunces 20/700) · live price (Inter 18/700 caramel)
  *   meta — calories and macros (a meal only), prep time
  *   description
- *   options — the options catalog's groups when the product has them (see
- *     TmaProductOptionGroupsComponent), else choice chips per size /
- *     temperature / milk / cup and add-on groups opening in place (see
- *     TmaProductOptionsComponent)
+ *   options — the product's groups from the options catalog, variants first
+ *     (see TmaProductOptionGroupsComponent)
  *   note — «Пожелание бариста» for a drink, «Комментарий к заказу» else
  *   «К этому напитку» under a drink, when the store sells food
  *   choice bar — pinned above Telegram's button: the choice in one line (or
@@ -65,7 +57,6 @@ import { TmaProductOptionsComponent } from './product-options.component';
     RouterLink,
     TranslatePipe,
     ProductImageComponent,
-    TmaProductOptionsComponent,
     TmaProductOptionGroupsComponent,
     TmaFoodSuggestionsComponent,
   ],
@@ -127,14 +118,6 @@ import { TmaProductOptionsComponent } from './product-options.component';
 
         @if (optionGroups().length > 0) {
           <app-tma-product-option-groups [groups]="optionGroups()" [currency]="currency()" [(picks)]="optionPicks" />
-        } @else {
-          <app-tma-product-options
-            [variations]="p.variations"
-            [modifiers]="p.modifiers"
-            [currency]="currency()"
-            [(selection)]="selectedVariations"
-            [(counts)]="modifierCounts"
-          />
         }
 
         <!-- Note for whoever makes it -->
@@ -241,9 +224,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
   /** The store this product would be added to takes no orders right now. */
   readonly storeClosed = signal(false);
-  readonly selectedVariations = signal<VariationSelection>({});
-  readonly modifierCounts = signal<Record<string, number>>({});
-  /** The choice from the options catalog, for a product with catalog groups. */
+  /** The choice from the options catalog. */
   readonly optionPicks = signal<Record<string, number>>({});
   notes = '';
   /** The store the product would be added to. */
@@ -255,35 +236,24 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private detachBack: (() => void) | null = null;
 
   /**
-   * The product's groups from the options catalog, variants first. When there
-   * are any the product is ordered through them alone; empty for a product
-   * on its older options, or from an API that predates the catalog.
+   * The product's groups from the options catalog, variants first — the only
+   * options a product has. Missing (an API that predates the catalog) reads
+   * as none.
    */
   readonly optionGroups = computed(() => orderOptionGroups(this.product()?.optionGroups ?? []));
 
   /** What keeps the choice out of the cart — «Выберите: Размер (кофе)» — or null. */
-  readonly optionProblem = computed(() =>
-    this.optionGroups().length > 0 ? optionChoiceProblem(this.optionGroups(), this.optionPicks()) : null,
-  );
+  readonly optionProblem = computed(() => optionChoiceProblem(this.optionGroups(), this.optionPicks()));
 
   readonly totalCents = computed(() => {
     const p = this.product();
-    if (!p) return 0;
-    const groups = this.optionGroups();
-    return groups.length > 0
-      ? priceWithOptionPicks(p.basePriceCents, groups, this.optionPicks())
-      : priceWithOptions(p, this.selectedVariations(), this.modifierCounts());
+    return p ? priceWithOptionPicks(p.basePriceCents, this.optionGroups(), this.optionPicks()) : 0;
   });
 
-  /** The choice in one line over the add button: "L · Oat · +Vanilla ×2", "M, Горячий · Овсяное · Ваниль". */
-  readonly choice = computed(() => {
-    const p = this.product();
-    if (!p) return '';
-    const groups = this.optionGroups();
-    return groups.length > 0
-      ? describeOptionLines(optionLinesFor(groups, this.optionPicks()))
-      : describeChoice(p, this.selectedVariations(), this.modifierCounts());
-  });
+  /** The choice in one line over the add button: "M, Горячий · Овсяное · Ваниль". */
+  readonly choice = computed(() =>
+    this.product() ? describeOptionLines(optionLinesFor(this.optionGroups(), this.optionPicks())) : '',
+  );
 
   /** What the product is — picks the placeholder and the note's wording. */
   readonly kind = computed(() => {
@@ -338,8 +308,6 @@ export class TmaProductPage implements OnInit, OnDestroy {
     this.fetchProduct(slug).subscribe({
       next: (p) => {
         this.product.set(p);
-        this.selectedVariations.set(defaultVariationSelection(p.variations));
-        this.modifierCounts.set(initialModifierCounts(p.modifiers));
         this.optionPicks.set(defaultOptionPicks(orderOptionGroups(p.optionGroups ?? [])));
         this.resolveStore(p.brandId);
         this.refreshMainButton();
@@ -444,18 +412,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
     this.tg.haptic('medium');
     const notes = this.notes.trim() || undefined;
     this.cartService
-      .add(
-        this.optionGroups().length > 0
-          ? { storeId: store.id, productId: p.id, quantity: 1, options: toOptionSelections(this.optionPicks()), notes }
-          : {
-              storeId: store.id,
-              productId: p.id,
-              quantity: 1,
-              variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
-              modifiers: this.modifierCounts(),
-              notes,
-            },
-      )
+      .add({ storeId: store.id, productId: p.id, quantity: 1, options: toOptionSelections(this.optionPicks()), notes })
       .subscribe({
         next: () => void this.router.navigate(['/checkout']),
         // Without this the request failing left the button looking inert —

@@ -860,42 +860,6 @@ abstract class AppLocalizations {
   /// **'Offline — showing the last saved menu'**
   String get offlineMenu;
 
-  /// No description provided for @variationSize.
-  ///
-  /// In en, this message translates to:
-  /// **'Size'**
-  String get variationSize;
-
-  /// No description provided for @variationTemperature.
-  ///
-  /// In en, this message translates to:
-  /// **'Temperature'**
-  String get variationTemperature;
-
-  /// No description provided for @variationMilk.
-  ///
-  /// In en, this message translates to:
-  /// **'Milk'**
-  String get variationMilk;
-
-  /// No description provided for @variationCup.
-  ///
-  /// In en, this message translates to:
-  /// **'Cup'**
-  String get variationCup;
-
-  /// No description provided for @variationOther.
-  ///
-  /// In en, this message translates to:
-  /// **'Options'**
-  String get variationOther;
-
-  /// No description provided for @productAddons.
-  ///
-  /// In en, this message translates to:
-  /// **'Add-ons'**
-  String get productAddons;
-
   /// No description provided for @productAddonLimit.
   ///
   /// In en, this message translates to:
@@ -943,6 +907,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not load this item.'**
   String get productLoadFailed;
+
+  /// No description provided for @productGone.
+  ///
+  /// In en, this message translates to:
+  /// **'This item is not on the menu right now.'**
+  String get productGone;
 
   /// No description provided for @cartTitle.
   ///
@@ -3187,12 +3157,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'E.g. warm it up, no sauce…'**
   String get productNoteFoodHint;
-
-  /// No description provided for @productAddonsNone.
-  ///
-  /// In en, this message translates to:
-  /// **'none'**
-  String get productAddonsNone;
 
   /// No description provided for @productRequired.
   ///

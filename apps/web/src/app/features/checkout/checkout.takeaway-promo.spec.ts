@@ -77,8 +77,6 @@ function cart(quantity = 1): CartView {
         productId: 'latte',
         productName: 'Латте',
         quantity,
-        variationIds: [],
-        modifiers: {},
         unitPriceCents: 4500,
         unitPrepSeconds: 180,
         notes: null,

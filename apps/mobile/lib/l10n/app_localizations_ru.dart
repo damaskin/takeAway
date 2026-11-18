@@ -454,24 +454,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get offlineMenu => 'Нет сети — показываем сохранённое меню';
 
   @override
-  String get variationSize => 'Размер';
-
-  @override
-  String get variationTemperature => 'Температура';
-
-  @override
-  String get variationMilk => 'Молоко';
-
-  @override
-  String get variationCup => 'Стакан';
-
-  @override
-  String get variationOther => 'Параметры';
-
-  @override
-  String get productAddons => 'Добавки';
-
-  @override
   String productAddonLimit(int max) {
     return 'до $max';
   }
@@ -502,6 +484,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get productLoadFailed => 'Не удалось загрузить позицию.';
+
+  @override
+  String get productGone => 'Этой позиции сейчас нет в меню.';
 
   @override
   String get cartTitle => 'Ваш заказ';
@@ -1753,9 +1738,6 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get productNoteFoodHint => 'Например: разогреть, без соуса…';
-
-  @override
-  String get productAddonsNone => 'не выбрано';
 
   @override
   String get productRequired => 'обязательно';

@@ -68,8 +68,6 @@ function cart(patch: Partial<CartView>): CartView {
         productId: 'americano',
         productName: 'Американо',
         quantity: 2,
-        variationIds: [],
-        modifiers: {},
         unitPriceCents: 2250,
         unitPrepSeconds: 180,
         notes: null,

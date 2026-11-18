@@ -96,17 +96,10 @@ enum StoreKind {
   FOOD
 }
 
-enum VariationType {
-  SIZE
-  TEMPERATURE
-  MILK
-  CUP
-}
-
-/// What a menu category holds: which choice groups its products' options
-/// editor offers, which ready-made option sets the admin offers, which
-/// placeholder a product without a photo gets, drink or food in the
-/// analytics. OTHER offers everything.
+/// What a menu category holds: which catalog option groups its products'
+/// editor offers (drinks → `DRINKS` and `BOTH` groups, food and bakery →
+/// `FOOD` and `BOTH`, OTHER → every group), which placeholder a product
+/// without a photo gets, drink or food in the analytics.
 enum CategoryKind {
   HOT_DRINKS
   COLD_DRINKS
@@ -131,10 +124,13 @@ enum OptionGroupType {
   D
 }
 
-/// What an option of a category's option set becomes on a product.
-enum CategoryOptionKind {
-  VARIATION
-  MODIFIER
+/// Options catalog: which products a group is meant for — a drink (hot or
+/// cold drinks), food (food, bakery) or both. The product editor and the
+/// «Добавки» filters read it; OTHER categories see every group.
+enum OptionGroupScope {
+  DRINKS
+  FOOD
+  BOTH
 }
 
 // Deprecated since 2026-11-05: only `Product.dietTags` uses it, which nothing
@@ -670,7 +666,6 @@ model Brand {
   stores           Store[]
   categories       Category[]
   products         Product[]
-  ingredients      Ingredient[]
   optionSettings   BrandOptionSetting[]
   promos           Promo[]
   posIntegrations  PosIntegration[]
@@ -1125,17 +1120,16 @@ model Store {
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
-  brand           Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand           Brand              @relation(fields: [brandId], references: [id], onDelete: Restrict)
   workingHours    StoreWorkingHour[]
   stopListEntries StopListEntry[]
   productListings ProductStore[]
-  ingredientStops StoreIngredientStop[]
   optionStops     StoreOptionStop[]
   carts           Cart[]
   orders          Order[]
   orderReviews    OrderReview[]
   userStores      UserStore[]
-  kdsPinUsers     User[]                @relation("KdsPinStore")
+  kdsPinUsers     User[]             @relation("KdsPinStore")
   shifts          StoreShift[]
 
   @@unique([brandId, externalProvider, externalId])
@@ -1267,11 +1261,8 @@ model Category {
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 
-  brand    Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
   products Product[]
-  /// The category's option set: copied onto a new product of the category,
-  /// and onto every product on «apply». Never read at order time.
-  options  CategoryOption[]
 
   @@unique([brandId, slug])
   @@unique([brandId, externalProvider, externalId])
@@ -1286,8 +1277,8 @@ model Product {
   name             String
   description      String?
   basePriceCents   Int
-  // Base preparation time in seconds; variations/modifiers add deltas (the
-  // queue policy reads this alone: B does not depend on the options).
+  // Preparation time in seconds; options add none (the queue policy reads
+  // this alone: B does not depend on the options).
   prepTimeSeconds  Int          @default(180)
   /// «Готовится параллельно» (queue policy): takes no station and is made
   /// alongside the rest of the order — a bottled drink, a pastry warmed in
@@ -1318,8 +1309,6 @@ model Product {
 
   brand           Brand                   @relation(fields: [brandId], references: [id], onDelete: Cascade)
   category        Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  variations      Variation[]
-  modifiers       Modifier[]
   stopListEntries StopListEntry[]
   stores          ProductStore[]
   cartItems       CartItem[]
@@ -1332,139 +1321,23 @@ model Product {
   @@index([brandId, visible])
 }
 
-model Variation {
-  id                   String        @id @default(cuid())
-  productId            String
-  type                 VariationType
-  name                 String
-  priceDeltaCents      Int           @default(0)
-  prepTimeDeltaSeconds Int           @default(0)
-  sortOrder            Int           @default(0)
-  isDefault            Boolean       @default(false)
-  /// What the option is made of, from the brand's ingredient library. While
-  /// that ingredient is out of stock the option is hidden from customers;
-  /// the product itself stays on the menu. Null = not tracked, always shown.
-  ingredientId         String?
-
-  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
-
-  @@index([productId, type, sortOrder])
-  @@index([ingredientId])
-}
-
-model Modifier {
-  id                   String       @id @default(cuid())
-  productId            String
-  slug                 String
-  name                 String
-  priceDeltaCents      Int          @default(0)
-  prepTimeDeltaSeconds Int          @default(0)
-  minCount             Int          @default(0)
-  maxCount             Int          @default(1)
-  sortOrder            Int          @default(0)
-  /// External-POS link. See {@link Store.externalProvider}. Scoped per
-  /// product, not brand, because POS modifier ids are local to the parent.
-  externalProvider     PosProvider?
-  externalId           String?
-  /// See {@link Variation.ingredientId}.
-  ingredientId         String?
-  /// Label the add-on is shown under on the product screen («Сиропы»,
-  /// «Соусы», «Убрать»), at most 40 characters. Null = the generic «Добавки».
-  group                String?
-
-  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
-
-  @@unique([productId, slug])
-  @@unique([productId, externalProvider, externalId])
-  @@index([productId, sortOrder])
-  @@index([ingredientId])
-}
-
-/// A brand's library of add-ons («Добавки») — oat milk, vanilla syrup, an
-/// extra shot. The one place an add-on is defined: its name, its usual
-/// price and whether it is in stock. A product offers an add-on through an
-/// option (`Modifier`, or a milk `Variation`) that points here; deleting the
-/// option takes the add-on off that product only, deleting the entry takes
-/// it off every product. While `isAvailable` is false the options are
-/// hidden from every client and refused by the cart, and they come back as
-/// soon as it is switched on again.
-model Ingredient {
-  id          String   @id @default(cuid())
-  brandId     String
-  name        String
-  /// The usual surcharge, in minor units. An option put on a product from
-  /// the library starts at it, and changing it moves every option that
-  /// still charges the old price (a product given its own price keeps it).
-  priceCents  Int      @default(0)
-  isAvailable Boolean  @default(true)
-  /// The add-on group an extra made of it starts in («Ваниль» → «Сиропы»);
-  /// a new group reaches the extras that still carry the old one.
-  group       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  brand           Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  modifiers       Modifier[]
-  variations      Variation[]
-  categoryOptions CategoryOption[]
-  storeStops      StoreIngredientStop[]
-
-  @@unique([brandId, name])
-  @@index([brandId, isAvailable])
-}
-
-/// One option of a category's option set — the options its products are
-/// meant to have («Молоко: Овсяное +10», «Сиропы: Ваниль +5»). The set is a
-/// template, not a source the menu reads: a new product of the category
-/// gets a copy of it, «apply» copies what is missing onto every product, and
-/// the cart and orders keep reading each product's own Variation/Modifier
-/// rows. Linked to the brand library like a product option, so a library
-/// rename or new price reaches it the same way.
-model CategoryOption {
-  id              String             @id @default(cuid())
-  categoryId      String
-  kind            CategoryOptionKind
-  /// VARIATION only: the pick-one group (size, milk…).
-  variationType   VariationType?
-  name            String
-  priceDeltaCents Int                @default(0)
-  /// MODIFIER only: the add-on group label; null = «Добавки».
-  group           String?
-  /// VARIATION only: pre-selected in its group.
-  isDefault       Boolean            @default(false)
-  /// MODIFIER only: how many of it one item may take.
-  maxCount        Int                @default(1)
-  sortOrder       Int                @default(0)
-  ingredientId    String?
-  createdAt       DateTime           @default(now())
-
-  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  /// Deleting the library entry takes the add-on off every product and out
-  /// of every category set.
-  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
-
-  @@index([categoryId, sortOrder])
-  @@index([ingredientId])
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Options catalog («Добавки и варианты», item 17, docs/option-groups.md)
 //
 // One catalog for the whole platform, kept by SUPER_ADMIN. A brand attaches
 // catalog groups to its products, prices its add-ons once for the brand,
 // switches off what it does not have; a store stops what has run out.
-// A product with groups attached is ordered through them only; the older
-// per-product `Variation` / `Modifier` rows stay for products without.
+// The only options there are since 2026-11-18 (the older per-product
+// variations, extras and add-on library were deleted). A product is shown to
+// customers only with at least one variant and one add-on it offers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A catalog group: «Размер (кофе)», «Молоко», «Сахар».
 model OptionGroup {
-  id             String          @id @default(cuid())
+  id             String           @id @default(cuid())
   kind           OptionGroupKind
   type           OptionGroupType
-  name           String          @unique
+  name           String           @unique
   /// A only: how many options may be picked (a VARIANT group always asks
   /// for at least one). Null for B and C.
   minSelect      Int?
@@ -1472,9 +1345,12 @@ model OptionGroup {
   /// Shown only while this option is picked («Лёд» ← «Холодный»), when the
   /// option's group is on the product. Clearing the option clears it.
   showIfOptionId String?
-  sortOrder      Int             @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  /// Drinks, food or both: the product editor offers a group only for a
+  /// product of a matching category kind (OTHER: every group).
+  scope          OptionGroupScope @default(BOTH)
+  sortOrder      Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   showIfOption OptionItem?          @relation("OptionGroupShowIf", fields: [showIfOptionId], references: [id], onDelete: SetNull)
   options      OptionItem[]
@@ -1515,8 +1391,9 @@ model OptionItem {
 model BrandOptionSetting {
   brandId    String
   optionId   String
-  /// ADDON: its price for the whole brand (C: per unit above `defaultQty`).
-  /// Not read for VARIANT options — those are priced per product.
+  /// ADDON: its price for the whole brand (C: per unit above `defaultQty`);
+  /// a product may set its own (`ProductOptionOverride.priceCents`). Not
+  /// read for VARIANT options — those are priced per product.
   priceCents Int      @default(0)
   /// False = the brand does not have it: hidden from its customers.
   enabled    Boolean  @default(true)
@@ -1559,14 +1436,20 @@ model ProductOptionGroup {
   @@index([groupId])
 }
 
-/// A product's own value for one option: a variant's price, another default.
+/// A product's own value for one option: a variant's price, an add-on's
+/// own price, another default, or the option switched off on this product.
 model ProductOptionOverride {
   productId  String
   optionId   String
-  /// VARIANT options: what picking it adds to the base price (may be < 0).
+  /// VARIANT: what picking it adds to the base price (null = 0; may be < 0
+  /// on rows written before 2026-11-18). ADDON: its price on this product
+  /// instead of the brand's (null = the brand's).
   priceCents Int?
   /// A and B: the product's own default; null = the catalog's.
   isDefault  Boolean?
+  /// False = not offered on this product (a shawarma without «Булка»);
+  /// null = offered when the brand has it.
+  enabled    Boolean?
 
   product Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
   option  OptionItem @relation(fields: [optionId], references: [id], onDelete: Cascade)
@@ -1608,25 +1491,6 @@ model ProductStore {
   @@index([storeId])
 }
 
-/// One store has run out of an ingredient from the brand library (oat milk
-/// at the pizzeria, not at the café). While the row is active the options
-/// made of it are hidden from that store's customers and refused by its
-/// cart, exactly as when the ingredient is switched off brand-wide; other
-/// stores are unaffected. `expiresAt` lifts it by itself (e.g. at the end of
-/// the day); null = until someone switches it back on.
-model StoreIngredientStop {
-  storeId      String
-  ingredientId String
-  expiresAt    DateTime?
-  createdAt    DateTime  @default(now())
-
-  store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
-
-  @@id([storeId, ingredientId])
-  @@index([ingredientId])
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Cart & Order
 //
@@ -1659,14 +1523,8 @@ model CartItem {
   cartId          String
   productId       String
   quantity        Int      @default(1)
-  // Resolved selections captured at add time so the cart can render without
-  // a round-trip to the product catalog. Refreshed on ETA/price recompute.
-  variationIds    String[] @default([])
-  // Map of { modifierId: count } as a small JSON blob. Avoids a join table
-  // for a tiny list and keeps writes atomic.
-  modifiersJson   Json     @default("{}")
   /// Picks from the options catalog, `[{ optionId, qty }]` sorted by option
-  /// id (a product with catalog groups; then the two above are empty).
+  /// id.
   optionsJson     Json     @default("[]")
   unitPriceCents  Int
   unitPrepSeconds Int
@@ -1870,8 +1728,9 @@ model Order {
 model OrderItem {
   id              String   @id @default(cuid())
   orderId         String
-  // Full product/variations/modifiers snapshot at the moment of order
-  // creation so price/stock edits do not mutate history.
+  // Full product + options snapshot at the moment of order creation so
+  // price/stock edits do not mutate history (`OrderItemSnapshot`; orders
+  // placed before 2026-11-18 may still carry the older variations/extras).
   productSnapshot Json
   quantity        Int
   unitPriceCents  Int

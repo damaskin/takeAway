@@ -464,8 +464,8 @@ export class PosService {
    * Upserts an {@link ImportedMenu} (categories + products) into the brand.
    * POS modifiers are not imported (`menu.modifiers` is ignored): a brand's
    * add-ons and variants come from the options catalog (Maxim's answer 10,
-   * docs/option-groups.md). `Modifier` rows an earlier sync created stay as
-   * they are, untouched by later syncs.
+   * docs/option-groups.md). A synced product is shown to customers only once
+   * the brand attaches a variant and an add-on group to it, like any other.
    *
    * Strategy: resolve every external category/product to its takeAway id
    * via `(brandId, externalProvider, externalId)`. New rows pick a stable
@@ -643,11 +643,7 @@ export class PosService {
    * externalId)`. Locally-managed rows (with their own slugs) are never
    * touched.
    */
-  private posSlug(
-    provider: PosProvider,
-    kind: 'store' | 'category' | 'product' | 'modifier',
-    externalId: string,
-  ): string {
+  private posSlug(provider: PosProvider, kind: 'store' | 'category' | 'product', externalId: string): string {
     return `pos-${provider.toLowerCase()}-${kind}-${externalId}`;
   }
 
@@ -702,8 +698,8 @@ export class PosService {
 
   /**
    * Resolves an Order into the {@link OrderForPush} shape consumed by
-   * IPosProvider implementations. Maps internal product/modifier ids to
-   * the integration provider's external identifiers; items that aren't
+   * IPosProvider implementations. Maps internal product ids to the
+   * integration provider's external identifiers; items that aren't
    * mapped are silently dropped (the provider then decides whether the
    * remaining items are enough to push).
    */
@@ -740,35 +736,15 @@ export class PosService {
         .map((p) => [p.id, p.externalId as string]),
     );
 
-    const modifierIds = new Set<string>();
-    for (const it of order.items) {
-      const map = extractSnapshotModifiers(it.productSnapshot);
-      for (const id of Object.keys(map)) modifierIds.add(id);
-    }
-    const modifiers = modifierIds.size
-      ? await this.prisma.modifier.findMany({
-          where: { id: { in: [...modifierIds] } },
-          select: { id: true, externalProvider: true, externalId: true },
-        })
-      : [];
-    const modifierExternalById = new Map(
-      modifiers
-        .filter((m) => m.externalProvider === integration.provider && m.externalId)
-        .map((m) => [m.id, m.externalId as string]),
-    );
-
     const items: OrderForPushItem[] = [];
     for (const it of order.items) {
       const productInternalId = extractSnapshotId(it.productSnapshot);
       const productExternalId = productInternalId ? productExternalById.get(productInternalId) : undefined;
       if (!productExternalId) continue;
-      const modifiersMap = extractSnapshotModifiers(it.productSnapshot);
-      const itemModifiers = Object.entries(modifiersMap).flatMap(([id, count]) => {
-        const externalId = modifierExternalById.get(id);
-        return externalId && count > 0 ? [{ externalId, count }] : [];
-      });
       // Catalog picks are not POS modifiers: the till gets them as text on
       // the line («M, Холодный · Овсяное · Лёд ×2»), before the customer's note.
+      // No POS modifier is sent any more (the older per-product extras that
+      // carried POS ids were deleted on 2026-11-18).
       const snapshot = readOrderItemSnapshot(it.productSnapshot);
       const notes = [describeOptionLines(snapshot.optionLines), extractSnapshotNotes(it.productSnapshot)]
         .filter((part): part is string => !!part)
@@ -778,7 +754,7 @@ export class PosService {
         name: snapshot.name || undefined,
         quantity: it.quantity,
         unitPriceCents: it.unitPriceCents,
-        modifiers: itemModifiers,
+        modifiers: [],
         notes: notes || undefined,
       });
     }
@@ -972,18 +948,6 @@ function extractSnapshotId(snapshot: unknown): string | null {
   if (typeof snapshot !== 'object' || snapshot === null) return null;
   const id = (snapshot as { id?: unknown }).id;
   return typeof id === 'string' ? id : null;
-}
-
-function extractSnapshotModifiers(snapshot: unknown): Record<string, number> {
-  if (typeof snapshot !== 'object' || snapshot === null) return {};
-  const raw = (snapshot as { modifiers?: unknown }).modifiers;
-  if (typeof raw !== 'object' || raw === null) return {};
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    const n = typeof v === 'number' ? v : typeof v === 'string' ? parseInt(v, 10) : NaN;
-    if (Number.isFinite(n) && n > 0) out[k] = n;
-  }
-  return out;
 }
 
 function extractSnapshotNotes(snapshot: unknown): string | undefined {

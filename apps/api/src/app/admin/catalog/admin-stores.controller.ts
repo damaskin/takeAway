@@ -14,7 +14,7 @@ import { StorageService } from '../../storage/storage.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import { StoreAvailabilityService } from './store-availability.service';
 import { AddStopListEntryDto } from './dto/admin-stop-list.dto';
-import { SetIngredientStopDto, StoreAvailabilityDto } from './dto/admin-store-availability.dto';
+import { StoreAvailabilityDto } from './dto/admin-store-availability.dto';
 import {
   CreateStoreDto,
   RemoveStoreImageQueryDto,
@@ -190,33 +190,5 @@ export class AdminStoresController {
     await this.stores.assertAllowed(user.id, user.role, id);
     const scope = await this.scope.resolveBrandIds(user);
     return this.availability.get(id, scope);
-  }
-
-  @Put(':id/ingredient-stops/:ingredientId')
-  @KdsSessionAllowed({ from: 'param', key: 'id' })
-  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
-  async stopIngredient(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Param('ingredientId') ingredientId: string,
-    @Body() dto: SetIngredientStopDto,
-  ) {
-    await this.stores.assertAllowed(user.id, user.role, id);
-    const scope = await this.scope.resolveBrandIds(user);
-    return this.availability.stopIngredient(id, ingredientId, dto, scope);
-  }
-
-  @Delete(':id/ingredient-stops/:ingredientId')
-  @KdsSessionAllowed({ from: 'param', key: 'id' })
-  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async resumeIngredient(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Param('ingredientId') ingredientId: string,
-  ): Promise<void> {
-    await this.stores.assertAllowed(user.id, user.role, id);
-    const scope = await this.scope.resolveBrandIds(user);
-    await this.availability.resumeIngredient(id, ingredientId, scope);
   }
 }

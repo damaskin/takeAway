@@ -132,7 +132,7 @@ describe('MenuPage — products without a photo', () => {
       fixture.detectChanges();
 
       const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="menu-add-ons-only-note"]');
-      expect(text(note)).toContain('откройте опции напитка и добавьте её в разделе «Добавки»');
+      expect(text(note)).toContain('подключите группу в карточке напитка');
       expect(note?.querySelector('a[href="/ingredients"]') != null).toBe(linked);
     }
   });

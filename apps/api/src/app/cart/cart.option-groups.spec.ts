@@ -94,8 +94,19 @@ const ice = group({
 });
 const cappuccinoGroups = (milkGroup = milk()) => [size, serving, milkGroup, syrups, sugar, ice];
 
-/** «Мясо (порции)»: one portion is in the price, the second costs 20.00. */
+/**
+ * «Острый» (a yes/no variant nobody has to pick) and «Мясо (порции)»: one
+ * portion is in the price, the second costs 20.00. A variant and an add-on,
+ * so customers see it.
+ */
 const shawarmaGroups = [
+  group({
+    id: 'og_spicy',
+    kind: 'VARIANT',
+    type: 'B',
+    name: 'Острый',
+    options: [item('oi_spicy', 'Острый')],
+  }),
   group({
     id: 'og_meat_portions',
     kind: 'ADDON',
@@ -147,8 +158,6 @@ function product(id: string, name: string, basePriceCents: number, patch: Partia
     updatedAt: new Date('2026-11-01T00:00:00Z'),
     stores: [{ storeId: 'store-1' }],
     category: { visible: true, addOnsOnly: false },
-    variations: [],
-    modifiers: [],
     ...patch,
   };
 }
@@ -166,8 +175,6 @@ function harness(groups: Record<string, ProductOptionGroup[]> = { 'p-cappuccino'
     },
     store: { findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-a', brand: { moderationStatus: 'APPROVED' } }) },
     stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
-    variation: { findMany: jest.fn().mockResolvedValue([]) },
-    modifier: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     cart: {
       upsert: jest.fn().mockResolvedValue({ id: 'cart-1' }),
@@ -187,7 +194,8 @@ function harness(groups: Record<string, ProductOptionGroup[]> = { 'p-cappuccino'
     quote: jest.fn().mockResolvedValue({ etaSeconds: 0 }),
   };
   const availability = { forStore: jest.fn().mockResolvedValue({ acceptingOrders: true }) };
-  const stub = optionGroupsStub(groups);
+  // No groups for a product the test leaves out.
+  const stub = optionGroupsStub(groups, []);
   const service = new CartService(
     prisma as unknown as PrismaService,
     kitchen as unknown as KitchenLoadService,
@@ -210,9 +218,9 @@ describe('CartService with the options catalog — add', () => {
   const add = (service: CartService, patch: Record<string, unknown> = {}) =>
     service.addItem('user-1', { storeId: 'store-1', productId: 'p-cappuccino', quantity: 1, ...patch });
 
-  it("prices the spec's cappuccino at 71.00 and keeps the picks sorted, without the older options", async () => {
+  it("prices the spec's cappuccino at 71.00 and keeps the picks sorted", async () => {
     const { prisma, service } = harness();
-    // An older client's size and extras are ignored on a catalog product, not refused.
+    // An older client's size and extras are ignored, not refused.
     await add(service, { options: PICKS, variationIds: ['v-l'], modifiers: { 'm-shot': 1 } });
 
     expect(prisma.cartItem.create).toHaveBeenCalledWith({
@@ -220,12 +228,9 @@ describe('CartService with the options catalog — add', () => {
         productId: 'p-cappuccino',
         unitPriceCents: 7100,
         unitPrepSeconds: 180,
-        variationIds: [],
-        modifiersJson: {},
         optionsJson: STORED,
       }),
     });
-    expect(prisma.variation.findMany).not.toHaveBeenCalled();
   });
 
   it('charges a counter only above what the dish includes (meat 1 free, 2 = one portion more)', async () => {
@@ -326,8 +331,8 @@ describe('CartService with the options catalog — add', () => {
   it('merges the same picks and note into one line, and keeps a different choice apart', async () => {
     const { prisma, service } = harness();
     prisma.cartItem.findMany.mockResolvedValue([
-      { id: 'ci-same', quantity: 1, variationIds: [], modifiersJson: {}, optionsJson: STORED, notes: null },
-      { id: 'ci-note', quantity: 1, variationIds: [], modifiersJson: {}, optionsJson: STORED, notes: 'горячее' },
+      { id: 'ci-same', quantity: 1, optionsJson: STORED, notes: null },
+      { id: 'ci-note', quantity: 1, optionsJson: STORED, notes: 'горячее' },
     ]);
 
     // Same choice in another order, a repeated pick adding up: still the same line.
@@ -358,8 +363,6 @@ describe('CartService with the options catalog — add', () => {
           productId: 'p-cappuccino',
           product: { name: 'Капучино', brandId: 'brand-a' },
           quantity: 1,
-          variationIds: [],
-          modifiersJson: {},
           optionsJson: STORED,
           unitPriceCents: 7100,
           unitPrepSeconds: 180,
@@ -389,8 +392,6 @@ describe('CartService with the options catalog — update', () => {
       cartId: 'cart-1',
       productId: 'p-cappuccino',
       quantity: 1,
-      variationIds: [],
-      modifiersJson: {},
       optionsJson: STORED,
       unitPriceCents: 7100,
       unitPrepSeconds: 180,
@@ -454,8 +455,6 @@ describe('CartService with the options catalog — checkout', () => {
       cartId: 'cart-1',
       productId: 'p-cappuccino',
       quantity: 2,
-      variationIds: [],
-      modifiersJson: {},
       optionsJson: STORED,
       unitPriceCents: 7100,
       unitPrepSeconds: 180,
@@ -480,7 +479,7 @@ describe('CartService with the options catalog — checkout', () => {
     const { prisma, service } = harness();
     const [line] = await service.repriceForCheckout({ id: 'cart-1', storeId: 'store-1', items: [row()] });
 
-    expect(line).toMatchObject({ unitPriceCents: 7100, quantity: 2, variations: [], modifierLines: [] });
+    expect(line).toMatchObject({ unitPriceCents: 7100, quantity: 2 });
     expect(line?.optionLines).toEqual([
       expect.objectContaining({ groupName: 'Размер (кофе)', kind: 'VARIANT', name: 'M', totalCents: 0 }),
       expect.objectContaining({ name: 'Горячий' }),
@@ -512,7 +511,6 @@ describe('CartService with the options catalog — checkout', () => {
     ],
     ['stopped in the store', { 'p-cappuccino': cappuccinoGroups(milk(1000, { available: false })) }],
     ['detached with its group', { 'p-cappuccino': cappuccinoGroups().filter((g) => g.id !== 'og_milk') }],
-    ['gone with every group', {}],
   ])('takes out a line whose oat milk was %s', async (_how, groups) => {
     const { prisma, service } = harness(groups);
     const err = await conflictOf(service.repriceForCheckout({ id: 'cart-1', storeId: 'store-1', items: [row()] }));
@@ -521,15 +519,15 @@ describe('CartService with the options catalog — checkout', () => {
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
   });
 
-  it('takes out a line made with older options once the product moved to the catalog', async () => {
-    const { service } = harness();
-    const err = await conflictOf(
-      service.repriceForCheckout({
-        id: 'cart-1',
-        storeId: 'store-1',
-        items: [row({ optionsJson: [], variationIds: ['v-l'], modifiersJson: { 'm-shot': 1 } })],
-      }),
-    );
-    expect(err.items).toEqual([expect.objectContaining({ reason: 'OPTION_UNAVAILABLE' })]);
+  // Owner, 2026-11-18: without a variant and an add-on the product is not sold any more.
+  it.each([
+    ['lost every group', {}],
+    ['lost its add-ons', { 'p-cappuccino': [size, serving] }],
+  ])('takes out a line whose product %s, as a product no longer sold', async (_how, groups) => {
+    const { prisma, service } = harness(groups);
+    const err = await conflictOf(service.repriceForCheckout({ id: 'cart-1', storeId: 'store-1', items: [row()] }));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null })]);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
   });
 });

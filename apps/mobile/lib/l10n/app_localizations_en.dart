@@ -447,24 +447,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get offlineMenu => 'Offline — showing the last saved menu';
 
   @override
-  String get variationSize => 'Size';
-
-  @override
-  String get variationTemperature => 'Temperature';
-
-  @override
-  String get variationMilk => 'Milk';
-
-  @override
-  String get variationCup => 'Cup';
-
-  @override
-  String get variationOther => 'Options';
-
-  @override
-  String get productAddons => 'Add-ons';
-
-  @override
   String productAddonLimit(int max) {
     return 'up to $max';
   }
@@ -495,6 +477,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get productLoadFailed => 'Could not load this item.';
+
+  @override
+  String get productGone => 'This item is not on the menu right now.';
 
   @override
   String get cartTitle => 'Your order';
@@ -1734,9 +1719,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get productNoteFoodHint => 'E.g. warm it up, no sauce…';
-
-  @override
-  String get productAddonsNone => 'none';
 
   @override
   String get productRequired => 'required';

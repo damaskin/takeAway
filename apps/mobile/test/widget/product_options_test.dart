@@ -7,47 +7,20 @@ import 'package:takeaway_mobile/app/router.dart';
 import 'package:takeaway_mobile/features/cart/cart_line.dart';
 import 'package:takeaway_mobile/features/menu/menu_search_screen.dart';
 import 'package:takeaway_mobile/features/menu/product_card.dart';
-import 'package:takeaway_mobile/features/product/option_widgets.dart';
+import 'package:takeaway_mobile/features/product/catalog_options.dart';
 import 'package:takeaway_mobile/features/product/product_screen.dart';
 import 'package:takeaway_mobile/shared/store_kinds.dart';
 import 'package:takeaway_mobile/shared/widgets/product_image.dart';
 import 'package:takeaway_mobile/shared/widgets/store_map.dart';
 
+import '../helpers/catalog_fixtures.dart';
 import '../helpers/fake_api.dart';
 import '../helpers/harness.dart';
 
-Map<String, dynamic> _variation(String id, String type, String name, int delta, {bool def = false, int sort = 0}) => {
-  'id': id,
-  'type': type,
-  'name': name,
-  'priceDeltaCents': delta,
-  'prepTimeDeltaSeconds': 0,
-  'sortOrder': sort,
-  'isDefault': def,
-};
-
-Map<String, dynamic> _addon(
-  String id,
-  String name,
-  int delta, {
-  String? group,
-  int min = 0,
-  int max = 1,
-  int sort = 0,
-}) => {
-  'id': id,
-  'slug': id,
-  'name': name,
-  'priceDeltaCents': delta,
-  'minCount': min,
-  'maxCount': max,
-  'sortOrder': sort,
-  'group': group,
-};
-
-/// A coffee shop menu with kinds: a cappuccino with every kind of option,
-/// bakery (one item sold out) and a sandwich with a required sauce. With
-/// [photos] the cappuccino and the croissant have one; nothing else does.
+/// A coffee shop menu with kinds: a cappuccino with a size and syrups,
+/// bakery (one item sold out, a muffin with a size to pick) and a sandwich
+/// with a sauce. With [photos] the cappuccino and the croissant have one;
+/// nothing else does.
 FakeApi _api({bool photos = false}) {
   Map<String, dynamic> pictured(Map<String, dynamic> json) => photos
       ? {
@@ -83,16 +56,22 @@ FakeApi _api({bool photos = false}) {
     ...pictured(FakeApi.productJson('p_capp', 'Капучино', 3000)),
     'categoryKind': 'HOT_DRINKS',
     'brandId': 'br_1',
-    'variations': [
-      _variation('v_s', 'SIZE', 'Малый', 0, def: true),
-      _variation('v_m', 'SIZE', 'Средний', 300, sort: 1),
-      _variation('v_cow', 'MILK', 'Коровье', 0, def: true),
-      _variation('v_oat', 'MILK', 'Овсяное', 800, sort: 1),
-    ],
-    'modifiers': [
-      _addon('m_vanilla', 'Ваниль', 500, group: 'Сиропы'),
-      _addon('m_caramel', 'Карамель', 500, group: 'Сиропы', sort: 1),
-      _addon('m_shot', 'Доп. шот', 600, max: 3, sort: 2),
+    'optionGroups': [
+      groupJson(
+        'g_capp_size',
+        'Размер',
+        [optionJson('o_capp_s', 'Малый', isDefault: true), optionJson('o_capp_m', 'Средний', price: 300)],
+        kind: 'VARIANT',
+        minSelect: 1,
+        maxSelect: 1,
+      ),
+      groupJson(
+        'g_syrups',
+        'Сиропы',
+        [optionJson('o_vanilla', 'Ваниль', price: 500), optionJson('o_caramel', 'Карамель', price: 500)],
+        minSelect: 0,
+        maxSelect: 2,
+      ),
     ],
   });
   api.products['p_sandwich'] = ProductDetail.fromJson({
@@ -106,19 +85,40 @@ FakeApi _api({bool photos = false}) {
     'proteinsGrams': 21,
     'fatsGrams': 14.5,
     'carbsGrams': 48,
-    'variations': <Object>[],
-    'modifiers': [
-      _addon('m_ketchup', 'Кетчуп', 0, group: 'Соус', min: 1),
-      _addon('m_cheese', 'Сырный', 700, group: 'Соус', sort: 1),
-      _addon('m_onion', 'Без лука', 0, group: 'Убрать', sort: 2),
+    'optionGroups': [
+      groupJson(
+        'g_bread',
+        'Хлеб',
+        [optionJson('o_white', 'Белый', isDefault: true), optionJson('o_rye', 'Ржаной')],
+        kind: 'VARIANT',
+        minSelect: 1,
+        maxSelect: 1,
+      ),
+      groupJson(
+        'g_sauce',
+        'Соус',
+        [optionJson('o_ketchup', 'Кетчуп', isDefault: true), optionJson('o_cheese', 'Сырный', price: 700)],
+        minSelect: 1,
+        maxSelect: 1,
+      ),
+      groupJson('g_remove', 'Убрать', [optionJson('o_no_onion', 'Без лука')], type: 'B'),
     ],
   });
   api.products['p_muffin'] = ProductDetail.fromJson({
     ...FakeApi.productJson('p_muffin', 'Маффин', 1800, category: 'cat_bakery'),
     'categoryKind': 'BAKERY',
     'brandId': 'br_1',
-    'variations': [_variation('v_small', 'SIZE', 'Мини', 0, def: true), _variation('v_big', 'SIZE', 'Большой', 500)],
-    'modifiers': <Object>[],
+    'optionGroups': [
+      groupJson(
+        'g_muffin_size',
+        'Размер',
+        [optionJson('o_mini', 'Мини'), optionJson('o_big', 'Большой', price: 500)],
+        kind: 'VARIANT',
+        minSelect: 1,
+        maxSelect: 1,
+      ),
+      groupJson('g_muffin_extras', 'Добавки', [optionJson('o_chocolate', 'Шоколад', price: 200)], type: 'B'),
+    ],
   });
   return api;
 }
@@ -151,48 +151,29 @@ Finder _menuItem(String name) =>
     find.ancestor(of: find.text(name), matching: find.byWidgetPredicate((w) => w is ProductCard || w is ProductRow));
 
 void main() {
-  testWidgets('a drink: compact choices with prices, add-ons by group that open in place, live price', (tester) async {
+  testWidgets('a drink: variants and add-ons with prices, no calories, a barista note, food to go with it', (
+    tester,
+  ) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api());
     await _openProduct(tester, h, 'p_capp');
 
-    expect(find.text('Средний'), findsOneWidget);
-    expect(find.text('+3\u00a0MDL'), findsOneWidget, reason: 'each choice shows what it adds');
-    expect(find.text('+8\u00a0MDL'), findsOneWidget);
-    expect(find.text('Малый · Коровье'), findsNWidgets(2), reason: 'under the title and by the button');
+    expect(find.text('Размер'), findsOneWidget);
+    expect(find.text('+3\u00a0MDL'), findsOneWidget, reason: 'a variant shows what it adds');
+    expect(find.text('+5\u00a0MDL'), findsNWidgets(2), reason: 'an add-on shows its price');
     expect(find.text('180 ккал'), findsNothing, reason: 'calories are shown for meals only since 2026-11-06');
     expect(find.byTooltip('Кофеин'), findsNothing, reason: 'caffeine left the menu on 2026-11-05');
 
-    // Add-ons are closed rows, one per group.
-    await _reveal(tester, find.text('Добавки · не выбрано'));
-    expect(find.text('Сиропы · не выбрано'), findsOneWidget);
-    expect(find.text('Ваниль'), findsNothing);
-
-    await tester.tap(find.text('Сиропы · не выбрано'));
-    await settle(tester, const Duration(milliseconds: 500));
-    expect(find.text('Ваниль'), findsOneWidget);
-    expect(find.text('+5\u00a0MDL'), findsNWidgets(2));
+    await _reveal(tester, find.text('Ваниль'));
     await tester.tap(find.text('Ваниль'));
     await settle(tester, const Duration(milliseconds: 500));
-    expect(find.text('Сиропы · Ваниль'), findsOneWidget);
+    expect(find.text('Малый · Ваниль'), findsNWidgets(2), reason: 'under the title and by the button');
     expect(find.text('35\u00a0MDL'), findsOneWidget, reason: '30 + 5 for the syrup');
-    expect(find.text('Малый · Коровье · Ваниль'), findsNWidgets(2));
 
-    // Opening another group closes this one.
-    await tester.tap(find.text('Добавки · не выбрано'));
-    await settle(tester, const Duration(milliseconds: 500));
-    expect(find.text('Карамель'), findsNothing);
-    expect(find.text('Доп. шот'), findsOneWidget);
-    expect(find.text('до 3'), findsOneWidget);
-    await tester.tap(find.descendant(of: find.byType(AddonGroupTile), matching: find.byIcon(Icons.add_rounded)));
-    await settle(tester, const Duration(milliseconds: 500));
-    expect(find.text('Добавки · Доп. шот'), findsOneWidget);
-    expect(find.text('41\u00a0MDL'), findsOneWidget, reason: '30 + 5 + 6 for the shot');
-
-    await tester.ensureVisible(find.text('Средний'));
+    await _reveal(tester, find.text('Средний'));
     await tester.tap(find.text('Средний'));
     await settle(tester, const Duration(milliseconds: 500));
-    expect(find.text('44\u00a0MDL'), findsOneWidget);
+    expect(find.text('38\u00a0MDL'), findsOneWidget, reason: '30 + 3 + 5');
 
     await _reveal(tester, find.text('Пожелание бариста'));
     expect(find.text('Комментарий к заказу'), findsNothing);
@@ -202,13 +183,11 @@ void main() {
 
     await tester.tap(find.text('В корзину'));
     await settle(tester);
-    final sent = h.api.added.single;
-    expect(sent.variationIds, containsAll(<String>['v_m', 'v_cow']));
-    expect(sent.modifiers, {'m_vanilla': 1, 'm_shot': 1});
+    expect(h.api.added.single.options, toOptionSelections({'o_capp_m': 1, 'o_vanilla': 1}));
     await h.unmount(tester);
   });
 
-  testWidgets('food: calories and macros, a required sauce opens marked, an order comment', (tester) async {
+  testWidgets('food: calories and macros, its defaults, an order comment', (tester) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api());
     await _openProduct(tester, h, 'p_sandwich');
@@ -218,18 +197,7 @@ void main() {
     expect(find.byTooltip('Кофеин'), findsNothing);
     expect(find.textContaining('Содержит'), findsNothing);
     expect(find.textContaining('глютен'), findsNothing);
-    await _reveal(tester, find.text('Убрать · не выбрано'));
-    expect(find.text('Соус · Кетчуп'), findsOneWidget);
-    expect(find.text('обязательно'), findsOneWidget);
-    expect(find.text('Сырный'), findsOneWidget, reason: 'a required group starts open');
-    final ketchup = tester.widget<Checkbox>(
-      find.descendant(
-        of: find.ancestor(of: find.text('Кетчуп'), matching: find.byType(InkWell)),
-        matching: find.byType(Checkbox),
-      ),
-    );
-    expect(ketchup.value, isTrue);
-    expect(ketchup.onChanged, isNull, reason: 'a required add-on cannot be taken off');
+    expect(find.text('Белый · Кетчуп'), findsNWidgets(2), reason: 'the defaults, under the title and by the button');
 
     await _reveal(tester, find.text('Комментарий к заказу'));
     expect(find.text('Пожелание бариста'), findsNothing);
@@ -237,7 +205,52 @@ void main() {
 
     await tester.tap(find.text('В корзину'));
     await settle(tester);
-    expect(h.api.added.single.modifiers, {'m_ketchup': 1});
+    expect(h.api.added.single.options, toOptionSelections({'o_white': 1, 'o_ketchup': 1}));
+    await h.unmount(tester);
+  });
+
+  testWidgets('a product the API does not sell says it is not on the menu, from a menu card too', (tester) async {
+    _phone(tester);
+    // A menu saved before the product was hidden still lists it; the product
+    // has a size but no add-on, so the API answers 404 (since 2026-11-18).
+    final api = _api();
+    api.menuCategories!.first['products'] = [
+      ...api.menuCategories!.first['products'] as List<Map<String, dynamic>>,
+      FakeApi.productJson('p_raf', 'Раф', 3500),
+    ];
+    api.products['p_raf'] = ProductDetail.fromJson({
+      ...FakeApi.productJson('p_raf', 'Раф', 3500),
+      'brandId': 'br_1',
+      'optionGroups': [
+        groupJson('g_raf_size', 'Размер', [optionJson('o_raf_m', 'M', isDefault: true)], kind: 'VARIANT'),
+      ],
+    });
+    final h = await pumpApp(tester, api: api);
+
+    await _openProduct(tester, h, 'p_raf');
+    expect(find.text('Этой позиции сейчас нет в меню.'), findsOneWidget);
+    expect(find.text('В корзину'), findsNothing);
+    h.container.read(routerProvider).pop();
+    await settle(tester);
+
+    await tester.dragUntilVisible(find.text('Раф'), find.byType(CustomScrollView).first, const Offset(0, -200));
+    await tester.tap(find.text('Раф'));
+    await settle(tester);
+    expect(find.byType(ProductScreen), findsOneWidget);
+    expect(find.text('Этой позиции сейчас нет в меню.'), findsOneWidget, reason: 'not a skeleton for ever');
+    expect(find.text('В корзину'), findsNothing);
+    h.container.read(routerProvider).pop();
+    await settle(tester);
+
+    // Taken off sale while the customer looks at it: the cart answers 404.
+    await _openProduct(tester, h, 'p_capp');
+    api.products['p_capp'] = api.products['p_raf']!;
+    await tester.tap(find.text('В корзину'));
+    await settle(tester);
+    expect(api.added, hasLength(1), reason: 'sent, and refused');
+    expect(find.text('Этой позиции сейчас нет в меню.'), findsWidgets, reason: 'said in the app language');
+    expect(find.textContaining('not found'), findsNothing);
+    expect(find.text('В корзину'), findsNothing, reason: 'fetched again, the screen says it is gone');
     await h.unmount(tester);
   });
 
@@ -420,7 +433,7 @@ void main() {
       );
       await settle(tester);
       expect(find.byType(ProductScreen), findsOneWidget);
-      expect(find.descendant(of: find.byType(VariationChips), matching: find.text('Мини')), findsOneWidget);
+      expect(find.descendant(of: find.byType(OptionGroupSection), matching: find.text('Мини')), findsOneWidget);
       expect(api.added, isEmpty);
       await h.unmount(tester);
     });

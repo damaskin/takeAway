@@ -1,134 +1,28 @@
 import { Test } from '@nestjs/testing';
-import type { CartItem, Modifier, Variation } from '@prisma/client';
+import type { CartItem } from '@prisma/client';
+import type { ProductOptionGroup } from '@takeaway/shared-types';
 
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
-import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
-import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import { StoreAvailabilityService } from '../kitchen/store-availability.service';
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
+import { SELLABLE_GROUPS, optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
 import { CartService, type StoreProduct } from './cart.service';
 import type { AddCartItemDto } from './dto/add-cart-item.dto';
 
-describe('CartService pricing', () => {
-  let service: CartService;
+// ── Fixtures ────────────────────────────────────────────────────────────────
+//
+// Every product is sold through its catalog groups; unless a test says
+// otherwise it has the stub's: a size M picked by default at no surcharge and
+// a free sugar left off (`SELLABLE_GROUPS`) — a variant and an add-on, so
+// customers see it.
 
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        CartService,
-        { provide: PrismaService, useValue: {} },
-        // These cases only exercise priceItem, which never reaches the
-        // kitchen — the providers are here to satisfy the constructor.
-        { provide: KitchenLoadService, useValue: {} },
-        { provide: StoreAvailabilityService, useValue: {} },
-        { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
-      ],
-    }).compile();
+const SIZE_M = 'stub-size-m';
+const SUGAR = 'stub-sugar-yes';
+const [SIZE_GROUP] = SELLABLE_GROUPS as [ProductOptionGroup, ProductOptionGroup];
 
-    service = moduleRef.get(CartService);
-  });
-
-  type Priced = {
-    line: {
-      unitPriceCents: number;
-      unitPrepSeconds: number;
-      variationIds: string[];
-      modifiers: Record<string, number>;
-    };
-    problems: string[];
-  };
-  // access private via bracket notation
-  const priceItem = (...args: unknown[]): Priced =>
-    (service as unknown as { priceItem: (...a: unknown[]) => Priced }).priceItem(...args);
-
-  it('sums base + selected variations + modifier counts', () => {
-    const product = {
-      name: 'Latte',
-      basePriceCents: 450,
-      prepTimeSeconds: 180,
-      variations: [
-        { id: 'v-size-l', type: 'SIZE', priceDeltaCents: 140, prepTimeDeltaSeconds: 30 },
-        { id: 'v-size-m', type: 'SIZE', priceDeltaCents: 70, prepTimeDeltaSeconds: 15 },
-        { id: 'v-milk-oat', type: 'MILK', priceDeltaCents: 60, prepTimeDeltaSeconds: 0 },
-      ],
-      modifiers: [
-        { id: 'm-shot', priceDeltaCents: 80, prepTimeDeltaSeconds: 20, minCount: 0, maxCount: 3 },
-        { id: 'm-syrup', priceDeltaCents: 50, prepTimeDeltaSeconds: 0, minCount: 0, maxCount: 2 },
-      ],
-    };
-    const { line, problems } = priceItem(product, ['v-size-l', 'v-milk-oat'], { 'm-shot': 2, 'm-syrup': 1 });
-
-    expect(problems).toEqual([]);
-    // base 450 + large 140 + oat 60 + 2 shots (160) + 1 syrup (50) = 860
-    expect(line.unitPriceCents).toBe(860);
-    // base 180 + large 30 + 2*20 = 250
-    expect(line.unitPrepSeconds).toBe(250);
-    expect(line.modifiers).toEqual({ 'm-shot': 2, 'm-syrup': 1 });
-  });
-
-  it('clamps modifier counts to [minCount, maxCount]', () => {
-    const product = {
-      name: 'Latte',
-      basePriceCents: 100,
-      prepTimeSeconds: 60,
-      variations: [],
-      modifiers: [{ id: 'm', priceDeltaCents: 10, prepTimeDeltaSeconds: 0, minCount: 0, maxCount: 2 }],
-    };
-    const { line } = priceItem(product, [], { m: 5 });
-
-    expect(line.modifiers['m']).toBe(2);
-    expect(line.unitPriceCents).toBe(120);
-  });
-
-  it('reports an unknown variation instead of silently dropping it', () => {
-    const product = {
-      name: 'Latte',
-      basePriceCents: 100,
-      prepTimeSeconds: 60,
-      variations: [{ id: 'real', type: 'SIZE', priceDeltaCents: 50, prepTimeDeltaSeconds: 0 }],
-      modifiers: [],
-    };
-    const { line, problems } = priceItem(product, ['ghost', 'real'], {});
-
-    expect(problems).toEqual(['Option not available for Latte: ghost']);
-    expect(line.variationIds).toEqual(['real']);
-    expect(line.unitPriceCents).toBe(150);
-  });
-});
-
-// ── Fixtures for the option-rule and checkout suites ────────────────────────
-
-function variation(v: Partial<Variation> & Pick<Variation, 'id' | 'type' | 'name'>): Variation {
-  return {
-    productId: 'p-latte',
-    priceDeltaCents: 0,
-    prepTimeDeltaSeconds: 0,
-    sortOrder: 0,
-    isDefault: false,
-    ingredientId: null,
-    ...v,
-  };
-}
-
-function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifier {
-  return {
-    productId: 'p-latte',
-    slug: m.id,
-    priceDeltaCents: 0,
-    prepTimeDeltaSeconds: 0,
-    minCount: 0,
-    maxCount: 3,
-    sortOrder: 0,
-    externalProvider: null,
-    externalId: null,
-    ingredientId: null,
-    group: null,
-    ...m,
-  };
-}
-
-/** A latte with a default size (M), an undefaulted milk, and two extras. */
+/** A latte at 450, sold in the store the tests order from. */
 function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
   return {
     id: 'p-latte',
@@ -159,17 +53,6 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
     // Sold in the store the tests order from.
     stores: [{ storeId: 'store-1' }],
     category: { visible: true, addOnsOnly: false },
-    variations: [
-      variation({ id: 'v-s', type: 'SIZE', name: 'S', sortOrder: 1 }),
-      variation({ id: 'v-m', type: 'SIZE', name: 'M', priceDeltaCents: 70, sortOrder: 2, isDefault: true }),
-      variation({ id: 'v-l', type: 'SIZE', name: 'L', priceDeltaCents: 140, sortOrder: 3 }),
-      variation({ id: 'v-cow', type: 'MILK', name: 'Коровье', sortOrder: 1 }),
-      variation({ id: 'v-oat', type: 'MILK', name: 'Овсяное', priceDeltaCents: 60, sortOrder: 2 }),
-    ],
-    modifiers: [
-      modifier({ id: 'm-vanilla', name: 'Ваниль', priceDeltaCents: 50, sortOrder: 2 }),
-      modifier({ id: 'm-shot', name: 'Эспрессо', priceDeltaCents: 80, prepTimeDeltaSeconds: 20, sortOrder: 1 }),
-    ],
     ...overrides,
   };
 }
@@ -214,6 +97,7 @@ function emptyCart() {
 async function buildService(
   prisma: Record<string, unknown>,
   rules: ReturnType<typeof availability> = availability(),
+  groups: Record<string, ProductOptionGroup[]> = {},
 ): Promise<CartService> {
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -227,24 +111,22 @@ async function buildService(
         },
       },
       { provide: StoreAvailabilityService, useValue: rules },
-      { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
+      { provide: ProductOptionGroupsService, useValue: optionGroupsStub(groups) },
     ],
   }).compile();
   return moduleRef.get(CartService);
 }
 
 /**
- * The rules a selection has to follow before it goes into a cart. Each of
- * these used to be silently "fixed", or not checked at all, so the price and
- * the kitchen ticket could disagree with what the customer saw.
+ * What a line has to be before it goes into a cart: the product on the menu
+ * of this store, with a variant and an add-on, and the same drink twice on
+ * one line. The catalog rules themselves are in `cart.option-groups.spec.ts`.
  */
-describe('CartService option rules on add-to-cart', () => {
+describe('CartService add-to-cart', () => {
   let prisma: {
     product: { findUnique: jest.Mock };
     store: { findUnique: jest.Mock };
     stopListEntry: { findMany: jest.Mock };
-    variation: { findMany: jest.Mock };
-    modifier: { findMany: jest.Mock };
     cart: { upsert: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
     cartItem: { create: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   };
@@ -258,9 +140,6 @@ describe('CartService option rules on add-to-cart', () => {
       product: { findUnique: jest.fn().mockResolvedValue(latte()) },
       store: { findUnique: jest.fn().mockResolvedValue(openStore) },
       stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
-      // Options the product does not show here: none exist unless a test says so.
-      variation: { findMany: jest.fn().mockResolvedValue([]) },
-      modifier: { findMany: jest.fn().mockResolvedValue([]) },
       cart: {
         upsert: jest.fn().mockResolvedValue({ id: 'cart-1' }),
         findUnique: jest.fn().mockResolvedValue(emptyCart()),
@@ -277,13 +156,12 @@ describe('CartService option rules on add-to-cart', () => {
 
   const created = () => prisma.cartItem.create.mock.calls[0]?.[0]?.data;
 
-  /** A line already in the cart, as the default latte (M, cow's milk) with vanilla. */
+  /** A line already in the cart: the default latte (size M, no sugar). */
   const line = (patch: Record<string, unknown> = {}) => ({
     id: 'ci-1',
     productId: 'p-latte',
     quantity: 1,
-    variationIds: ['v-cow', 'v-m'],
-    modifiersJson: { 'm-vanilla': 1 },
+    optionsJson: [{ optionId: SIZE_M, qty: 1 }],
     notes: null,
     ...patch,
   });
@@ -291,7 +169,7 @@ describe('CartService option rules on add-to-cart', () => {
   it('adds the same drink again to its existing line instead of starting a second one', async () => {
     prisma.cartItem.findMany.mockResolvedValue([line()]);
 
-    await add({ quantity: 2, modifiers: { 'm-vanilla': 1 } });
+    await add({ quantity: 2, options: [{ optionId: SIZE_M, qty: 1 }] });
 
     expect(prisma.cartItem.create).not.toHaveBeenCalled();
     expect(prisma.cartItem.update).toHaveBeenCalledWith({
@@ -301,10 +179,15 @@ describe('CartService option rules on add-to-cart', () => {
   });
 
   it('keeps a differently made drink on a line of its own', async () => {
-    prisma.cartItem.findMany.mockResolvedValue([line(), line({ id: 'ci-2', modifiersJson: {}, notes: 'extra hot' })]);
+    prisma.cartItem.findMany.mockResolvedValue([line(), line({ id: 'ci-2', notes: 'extra hot' })]);
 
-    await add({ variationIds: ['v-l'], modifiers: { 'm-vanilla': 1 } });
-    await add({ modifiers: {} });
+    await add({
+      options: [
+        { optionId: SIZE_M, qty: 1 },
+        { optionId: SUGAR, qty: 1 },
+      ],
+    });
+    await add({ notes: 'с собой' });
 
     expect(prisma.cartItem.update).not.toHaveBeenCalled();
     expect(prisma.cartItem.create).toHaveBeenCalledTimes(2);
@@ -313,61 +196,32 @@ describe('CartService option rules on add-to-cart', () => {
   it('never merges a line past the 99 a single line may hold', async () => {
     prisma.cartItem.findMany.mockResolvedValue([line({ quantity: 98 })]);
 
-    await add({ quantity: 5, modifiers: { 'm-vanilla': 1 } });
+    await add({ quantity: 5 });
 
     expect(prisma.cartItem.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ quantity: 99 }) }),
     );
   });
 
-  it('refuses two sizes for one drink', async () => {
-    await expect(add({ variationIds: ['v-s', 'v-l'] })).rejects.toMatchObject({
-      status: 400,
-      message: 'Choose one size for Латте',
-    });
-    expect(prisma.cartItem.create).not.toHaveBeenCalled();
-  });
+  it('ignores the older variations and extras an app build from before still sends', async () => {
+    await add({ variationIds: ['v-l'], modifiers: { 'm-vanilla': 1 } });
 
-  it('refuses a variation the product does not have', async () => {
-    await expect(add({ variationIds: ['v-l', 'v-ghost'] })).rejects.toMatchObject({
-      status: 400,
-      message: 'Option not available for Латте: v-ghost',
-    });
-    expect(prisma.cartItem.create).not.toHaveBeenCalled();
-  });
-
-  it('refuses an extra the product does not have, but not one asked for zero times', async () => {
-    await expect(add({ modifiers: { 'm-ghost': 1 } })).rejects.toMatchObject({ status: 400 });
-
-    await add({ modifiers: { 'm-ghost': 0, 'm-vanilla': 1 } });
-    expect(created()).toMatchObject({ modifiersJson: { 'm-vanilla': 1 } });
-  });
-
-  it('fills a size left open with the default one, and charges for it', async () => {
-    await add({ variationIds: ['v-oat'] });
-
-    // base 450 + default M 70 + oat 60
-    expect(created()).toMatchObject({ variationIds: ['v-m', 'v-oat'], unitPriceCents: 580 });
-  });
-
-  it('falls back to the first on the menu when no variation of a type is marked default', async () => {
-    await add({ variationIds: ['v-l'] });
-
-    // No milk is marked default, so the first by sort order goes in.
-    expect(created()).toMatchObject({ variationIds: ['v-l', 'v-cow'], unitPriceCents: 590 });
-  });
-
-  it('never prices a line below zero', async () => {
-    prisma.product.findUnique.mockResolvedValue(
-      latte({
-        basePriceCents: 100,
-        variations: [variation({ id: 'v-kids', type: 'SIZE', name: 'Kids', priceDeltaCents: -150 })],
-        modifiers: [],
-      }),
+    expect(created()).toEqual(
+      expect.objectContaining({ optionsJson: [{ optionId: SIZE_M, qty: 1 }], unitPriceCents: 450 }),
     );
+    expect(created()).not.toHaveProperty('variationIds');
+    expect(created()).not.toHaveProperty('modifiersJson');
+  });
 
-    await add({ variationIds: ['v-kids'] });
-    expect(created()).toMatchObject({ unitPriceCents: 0 });
+  // Owner, 2026-11-18: a product customers do not see is not sold either.
+  it('answers 404 for a product without a variant and an add-on, as the catalog does', async () => {
+    service = await buildService(prisma, availability(), { 'p-latte': [SIZE_GROUP] });
+
+    await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
+
+    service = await buildService(prisma, availability(), { 'p-latte': [] });
+    await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
+    expect(prisma.cartItem.create).not.toHaveBeenCalled();
   });
 
   it('answers 404 for a hidden product, as the catalog does', async () => {
@@ -391,11 +245,14 @@ describe('CartService option rules on add-to-cart', () => {
     await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
   });
 
-  it("loads the product's category with it, to know whether it is sold on its own", async () => {
+  it('loads the product as this store sells it: its listing there and its category, nothing else', async () => {
     await add({});
 
     const include = prisma.product.findUnique.mock.calls[0]?.[0]?.include;
-    expect(include.category).toEqual({ select: { visible: true, addOnsOnly: true } });
+    expect(include).toEqual({
+      stores: { where: { storeId: 'store-1' }, select: { storeId: true } },
+      category: { select: { visible: true, addOnsOnly: true } },
+    });
   });
 
   // The brand's burger is not sold in its pizzeria: the menu there never
@@ -408,45 +265,6 @@ describe('CartService option rules on add-to-cart', () => {
       response: { code: 'ITEMS_UNAVAILABLE', items: ['Латте'] },
     });
     expect(prisma.cartItem.create).not.toHaveBeenCalled();
-  });
-
-  it('loads the product as this store sells it: its listing there and the options it has in stock', async () => {
-    await add({});
-
-    const include = prisma.product.findUnique.mock.calls[0]?.[0]?.include;
-    expect(include.stores).toEqual({ where: { storeId: 'store-1' }, select: { storeId: true } });
-    expect(JSON.stringify(include.variations.where)).toContain('"storeStops":{"none":{"storeId":"store-1"');
-    expect(JSON.stringify(include.modifiers.where)).toContain('"storeStops":{"none":{"storeId":"store-1"');
-  });
-
-  // Oat milk ran out in this store only: the store-scoped load leaves the
-  // option out, and asking for it anyway names it instead of a bare 400.
-  it('refuses an option whose ingredient this store has run out of, naming it', async () => {
-    const product = latte();
-    product.variations = product.variations.filter((v) => v.id !== 'v-oat');
-    prisma.product.findUnique.mockResolvedValue(product);
-    prisma.variation.findMany.mockResolvedValue([{ name: 'Овсяное' }]);
-
-    await expect(add({ variationIds: ['v-oat'] })).rejects.toMatchObject({
-      status: 400,
-      response: { code: 'ITEMS_UNAVAILABLE', items: ['Овсяное'] },
-    });
-    expect(prisma.variation.findMany).toHaveBeenCalledWith({
-      where: { productId: 'p-latte', id: { in: ['v-oat'] } },
-      select: { name: true },
-    });
-    expect(prisma.cartItem.create).not.toHaveBeenCalled();
-  });
-
-  it('refuses a stopped extra the same way', async () => {
-    const product = latte();
-    product.modifiers = product.modifiers.filter((m) => m.id !== 'm-vanilla');
-    prisma.product.findUnique.mockResolvedValue(product);
-    prisma.modifier.findMany.mockResolvedValue([{ name: 'Ваниль' }]);
-
-    await expect(add({ modifiers: { 'm-vanilla': 1 } })).rejects.toMatchObject({
-      response: { code: 'ITEMS_UNAVAILABLE', items: ['Ваниль'] },
-    });
   });
 });
 
@@ -478,18 +296,18 @@ describe('CartService.repriceForCheckout', () => {
     service = await buildService(prisma);
   });
 
-  /** A cart row for two L oat lattes with two vanillas each, priced as when it went in. */
+  /** A cart row for two lattes, size M with sugar, priced as when it went in. */
   function row(overrides: Partial<CartItem & { product: StoreProduct }> = {}): CartItem & { product: StoreProduct } {
     return {
       id: 'ci-1',
       cartId: 'cart-1',
       productId: 'p-latte',
       quantity: 2,
-      variationIds: ['v-l', 'v-oat'],
-      modifiersJson: { 'm-vanilla': 2 },
-      optionsJson: [],
-      // 450 + 140 + 60 + 2 × 50
-      unitPriceCents: 750,
+      optionsJson: [
+        { optionId: SIZE_M, qty: 1 },
+        { optionId: SUGAR, qty: 1 },
+      ],
+      unitPriceCents: 450,
       unitPrepSeconds: 180,
       notes: 'поменьше пены',
       createdAt: new Date('2026-09-23T08:00:00Z'),
@@ -517,14 +335,14 @@ describe('CartService.repriceForCheckout', () => {
     expect(line).toMatchObject({
       productName: 'Латте',
       quantity: 2,
-      unitPriceCents: 750,
+      unitPriceCents: 450,
       notes: 'поменьше пены',
-      variations: [
-        { id: 'v-l', type: 'SIZE', name: 'L', priceDeltaCents: 140 },
-        { id: 'v-oat', type: 'MILK', name: 'Овсяное', priceDeltaCents: 60 },
+      options: [
+        { optionId: SIZE_M, qty: 1 },
+        { optionId: SUGAR, qty: 1 },
       ],
-      modifierLines: [{ id: 'm-vanilla', name: 'Ваниль', count: 2, priceCents: 50 }],
     });
+    expect(line?.optionLines.map((o) => o.name)).toEqual(['M', 'Сахар']);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -534,25 +352,32 @@ describe('CartService.repriceForCheckout', () => {
     expect(err.getStatus()).toBe(409);
     expect(err.getResponse()).toMatchObject({
       code: 'CART_CHANGED',
-      items: [{ cartItemId: 'ci-1', reason: 'PRICE_CHANGED', previousUnitPriceCents: 750, unitPriceCents: 800 }],
+      items: [{ cartItemId: 'ci-1', reason: 'PRICE_CHANGED', previousUnitPriceCents: 450, unitPriceCents: 500 }],
     });
     expect(prisma.cartItem.update).toHaveBeenCalledWith({
       where: { id: 'ci-1' },
-      data: expect.objectContaining({ unitPriceCents: 800 }),
+      data: expect.objectContaining({ unitPriceCents: 500 }),
     });
     // Subtotal and ETA are recomputed, so the next GET /cart shows the truth.
     expect(prisma.cart.update).toHaveBeenCalled();
   });
 
-  it('takes out a line whose milk was deleted rather than making it with another', async () => {
-    const withoutOat = latte();
-    withoutOat.variations = withoutOat.variations.filter((v) => v.id !== 'v-oat');
-
-    const err = await conflictOf(reprice(row({ product: withoutOat })));
+  it('takes out a line whose option is gone rather than making it without', async () => {
+    const err = await conflictOf(reprice(row({ optionsJson: [{ optionId: 'oi-gone', qty: 1 }] })));
 
     expect(err.items).toEqual([expect.objectContaining({ reason: 'OPTION_UNAVAILABLE', unitPriceCents: null })]);
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
     expect(prisma.cartItem.update).not.toHaveBeenCalled();
+  });
+
+  // Owner, 2026-11-18: the add-on group was detached — customers no longer see the latte.
+  it('takes out a line whose product lost its variant or add-on, as a product no longer sold', async () => {
+    service = await buildService(prisma, availability(), { 'p-latte': [SIZE_GROUP] });
+
+    const err = await conflictOf(reprice(row()));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null })]);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
   });
 
   it('takes out a line whose product was hidden', async () => {
@@ -575,29 +400,6 @@ describe('CartService.repriceForCheckout', () => {
     expect(err.items).toEqual([expect.objectContaining({ reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null })]);
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
   });
-
-  it('reports an extra cut down to the menu limit even when the price stays the same', async () => {
-    const freeVanilla = latte();
-    freeVanilla.modifiers = [modifier({ id: 'm-vanilla', name: 'Ваниль', maxCount: 1 })];
-
-    // 450 + 140 + 60 + 2 × 0
-    const err = await conflictOf(reprice(row({ product: freeVanilla, unitPriceCents: 650 })));
-
-    expect(err.items).toEqual([expect.objectContaining({ reason: 'OPTIONS_CHANGED', unitPriceCents: 650 })]);
-    expect(prisma.cartItem.update).toHaveBeenCalledWith({
-      where: { id: 'ci-1' },
-      data: expect.objectContaining({ modifiersJson: { 'm-vanilla': 1 } }),
-    });
-  });
-
-  it('fills an option left open with its default without calling it a change', async () => {
-    // Stored before defaults were applied: no milk. Cow's milk is the free
-    // default, so the price stands and only the ticket gains a line.
-    const [line] = await reprice(row({ variationIds: ['v-l'], unitPriceCents: 690 }));
-
-    expect(line?.variations.map((v) => v.name)).toEqual(['L', 'Коровье']);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
 });
 
 /**
@@ -618,8 +420,6 @@ describe('CartService.addItem guards', () => {
     prepTimeSeconds: 60,
     stores: [{ storeId: 'store-1' }],
     category: { visible: true, addOnsOnly: false },
-    variations: [],
-    modifiers: [],
   };
 
   const build = async (prisma: Record<string, unknown>, rules = availability()) => {

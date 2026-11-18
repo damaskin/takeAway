@@ -7,10 +7,13 @@ import {
   isGroupVisible,
   needsOptionChoice,
   normalizeOptionPicks,
+  offersVariantAndAddon,
   optionLinesFor,
+  optionScopesFor,
   optionSelectionKey,
   orderOptionGroups,
   priceWithOptionPicks,
+  scopeFitsKind,
   setOptionQty,
   toggleOptionPick,
   toOptionSelections,
@@ -381,6 +384,47 @@ describe('option groups', () => {
       ]);
       expect(a).toBe(b);
       expect(a).not.toBe(c);
+    });
+  });
+
+  describe('offersVariantAndAddon', () => {
+    it('shows a product with a variant group and an add-on group', () => {
+      expect(offersVariantAndAddon(coffee)).toBe(true);
+      expect(offersVariantAndAddon(shawarma)).toBe(true);
+    });
+
+    it('hides a product with only variants, only add-ons or nothing', () => {
+      expect(offersVariantAndAddon([size, serving])).toBe(false);
+      expect(offersVariantAndAddon([milk, sugar])).toBe(false);
+      expect(offersVariantAndAddon([])).toBe(false);
+    });
+
+    it('does not count a group left without options', () => {
+      expect(offersVariantAndAddon([size, { ...milk, options: [] }])).toBe(false);
+    });
+
+    it('counts a group whose options are all stopped in the store, and one shown on a condition', () => {
+      const stopped = { ...milk, options: milk.options.map((o) => ({ ...o, available: false })) };
+      expect(offersVariantAndAddon([size, stopped])).toBe(true);
+      expect(offersVariantAndAddon([size, serving, ice])).toBe(true);
+    });
+  });
+
+  describe('scopes', () => {
+    it('offers a drink the drink and shared groups, food the food and shared ones, OTHER all', () => {
+      expect(optionScopesFor('HOT_DRINKS')).toEqual(['DRINKS', 'BOTH']);
+      expect(optionScopesFor('COLD_DRINKS')).toEqual(['DRINKS', 'BOTH']);
+      expect(optionScopesFor('FOOD')).toEqual(['FOOD', 'BOTH']);
+      expect(optionScopesFor('BAKERY')).toEqual(['FOOD', 'BOTH']);
+      expect(optionScopesFor('OTHER')).toEqual(['DRINKS', 'FOOD', 'BOTH']);
+    });
+
+    it('reads a missing scope as both', () => {
+      expect(scopeFitsKind('DRINKS', 'FOOD')).toBe(false);
+      expect(scopeFitsKind('FOOD', 'FOOD')).toBe(true);
+      expect(scopeFitsKind(undefined, 'HOT_DRINKS')).toBe(true);
+      expect(scopeFitsKind(null, 'BAKERY')).toBe(true);
+      expect(scopeFitsKind('FOOD', 'OTHER')).toBe(true);
     });
   });
 

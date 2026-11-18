@@ -185,22 +185,6 @@ type ProductControls = ProductFormComponent['form']['controls'];
           <span>{{ 'admin.menu.product.visible' | translate }}</span>
         </label>
 
-        @if (!product() && categoryOptionCount() > 0) {
-          <div class="flex flex-col" style="gap: 4px">
-            <label class="check">
-              <input
-                type="checkbox"
-                formControlName="applyCategoryOptions"
-                data-testid="product-apply-category-options"
-              />
-              <span>{{ 'admin.menu.product.applyCategoryOptions' | translate: { count: categoryOptionCount() } }}</span>
-            </label>
-            <span class="hint" style="padding-left: 22px">{{
-              'admin.menu.product.applyCategoryOptionsHint' | translate
-            }}</span>
-          </div>
-        }
-
         @if (pickStores()) {
           <fieldset class="box">
             <legend>{{ 'admin.menu.product.stores' | translate }}</legend>
@@ -330,8 +314,6 @@ export class ProductFormComponent {
     carbs: new FormControl('', { nonNullable: true, validators: [amountValidator] }),
     visible: new FormControl(true, { nonNullable: true }),
     slug: new FormControl('', { nonNullable: true, validators: [slugValidator] }),
-    /** New product only: copy the category's option set onto it. */
-    applyCategoryOptions: new FormControl(true, { nonNullable: true }),
   });
 
   private readonly pickedCategoryId = toSignal(this.form.controls.categoryId.valueChanges, {
@@ -346,7 +328,6 @@ export class ProductFormComponent {
   readonly placeholder = computed(() => productPlaceholderSrc(this.kind()));
   /** Calories and nutrition are asked of a meal only. */
   readonly hasNutrition = computed(() => showsNutrition(this.kind()));
-  readonly categoryOptionCount = computed(() => this.category()?._count?.options ?? 0);
   /** A new product's time was filled in from its category. */
   readonly prepFromCategory = signal(false);
 
@@ -462,8 +443,6 @@ export class ProductFormComponent {
           basePriceCents,
           ...(slug ? { slug } : {}),
           ...listing,
-          // Only said when the owner left the category's options off.
-          ...(this.categoryOptionCount() > 0 && !v.applyCategoryOptions ? { applyCategoryOptions: false } : {}),
         });
     this.saving.set(true);
     request.subscribe({
@@ -501,7 +480,6 @@ export class ProductFormComponent {
       carbs: formatAmountInput(product?.carbsGrams ?? null, separator),
       visible: product?.visible ?? true,
       slug: product?.slug ?? '',
-      applyCategoryOptions: true,
     });
   }
 

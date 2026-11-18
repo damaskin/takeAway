@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import type { CategoryKind } from '@takeaway/shared-types';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import {
@@ -15,8 +16,9 @@ import { ProductOptionGroupsComponent } from './product-option-groups.component'
 
 /**
  * Create or edit a product, on its own route. An existing product also
- * gets «Варианты и добавки» — its groups from the options catalog — and,
- * while it has none, the link to its older options editor.
+ * gets «Варианты и добавки» — its groups from the options catalog, the only
+ * options there are; without a variant and an add-on it is not shown to
+ * customers, and the block says so.
  *
  * The form used to open above the product table, inside the right-hand
  * column of the menu page. It owns the page now, and `?categoryId=` carries
@@ -65,27 +67,9 @@ import { ProductOptionGroupsComponent } from './product-option-groups.component'
             [brandId]="brand"
             [basePriceCents]="product()?.basePriceCents ?? 0"
             [currency]="currency()"
-            [hasLegacyOptions]="hasLegacyOptions()"
-            [isDrink]="isDrink()"
-            (attachedCount)="catalogGroups.set($event)"
+            [categoryKind]="categoryKind()"
+            (saved)="onOptionsSaved()"
           />
-          @if (catalogGroups() > 0) {
-            <p
-              role="note"
-              style="margin: 16px 0 0; padding: 10px 12px; background: var(--color-foam); border-left: 3px solid var(--color-mint); border-radius: 8px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
-              data-testid="legacy-options-note"
-            >
-              {{ 'admin.optionsCatalog.product.legacyNote' | translate }}
-            </p>
-          } @else {
-            <a
-              [routerLink]="['/menu/products', id, 'options']"
-              class="flex items-center"
-              style="width: fit-content; margin-top: 16px; height: 40px; padding: 0 18px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; text-decoration: none"
-            >
-              {{ 'admin.menu.product.options' | translate }}
-            </a>
-          }
         } @else {
           <!-- A new product: the options are the next step, shown so nobody thinks there are none. -->
           <p
@@ -114,22 +98,16 @@ export class ProductFormPage {
 
   readonly categories = signal<CategoryAdminDto[]>([]);
   readonly product = signal<ProductDetailDto | null>(null);
-  /** Catalog groups the product is saved with: then its older options do not apply. */
-  readonly catalogGroups = signal(0);
-  readonly hasLegacyOptions = computed(
-    () => (this.product()?.variations?.length ?? 0) + (this.product()?.modifiers?.length ?? 0) > 0,
-  );
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
 
   readonly brandId = computed(() => this.activeBrand.activeId());
   readonly currency = computed(() => this.activeBrand.active()?.currency ?? null);
   readonly categoryId = computed(() => this.product()?.categoryId ?? this.category() ?? this.categories()[0]?.id ?? '');
-  /** Hot or cold drinks: saved without a variant group, the options block warns (no size to pick). */
-  readonly isDrink = computed(() => {
+  /** The category's kind: which catalog groups the options block offers (drinks, food, or all). */
+  readonly categoryKind = computed<CategoryKind | null>(() => {
     const p = this.product();
-    const kind = p?.category?.kind ?? this.categories().find((c) => c.id === p?.categoryId)?.kind;
-    return kind === 'HOT_DRINKS' || kind === 'COLD_DRINKS';
+    return p?.category?.kind ?? this.categories().find((c) => c.id === p?.categoryId)?.kind ?? null;
   });
 
   constructor() {
@@ -176,6 +154,11 @@ export class ProductFormPage {
       }
       this.back();
     });
+  }
+
+  /** A variant and an add-on make the product one customers see: what the menu step waits for. */
+  onOptionsSaved(): void {
+    void this.onboarding.afterSave('menu');
   }
 
   /** The first photo is what the menu step waits for. */

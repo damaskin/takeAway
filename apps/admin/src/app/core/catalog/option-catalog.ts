@@ -1,5 +1,6 @@
 import type {
   BrandOptionSetting,
+  CategoryKind,
   CatalogGroup,
   CatalogOption,
   OptionGroupKind,
@@ -7,6 +8,7 @@ import type {
   ProductOptionOverride,
 } from '@takeaway/shared-types';
 import { OPTION_MAX_QTY_LIMIT } from '@takeaway/shared-types';
+import { scopeFitsKind } from '@takeaway/utils';
 
 /**
  * The admin's arithmetic over the options catalog (`docs/option-groups.md`):
@@ -18,6 +20,18 @@ import { OPTION_MAX_QTY_LIMIT } from '@takeaway/shared-types';
 /** Groups by `sortOrder` then name, each group's options the same way. */
 export function sortCatalog(groups: readonly CatalogGroup[]): CatalogGroup[] {
   return [...groups].sort(bySortOrder).map((g) => ({ ...g, options: [...g.options].sort(bySortOrder) }));
+}
+
+/** The «Напитки / Еда / Все» filter of «Добавки» and the platform catalog. */
+export type ScopeFilter = 'ALL' | 'DRINKS' | 'FOOD';
+
+export const SCOPE_FILTERS: readonly ScopeFilter[] = ['ALL', 'DRINKS', 'FOOD'];
+
+/** A group shows under its own filter and under «Все»; one for both shows under every filter. */
+export function matchesScopeFilter(group: Pick<CatalogGroup, 'scope'>, filter: ScopeFilter): boolean {
+  if (filter === 'ALL') return true;
+  const scope = group.scope ?? 'BOTH';
+  return scope === 'BOTH' || scope === filter;
 }
 
 /** The groups of one kind, in the order given. */
@@ -83,13 +97,21 @@ export function offeredOptions(
   return group.options.filter((o) => settingFor(settings, o.id).enabled);
 }
 
-/** Groups a product may still take: not attached yet, with at least one option the brand has. */
+/**
+ * Groups a product may still take: not attached yet, with at least one
+ * option the brand has, and — given the product's category kind — meant for
+ * it (a drink is offered drink and shared groups, food food and shared ones,
+ * OTHER everything; `scopeFitsKind`).
+ */
 export function attachableGroups(
   groups: readonly CatalogGroup[],
   settings: ReadonlyMap<string, BrandOptionSetting>,
   attached: ReadonlySet<string>,
+  kind?: CategoryKind | null,
 ): CatalogGroup[] {
-  return groups.filter((g) => !attached.has(g.id) && offeredOptions(g, settings).length > 0);
+  return groups.filter(
+    (g) => !attached.has(g.id) && offeredOptions(g, settings).length > 0 && (!kind || scopeFitsKind(g.scope, kind)),
+  );
 }
 
 // ─── Bounds the API checks too ──────────────────────────────────────────────
@@ -115,21 +137,29 @@ export function isQtyRangeValid(min: number | null, start: number | null, max: n
 export interface ProductGroupsDraft {
   /** Attached groups, in the product's order. */
   groupIds: string[];
-  /** VARIANT option → what it adds to the product's base price (absent = 0). */
-  deltas: Record<string, number>;
+  /**
+   * The product's own prices: a VARIANT option → what it adds to the base
+   * price (absent = nothing, the base price); an ADDON option → its price on
+   * this product instead of the brand's (absent = the brand's, 0 = free here).
+   */
+  prices: Record<string, number>;
   /** A/B option → the product's own default, kept only where it differs from the catalog's. */
   defaults: Record<string, boolean>;
+  /** Options switched off on this product (a shawarma without «Булка»). */
+  off: Record<string, true>;
 }
 
 export function draftFromConfig(config: ProductOptionGroupsConfig): ProductGroupsDraft {
-  const deltas: Record<string, number> = {};
+  const prices: Record<string, number> = {};
   const defaults: Record<string, boolean> = {};
+  const off: Record<string, true> = {};
   for (const o of config.overrides) {
-    if (o.priceCents !== null && o.priceCents !== 0) deltas[o.optionId] = o.priceCents;
+    if (o.priceCents !== null) prices[o.optionId] = o.priceCents;
     if (o.isDefault !== null) defaults[o.optionId] = o.isDefault;
+    if (o.enabled === false) off[o.optionId] = true;
   }
   const groupIds = [...config.groups].sort((a, b) => a.sortOrder - b.sortOrder).map((g) => g.groupId);
-  return { groupIds, deltas, defaults };
+  return { groupIds, prices, defaults, off };
 }
 
 /**
@@ -181,12 +211,70 @@ export function withDefault(
   return { ...draft, defaults };
 }
 
-/** The draft with a VARIANT option adding `delta` to the base price. */
-export function withDelta(draft: ProductGroupsDraft, optionId: string, delta: number): ProductGroupsDraft {
-  const deltas = { ...draft.deltas };
-  if (delta === 0) delete deltas[optionId];
-  else deltas[optionId] = delta;
-  return { ...draft, deltas };
+/**
+ * The draft with the product's own price of an option: a variant's surcharge
+ * (null or 0 = none, the base price), an add-on's price on this product
+ * (null = the brand's; 0 stays — free here).
+ */
+export function withPrice(
+  draft: ProductGroupsDraft,
+  group: Pick<CatalogGroup, 'kind'>,
+  optionId: string,
+  cents: number | null,
+): ProductGroupsDraft {
+  const prices = { ...draft.prices };
+  if (cents === null || (group.kind === 'VARIANT' && cents === 0)) delete prices[optionId];
+  else prices[optionId] = cents;
+  return { ...draft, prices };
+}
+
+/**
+ * «Применить ко всем»: every option of the group takes this option's price
+ * on the product (its surcharge, or its own add-on price — none: back to the
+ * base price / the brand's for all).
+ */
+export function withPriceForGroup(
+  draft: ProductGroupsDraft,
+  group: CatalogGroup,
+  optionId: string,
+): ProductGroupsDraft {
+  const cents = draft.prices[optionId] ?? null;
+  return group.options.reduce((d, o) => withPrice(d, group, o.id, cents), draft);
+}
+
+/** The draft with an option offered on this product, or switched off on it. */
+export function withOptionOn(draft: ProductGroupsDraft, optionId: string, on: boolean): ProductGroupsDraft {
+  const off = { ...draft.off };
+  if (on) delete off[optionId];
+  else off[optionId] = true;
+  return { ...draft, off };
+}
+
+/** Whether the option is offered on this product (the brand may still not have it). */
+export function isOptionOn(draft: ProductGroupsDraft, optionId: string): boolean {
+  return !draft.off[optionId];
+}
+
+/**
+ * Whether customers can see a product saved with this config (owner,
+ * 2026-11-18): it offers at least one variant and one add-on — an attached
+ * group of each kind with an option the brand has and the product did not
+ * switch off. The same rule the API applies (`offersVariantAndAddon`), read
+ * from what the editor holds.
+ */
+export function configShowsProduct(
+  config: ProductOptionGroupsConfig,
+  groups: readonly CatalogGroup[],
+  settings: ReadonlyMap<string, BrandOptionSetting>,
+): boolean {
+  const off = new Set(config.overrides.filter((o) => o.enabled === false).map((o) => o.optionId));
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const offers = (kind: OptionGroupKind) =>
+    config.groups.some((link) => {
+      const group = byId.get(link.groupId);
+      return group?.kind === kind && offeredOptions(group, settings).some((o) => !off.has(o.id));
+    });
+  return offers('VARIANT') && offers('ADDON');
 }
 
 /** The draft with a group attached at the end of its kind. */
@@ -222,19 +310,23 @@ export function withGroupMoved(
 /**
  * What `PUT /admin/products/:id/option-groups` takes: the attached groups
  * numbered in the order the customer is asked, and an override for each
- * option of those groups that has a value of its own — a variant's price,
- * a default other than the catalog's. Overrides of detached groups go.
+ * option of those groups that has a value of its own — a variant's
+ * surcharge, an add-on's own price, a default other than the catalog's, the
+ * option switched off. Overrides of detached groups go.
  */
 export function configFromDraft(draft: ProductGroupsDraft, groups: readonly CatalogGroup[]): ProductOptionGroupsConfig {
   const attached = attachedGroups(draft, groups);
   const overrides: ProductOptionOverride[] = [];
   for (const group of attached) {
     for (const option of group.options) {
-      const delta = group.kind === 'VARIANT' ? (draft.deltas[option.id] ?? 0) : 0;
+      const price = draft.prices[option.id];
+      const priceCents = price === undefined || (group.kind === 'VARIANT' && price === 0) ? null : price;
       const own = group.type === 'C' ? undefined : draft.defaults[option.id];
       const isDefault = own === undefined || own === option.isDefault ? null : own;
-      const priceCents = delta === 0 ? null : delta;
-      if (priceCents !== null || isDefault !== null) overrides.push({ optionId: option.id, priceCents, isDefault });
+      const enabled = draft.off[option.id] ? false : null;
+      if (priceCents !== null || isDefault !== null || enabled !== null) {
+        overrides.push({ optionId: option.id, priceCents, isDefault, enabled });
+      }
     }
   }
   overrides.sort((a, b) => (a.optionId < b.optionId ? -1 : a.optionId > b.optionId ? 1 : 0));

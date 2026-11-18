@@ -108,3 +108,20 @@ export const COFFEE_GROUPS: ProductOptionGroup[] = [
 export const MEAT_PORTIONS: ProductOptionGroup = catalogGroup('portions', 'ADDON', 'C', 'Мясо (порции)', [
   catalogOption('meat', 'Мясо / котлета', { minQty: 1, maxQty: 2, defaultQty: 1, priceCents: 1500 }),
 ]);
+
+/**
+ * The least a product customers see has (owner, 2026-11-18): a variant group
+ * and an add-on group. The portion is picked by default and the add-on is
+ * optional, so the product goes in the cart at once at its base price.
+ */
+export const READY_GROUPS: ProductOptionGroup[] = [
+  catalogGroup(
+    'portion',
+    'VARIANT',
+    'A',
+    'Порция',
+    [catalogOption('regular', 'Обычная', { isDefault: true }), catalogOption('big', 'Большая', { priceCents: 1000 })],
+    { minSelect: 1 },
+  ),
+  catalogGroup('extras-food', 'ADDON', 'A', 'Добавки', [catalogOption('cheese', 'Сыр', { priceCents: 300 })]),
+];

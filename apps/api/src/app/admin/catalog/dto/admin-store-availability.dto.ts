@@ -1,18 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsDate, IsOptional } from 'class-validator';
-
-export class SetIngredientStopDto {
-  @ApiPropertyOptional({
-    type: String,
-    format: 'date-time',
-    description: 'When the ingredient comes back by itself (e.g. the end of the day); omitted = until switched on',
-  })
-  @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  expiresAt?: Date;
-}
+import { ApiProperty } from '@nestjs/swagger';
 
 /** A store-local stop that still holds; `expiresAt` null = until switched back on. */
 export class AvailabilityStopDto {
@@ -38,23 +24,6 @@ export class AvailabilityProductDto {
 
   @ApiProperty({ type: AvailabilityStopDto, nullable: true, description: 'Null = on sale in this store' })
   stop!: AvailabilityStopDto | null;
-}
-
-export class AvailabilityIngredientDto {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty({ description: 'False = switched off for the whole brand in the ingredient library' })
-  isAvailable!: boolean;
-
-  @ApiProperty({ type: AvailabilityStopDto, nullable: true, description: 'Null = not stopped in this store' })
-  stop!: AvailabilityStopDto | null;
-
-  @ApiProperty({ type: [String], description: 'Products of this store with options made of it' })
-  productNames!: string[];
 }
 
 /** A catalog option some product of the store offers (docs/option-groups.md). */
@@ -98,9 +67,6 @@ export class StoreAvailabilityDto {
 
   @ApiProperty({ type: [AvailabilityProductDto] })
   products!: AvailabilityProductDto[];
-
-  @ApiProperty({ type: [AvailabilityIngredientDto] })
-  ingredients!: AvailabilityIngredientDto[];
 
   @ApiProperty({
     type: [AvailabilityOptionDto],

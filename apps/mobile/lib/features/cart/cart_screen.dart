@@ -41,8 +41,6 @@ class CartScreen extends ConsumerWidget {
             .add(
               productId: item.productId,
               quantity: item.quantity,
-              variationIds: item.variationIds,
-              modifiers: item.modifiers,
               options: item.options.isEmpty
                   ? null
                   : toOptionSelections({for (final line in item.options) line.optionId: line.qty}),

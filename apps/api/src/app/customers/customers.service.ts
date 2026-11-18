@@ -295,8 +295,9 @@ export class CustomersService {
       SELECT f."userId" AS "userId", f."name" AS "name", f."quantity" AS "quantity",
              c."name" AS "categoryName", c."kind"::text AS "categoryKind",
              EXISTS (
-               SELECT 1 FROM "Variation" v
-               WHERE v."productId" = pr.id AND v."type" IN ('TEMPERATURE', 'MILK', 'CUP')
+               SELECT 1 FROM "ProductOptionGroup" pog
+               JOIN "OptionGroup" g ON g.id = pog."groupId"
+               WHERE pog."productId" = pr.id AND g."scope" = 'DRINKS'
              ) AS "drinkOptions"
       FROM (
         SELECT o."userId" AS "userId",

@@ -24,7 +24,7 @@ export interface QueueSettings {
 
 /** One line of an order or a cart. */
 export interface QueueItem {
-  /** B — the product's preparation time, seconds. Variations and modifiers do not change it. */
+  /** B — the product's preparation time, seconds. Its options do not change it. */
   prepSeconds: number;
   /** «Готовится параллельно»: takes no station and runs alongside the rest of the order. */
   parallel?: boolean;

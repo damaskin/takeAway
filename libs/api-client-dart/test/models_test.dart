@@ -203,11 +203,11 @@ void main() {
       expect(copy.allProducts.first.basePriceCents, menu.allProducts.first.basePriceCents);
     });
 
-    test('parses a product with no options', () {
+    test('parses a product detail, the empty older options it still carries ignored', () {
       final product = ProductDetail.fromJson(fixture('product_detail.json')! as Map<String, dynamic>);
-      expect(product.variations, isEmpty);
-      expect(product.modifiers, isEmpty);
       expect(product.brandId, isNotEmpty);
+      expect(product.optionGroups.map((g) => g.kind), [OptionGroupKind.variant, OptionGroupKind.addon]);
+      expect(product.toJson().keys, isNot(anyOf(contains('variations'), contains('modifiers'))));
     });
 
     test('reads a product from an API that still sends caffeine, allergens and diet tags, and drops them', () {
@@ -225,7 +225,7 @@ void main() {
       expect(json.keys, isNot(contains('dietTags')));
     });
 
-    test('reads category kinds and add-on groups, and null from an API that predates them', () {
+    test('reads category kinds, and null from an API that predates them', () {
       final raw = fixture('menu.json')! as Map<String, dynamic>;
       final categories = (raw['categories'] as List).cast<Map<String, dynamic>>();
       final category = categories.first;
@@ -258,14 +258,8 @@ void main() {
       final detail = ProductDetail.fromJson({
         ...fixture('product_detail.json')! as Map<String, dynamic>,
         'categoryKind': 'HOT_DRINKS',
-        'modifiers': [
-          for (final (id, group) in [('m1', 'Сиропы'), ('m2', null), ('m3', ''), ('m4', 3)])
-            {'id': id, 'slug': id, 'name': id, 'priceDeltaCents': 500, 'minCount': 0, 'maxCount': 1, 'group': group},
-          {'id': 'm5', 'slug': 'm5', 'name': 'm5', 'priceDeltaCents': 0},
-        ],
       });
       expect(detail.categoryKind, 'HOT_DRINKS');
-      expect(detail.modifiers.map((m) => m.group), ['Сиропы', null, null, null, null]);
     });
 
     test('parses pickup slots as UTC instants', () {
@@ -645,7 +639,7 @@ void main() {
   });
 
   group('cart', () {
-    test('parses modifier counts leniently', () {
+    test('parses a cart, the empty older options its lines still carry ignored', () {
       final cart = Cart.fromJson({
         'id': 'c1',
         'userId': 'u1',
@@ -660,7 +654,7 @@ void main() {
             'productName': 'Латте',
             'quantity': 2,
             'variationIds': <String>[],
-            'modifiers': {'m1': 1, 'm2': 2.0, 'bad': 'x'},
+            'modifiers': <String, int>{},
             'unitPriceCents': 2500,
             'unitPrepSeconds': 180,
             'notes': null,
@@ -668,7 +662,7 @@ void main() {
         ],
       });
       expect(cart.itemCount, 2);
-      expect(cart.items.single.modifiers, {'m1': 1, 'm2': 2});
+      expect(cart.items.single.options, isEmpty);
       expect(cart.items.single.lineTotalCents, 5000);
     });
 

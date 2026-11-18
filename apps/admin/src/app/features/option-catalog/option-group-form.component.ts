@@ -5,8 +5,10 @@ import { TranslatePipe } from '@ngx-translate/core';
 import {
   type CatalogGroup,
   OPTION_GROUP_KINDS,
+  OPTION_GROUP_SCOPES,
   OPTION_NAME_MAX_LENGTH,
   type OptionGroupKind,
+  type OptionGroupScope,
   type UpsertCatalogGroupRequest,
 } from '@takeaway/shared-types';
 
@@ -20,8 +22,9 @@ const TYPES: readonly CreatableType[] = ['A', 'B', 'C'];
 /**
  * Create or edit one catalog group: what it is (variant or add-on), how it
  * is picked (A list, B yes/no, C counter — each with one line of
- * explanation), its name, an A group's bounds and the condition it is shown
- * on. A variant is never a counter. The form checks what the API would
+ * explanation), its name, whom it is for (drinks, food or both — the product
+ * editor offers it to products of that kind), an A group's bounds and the
+ * condition it is shown on. A variant is never a counter. The form checks what the API would
  * refuse (OPTION_GROUP_INVALID) before sending.
  */
 @Component({
@@ -106,6 +109,15 @@ const TYPES: readonly CreatableType[] = ['A', 'B', 'C'];
         }
       </fieldset>
 
+      <label class="field" style="max-width: 280px">
+        <span class="label">{{ 'admin.optionsCatalog.scope.label' | translate }}</span>
+        <select class="control" formControlName="scope" data-testid="group-scope">
+          @for (sc of scopes; track sc) {
+            <option [value]="sc">{{ 'admin.optionsCatalog.scope.' + sc | translate }}</option>
+          }
+        </select>
+      </label>
+
       <label class="field">
         <span class="label">{{ 'admin.optionsCatalog.fields.name' | translate }}</span>
         <input
@@ -170,6 +182,7 @@ export class OptionGroupFormComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly kinds = OPTION_GROUP_KINDS;
+  readonly scopes = OPTION_GROUP_SCOPES;
   readonly types = TYPES;
   readonly nameMax = OPTION_NAME_MAX_LENGTH;
   readonly form = new FormGroup({
@@ -182,6 +195,7 @@ export class OptionGroupFormComponent implements OnInit {
     minSelect: new FormControl('0', { nonNullable: true }),
     maxSelect: new FormControl('1', { nonNullable: true }),
     showIfOptionId: new FormControl('', { nonNullable: true }),
+    scope: new FormControl<OptionGroupScope>('BOTH', { nonNullable: true }),
   });
 
   private readonly kind = signal<OptionGroupKind>('ADDON');
@@ -206,6 +220,7 @@ export class OptionGroupFormComponent implements OnInit {
         minSelect: String(g.minSelect ?? 0),
         maxSelect: String(g.maxSelect ?? 1),
         showIfOptionId: g.showIfOptionId ?? '',
+        scope: g.scope ?? 'BOTH',
       });
     }
     this.kind.set(this.form.controls.kind.value);
@@ -253,6 +268,7 @@ export class OptionGroupFormComponent implements OnInit {
       minSelect,
       maxSelect,
       showIfOptionId: v.showIfOptionId || null,
+      scope: v.scope,
     });
   }
 }

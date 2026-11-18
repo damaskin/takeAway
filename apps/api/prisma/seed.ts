@@ -1,7 +1,9 @@
 /**
  * takeAway — development seed.
  *
- * Creates a single brand, two demo stores, a minimal menu, and variations/modifiers.
+ * Creates a single brand, two demo stores and a minimal menu with groups from the options
+ * catalog (the catalog itself comes with the migrations) — a product needs a variant and an
+ * add-on before customers see it.
  * Idempotent: uses `upsert` keyed on slugs so it can be re-run safely.
  *
  * Run with:
@@ -9,7 +11,7 @@
  */
 
 import * as bcrypt from 'bcrypt';
-import { PrismaClient, PromoStatus, PromoType, VariationType } from '@prisma/client';
+import { PrismaClient, PromoStatus, PromoType } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -154,34 +156,7 @@ async function main(): Promise<void> {
     },
   });
 
-  // Variation has no natural unique key so we replace the whole set on each run.
-  await prisma.variation.deleteMany({ where: { productId: latte.id } });
-  for (const v of [
-    { type: VariationType.SIZE, name: 'Small', priceDeltaCents: 0, isDefault: true, sortOrder: 1 },
-    { type: VariationType.SIZE, name: 'Medium', priceDeltaCents: 70, sortOrder: 2 },
-    { type: VariationType.SIZE, name: 'Large', priceDeltaCents: 140, sortOrder: 3 },
-    { type: VariationType.TEMPERATURE, name: 'Hot', isDefault: true, sortOrder: 1 },
-    { type: VariationType.TEMPERATURE, name: 'Iced', sortOrder: 2 },
-    { type: VariationType.MILK, name: 'Whole', isDefault: true, sortOrder: 1 },
-    { type: VariationType.MILK, name: 'Oat', priceDeltaCents: 60, sortOrder: 2 },
-    { type: VariationType.MILK, name: 'Almond', priceDeltaCents: 60, sortOrder: 3 },
-  ]) {
-    await prisma.variation.create({ data: { productId: latte.id, ...v } });
-  }
-
-  for (const m of [
-    { slug: 'extra-shot', name: 'Extra shot', priceDeltaCents: 80, prepTimeDeltaSeconds: 20, maxCount: 3 },
-    { slug: 'vanilla-syrup', name: 'Vanilla syrup', priceDeltaCents: 50, maxCount: 2 },
-    { slug: 'caramel-syrup', name: 'Caramel syrup', priceDeltaCents: 50, maxCount: 2 },
-  ]) {
-    await prisma.modifier.upsert({
-      where: { productId_slug: { productId: latte.id, slug: m.slug } },
-      update: { ...m },
-      create: { productId: latte.id, ...m },
-    });
-  }
-
-  await prisma.product.upsert({
+  const toast = await prisma.product.upsert({
     where: { brandId_slug: { brandId: brand.id, slug: 'avocado-toast' } },
     update: {},
     create: {
@@ -196,7 +171,7 @@ async function main(): Promise<void> {
     },
   });
 
-  await prisma.product.upsert({
+  const croissant = await prisma.product.upsert({
     where: { brandId_slug: { brandId: brand.id, slug: 'almond-croissant' } },
     update: {},
     create: {
@@ -210,6 +185,31 @@ async function main(): Promise<void> {
       calories: 420,
     },
   });
+
+  // Options from the platform catalog (seeded by the migrations): a variant and an add-on each,
+  // or customers would not see the product. A latte's sizes add to its base price.
+  const attach: Array<[string, string[]]> = [
+    [latte.id, ['og_coffee_size', 'og_milk', 'og_syrups']],
+    [toast.id, ['og_spicy', 'og_dish_extras']],
+    [croissant.id, ['og_serving', 'og_topping_sauce']],
+  ];
+  for (const [productId, groupIds] of attach) {
+    await prisma.productOptionGroup.createMany({
+      data: groupIds.map((groupId, sortOrder) => ({ productId, groupId, sortOrder })),
+      skipDuplicates: true,
+    });
+  }
+  for (const [optionId, priceCents, isDefault] of [
+    ['oi_coffee_size_s', null, true],
+    ['oi_coffee_size_m', 70, null],
+    ['oi_coffee_size_l', 140, null],
+  ] as const) {
+    await prisma.productOptionOverride.upsert({
+      where: { productId_optionId: { productId: latte.id, optionId } },
+      update: { priceCents, isDefault },
+      create: { productId: latte.id, optionId, priceCents, isDefault },
+    });
+  }
 
   // Each store sells only the products listed for it; the demo stores sell everything.
   const [seedProducts, seedStores] = await Promise.all([

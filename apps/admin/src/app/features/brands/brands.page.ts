@@ -13,7 +13,6 @@ import {
   SetBrandModerationRequest,
 } from '../../core/brands/brands.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
-import { LegacyOptionsComponent } from './legacy-options.component';
 import { PaymentTerminalComponent } from './payment-terminal.component';
 
 /**
@@ -32,14 +31,7 @@ interface PendingDecision {
 @Component({
   selector: 'app-admin-brands',
   standalone: true,
-  imports: [
-    LocalDatePipe,
-    RouterLink,
-    TranslatePipe,
-    ConfirmDialogComponent,
-    LegacyOptionsComponent,
-    PaymentTerminalComponent,
-  ],
+  imports: [LocalDatePipe, RouterLink, TranslatePipe, ConfirmDialogComponent, PaymentTerminalComponent],
   template: `
     <section style="padding: 32px; max-width: 1100px">
       <header class="flex items-center justify-between" style="gap: 16px; margin-bottom: 24px">
@@ -309,7 +301,6 @@ interface PendingDecision {
               }
 
               <app-payment-terminal [brandId]="b.id" />
-              <app-legacy-options [brandId]="b.id" [brandName]="b.name" />
             </article>
           }
         </div>

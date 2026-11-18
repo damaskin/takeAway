@@ -9,11 +9,14 @@ import type { ProductOptionGroupsConfigDto } from './dto/admin-options.dto';
 /**
  * Which catalog groups a product has, in which order, and the product's own
  * values for single options: what a variant adds to the base price (a latte
- * M and a cappuccino M cost different money), and another default (a dish's
- * signature sauce). The product editor reads and saves it as one piece.
+ * M and a cappuccino M cost different money), an add-on's own price instead
+ * of the brand's, another default (a dish's signature sauce), and options it
+ * does not offer at all (a shawarma's «Основа» without «Булка»). The product
+ * editor reads and saves it as one piece.
  *
- * Once a product has a group it is ordered through its groups alone; its
- * older variations and extras stay in the database and are not offered.
+ * Customers see the product only with at least one variant and one add-on
+ * it offers (`offersVariantAndAddon`); saving fewer is allowed — the card
+ * says why it is not shown.
  */
 @Injectable()
 export class AdminProductOptionGroupsService {
@@ -27,9 +30,11 @@ export class AdminProductOptionGroupsService {
   /**
    * Replaces the product's groups and overrides. 400 OPTION_GROUP_INVALID
    * for a group that does not exist, is reserved (D) or is listed twice,
-   * and for a price on an add-on option (add-ons are priced per brand);
-   * 400 OPTION_NOT_ON_PRODUCT for an override of an option outside the
-   * groups sent. An override with nothing in it is dropped.
+   * and for a negative add-on price (a variant may still take something
+   * off the base price); 400 OPTION_NOT_ON_PRODUCT for an override of an
+   * option outside the groups sent. An override with nothing in it — no
+   * price, no default, not switched off (`enabled: true` is the same as
+   * none) — is dropped.
    */
   async replace(
     scope: BrandScope,
@@ -58,7 +63,14 @@ export class AdminProductOptionGroupsService {
     }
 
     const groupOfOption = new Map(groups.flatMap((g) => g.options.map((o) => [o.id, g] as const)));
-    const overrides = dto.overrides.filter((o) => (o.priceCents ?? null) !== null || (o.isDefault ?? null) !== null);
+    const overrides = dto.overrides
+      .map((o) => ({
+        optionId: o.optionId,
+        priceCents: o.priceCents ?? null,
+        isDefault: o.isDefault ?? null,
+        enabled: o.enabled === false ? false : null,
+      }))
+      .filter((o) => o.priceCents !== null || o.isDefault !== null || o.enabled !== null);
     const optionIds = overrides.map((o) => o.optionId);
     if (new Set(optionIds).size !== optionIds.length) {
       throw menuBadRequest('OPTION_GROUP_INVALID', 'An option is overridden twice');
@@ -69,12 +81,12 @@ export class AdminProductOptionGroupsService {
         optionIds: outside,
       });
     }
-    const pricedAddons = overrides.filter(
-      (o) => (o.priceCents ?? null) !== null && groupOfOption.get(o.optionId)?.kind !== 'VARIANT',
+    const negativeAddons = overrides.filter(
+      (o) => o.priceCents !== null && o.priceCents < 0 && groupOfOption.get(o.optionId)?.kind !== 'VARIANT',
     );
-    if (pricedAddons.length > 0) {
-      throw menuBadRequest('OPTION_GROUP_INVALID', 'An add-on is priced for the whole brand, not per product', {
-        optionIds: pricedAddons.map((o) => o.optionId),
+    if (negativeAddons.length > 0) {
+      throw menuBadRequest('OPTION_GROUP_INVALID', 'An add-on price cannot be below 0', {
+        optionIds: negativeAddons.map((o) => o.optionId),
       });
     }
 
@@ -85,12 +97,7 @@ export class AdminProductOptionGroupsService {
         data: dto.groups.map((g) => ({ productId, groupId: g.groupId, sortOrder: g.sortOrder })),
       }),
       this.prisma.productOptionOverride.createMany({
-        data: overrides.map((o) => ({
-          productId,
-          optionId: o.optionId,
-          priceCents: o.priceCents ?? null,
-          isDefault: o.isDefault ?? null,
-        })),
+        data: overrides.map((o) => ({ productId, ...o })),
       }),
     ]);
     return this.read(productId);
@@ -106,7 +113,7 @@ export class AdminProductOptionGroupsService {
       this.prisma.productOptionOverride.findMany({
         where: { productId },
         orderBy: { optionId: 'asc' },
-        select: { optionId: true, priceCents: true, isDefault: true },
+        select: { optionId: true, priceCents: true, isDefault: true, enabled: true },
       }),
     ]);
     return { groups, overrides };

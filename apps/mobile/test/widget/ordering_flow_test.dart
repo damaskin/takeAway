@@ -30,36 +30,40 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('a milk that ran out is gone the next time the latte is opened', (tester) async {
+  testWidgets('a milk that ran out is out of stock the next time the latte is opened', (tester) async {
     final h = await pumpApp(tester);
 
     await tester.tap(find.text('Латте'));
     await settle(tester);
     expect(find.text('Овсяное'), findsOneWidget);
+    expect(find.text('Нет в наличии'), findsNothing);
     await tester.tap(find.byIcon(Icons.close_rounded));
     await settle(tester);
 
-    h.api.soldOut.add('v_oat');
+    h.api.soldOut.add('o_latte_oat');
     await tester.tap(find.text('Латте'));
     await settle(tester);
 
-    expect(find.text('Овсяное'), findsNothing);
+    expect(find.text('Нет в наличии'), findsOneWidget, reason: 'fetched again, the oat milk is greyed out');
     expect(find.text('Размер'), findsOneWidget, reason: 'the latte itself stays on the menu');
+    await tester.ensureVisible(find.text('Овсяное'));
+    await tester.tap(find.text('Овсяное'));
+    await settle(tester, const Duration(milliseconds: 300));
     await tester.tap(find.text('В корзину'));
     await settle(tester);
-    expect(h.api.added.single.variationIds, isNot(contains('v_oat')));
+    expect(h.api.added.single.options, toOptionSelections({'o_latte_s': 1, 'o_latte_cow': 1}));
     await h.unmount(tester);
   });
 
   testWidgets('a milk this store ran out of is not offered here', (tester) async {
     final h = await pumpApp(tester);
-    h.api.soldOutAt['st_1'] = {'v_oat'};
+    h.api.soldOutAt['st_1'] = {'o_latte_oat'};
 
     await tester.tap(find.text('Латте'));
     await settle(tester);
 
     expect(h.api.productStores.last, 'st_1', reason: 'the product is fetched as the browsed store sells it');
-    expect(find.text('Овсяное'), findsNothing);
+    expect(find.text('Нет в наличии'), findsOneWidget);
     expect(find.text('Размер'), findsOneWidget, reason: 'the latte itself stays on the menu');
     await h.unmount(tester);
   });
@@ -86,7 +90,7 @@ void main() {
 
     final sent = h.api.added.single;
     expect(sent.productId, 'p_latte');
-    expect(sent.variationIds, containsAll(<String>['v_m', 'v_oat']));
+    expect(sent.options, toOptionSelections({'o_latte_m': 1, 'o_latte_oat': 1}));
     expect(sent.quantity, 1);
 
     // Back on the menu the cart bar acknowledges the add — no snackbar over

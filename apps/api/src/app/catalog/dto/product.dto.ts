@@ -1,66 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { CategoryKind, VariationType } from '@prisma/client';
+import { CategoryKind } from '@prisma/client';
 
 import { ProductOptionGroupDto } from '../../option-groups/dto/option-groups.dto';
 
 /** Calories and nutrition are a meal's: the storefronts get them for FOOD products only. */
 const NUTRITION_NOTE = 'Null unless the kind of the product category is FOOD (meals only, since 2026-11-06)';
-
-export class VariationDto {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty({ enum: VariationType })
-  type!: VariationType;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty()
-  priceDeltaCents!: number;
-
-  @ApiProperty()
-  prepTimeDeltaSeconds!: number;
-
-  @ApiProperty()
-  sortOrder!: number;
-
-  @ApiProperty()
-  isDefault!: boolean;
-}
-
-export class ModifierDto {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  slug!: string;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty()
-  priceDeltaCents!: number;
-
-  @ApiProperty()
-  prepTimeDeltaSeconds!: number;
-
-  @ApiProperty()
-  minCount!: number;
-
-  @ApiProperty()
-  maxCount!: number;
-
-  @ApiProperty()
-  sortOrder!: number;
-
-  @ApiProperty({
-    nullable: true,
-    type: String,
-    description: 'Group the add-on is shown under («Сиропы», «Убрать»); null = the generic «Добавки» group',
-  })
-  group!: string | null;
-}
 
 export class ProductDto {
   @ApiProperty()
@@ -133,17 +77,27 @@ export class ProductDetailDto extends ProductDto {
   @ApiProperty()
   brandId!: string;
 
-  @ApiProperty({ type: [VariationDto] })
-  variations!: VariationDto[];
+  @ApiProperty({
+    type: [Object],
+    deprecated: true,
+    description:
+      'Always empty: the older per-product variations were deleted on 2026-11-18. Kept for app builds that read it.',
+  })
+  variations!: never[];
 
-  @ApiProperty({ type: [ModifierDto] })
-  modifiers!: ModifierDto[];
+  @ApiProperty({
+    type: [Object],
+    deprecated: true,
+    description:
+      'Always empty: the older per-product extras were deleted on 2026-11-18. Kept for app builds that read it.',
+  })
+  modifiers!: never[];
 
   @ApiProperty({
     type: [ProductOptionGroupDto],
     description:
-      'Groups from the options catalog, variants first, as this store has them. When non-empty the product is ' +
-      'ordered through them alone and `variations` / `modifiers` are empty.',
+      'Groups from the options catalog, variants first, as this store has them — the only options a product has. ' +
+      'Never without a variant and an add-on: such a product is not shown (404).',
   })
   optionGroups!: ProductOptionGroupDto[];
 }

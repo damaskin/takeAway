@@ -27,6 +27,7 @@ const SIZE: CatalogGroup = {
   minSelect: 1,
   maxSelect: 1,
   showIfOptionId: null,
+  scope: 'DRINKS',
   sortOrder: 0,
   productCount: 3,
   options: [M],
@@ -47,6 +48,7 @@ const ICE: CatalogGroup = {
   minSelect: null,
   maxSelect: null,
   showIfOptionId: 'opt-cold',
+  scope: 'BOTH',
   sortOrder: 2,
   productCount: 0,
   options: [
@@ -99,13 +101,27 @@ describe('OptionCatalogPage («Каталог добавок»)', () => {
     const groups = [...el.querySelectorAll('[data-testid="option-group"]')];
     expect(groups.map((g) => g.getAttribute('data-group'))).toEqual(['Размер (кофе)', 'Подача', 'Лёд']);
     expect(text(groups[0]?.querySelector('[data-testid="option-group-meta"]'))).toBe(
-      'A · Выбор из списка · выбрать от 1 до 1 · в товарах: 3',
+      'A · Выбор из списка · Напитки · выбрать от 1 до 1 · в товарах: 3',
     );
     expect(text(groups[0])).toContain('по умолчанию');
     expect(text(groups[2]?.querySelector('[data-testid="option-group-meta"]'))).toBe(
-      'C · Счётчик · только если выбрано: Холодный (Подача) · в товарах: 0',
+      'C · Счётчик · Напитки и еда · только если выбрано: Холодный (Подача) · в товарах: 0',
     );
     expect(text(groups[2])).toContain('0–3, сначала 0');
+  });
+
+  it('filters the catalog by whom a group is for, a shared group under each filter', () => {
+    const { el, fixture } = setup();
+    const shown = () =>
+      [...el.querySelectorAll('[data-testid="option-group"]')].map((g) => g.getAttribute('data-group'));
+
+    (el.querySelector('[data-testid="scope-filter-FOOD"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(shown()).toEqual(['Лёд']);
+
+    (el.querySelector('[data-testid="scope-filter-DRINKS"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(shown()).toEqual(['Размер (кофе)', 'Подача', 'Лёд']);
   });
 
   it('creates a group at the end of the catalog and opens its first option', () => {
