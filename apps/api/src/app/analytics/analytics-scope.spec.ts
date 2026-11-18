@@ -205,6 +205,18 @@ describe('AnalyticsScopeResolver', () => {
       });
     });
 
+    it('gives the people scope its time zone and plan for the inactive-now card', async () => {
+      const r = resolver({ brands: ['own'], stores: '*', storeRows, plans: { own: 'PRO' } });
+      const ctx = await r.peopleContext(user(Role.BRAND_ADMIN), {});
+      expect(ctx).toMatchObject({
+        scope: { brandIds: ['own'], storeIds: null },
+        currency: 'RUP',
+        currencies: ['MDL', 'RUP'],
+        timeZone: 'Europe/Chisinau',
+      });
+      expect(ctx.features.has('churnList')).toBe(true);
+    });
+
     it('leaves a brand in one currency as it is', async () => {
       const single = resolver({ brands: ['own'], stores: '*', storeRows: storeRows.slice(0, 2) });
       await expect(single.money(user(Role.BRAND_ADMIN), {})).resolves.toEqual({

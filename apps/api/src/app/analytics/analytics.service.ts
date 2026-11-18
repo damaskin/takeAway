@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 
-import { inactiveAtOneStoreOnly } from '../customers/customer-segment';
+import { inactiveAtOneStoreOnly, inactiveBefore, segmentCustomersSql } from '../customers/customer-segment';
 import { PrismaService } from '../prisma/prisma.service';
 import { addDays, type DateRange } from './analytics-range';
 import type { AnalyticsScope } from './analytics-scope';
@@ -26,6 +26,7 @@ import {
   ChurnDto,
   CohortStatsDto,
   DashboardSummaryDto,
+  InactiveNowDto,
   OrderStatusStatsDto,
   RevenuePointDto,
   RevenueSeriesDto,
@@ -39,8 +40,8 @@ import { sumMoney } from './money';
 import {
   type ChurnBounds,
   type ChurnSummary,
-  type ChurnWindow,
   type CustomerTotals,
+  type LostCustomer,
   INACTIVE_MIN_ORDERS,
   type ReturnedCustomer,
   type WinBackSummary,
@@ -50,8 +51,21 @@ import {
   lostInPeriod,
   percentChange,
   summarizeChurn,
+  summarizeLost,
   summarizeWinBack,
 } from './retention';
+
+/** How {@link AnalyticsService.inactiveNow} reads and shows the people. */
+export interface InactiveNowOptions {
+  /** The zone of the scope's calendar days: visits, and today. */
+  timeZone: string;
+  /** The currency the money is shown in, and every currency the stores price in. */
+  currency: string | null;
+  currencies: readonly string[];
+  /** Name them (PRO `churnList`). */
+  withList: boolean;
+  take: number;
+}
 
 /** Daily roll-up shape from the `mv_orders_daily` materialized view. */
 interface OrdersDailyRow {
@@ -630,7 +644,7 @@ export class AnalyticsService {
   async churn(
     scope: AnalyticsScope,
     range: DateRange,
-    window: ChurnWindow,
+    window: number,
     withList: boolean,
     take = 20,
     now = new Date(),
@@ -648,28 +662,7 @@ export class AnalyticsService {
       this.estimateChurn(scope, previousRows, previousBounds, range.timeZone),
     ]);
 
-    let customers: ChurnDto['customers'] = null;
-    if (withList) {
-      const listed = current.customers.slice(0, take);
-      const labels = await customerLabels(
-        this.prisma,
-        scope,
-        listed.map((c) => c.userId),
-      );
-      customers = listed.map((c) => ({
-        userId: c.userId,
-        name: labels.get(c.userId)?.name ?? null,
-        phone: labels.get(c.userId)?.phone ?? null,
-        orders: c.orders,
-        totalCents: c.totalCents,
-        avgCheckCents: c.avgCheckCents,
-        lastOrderAt: c.lastOrderAt.toISOString(),
-        daysSinceLastOrder: c.daysSinceLastOrder,
-        visits: c.visits,
-        visitIntervalDays: c.visitIntervalDays,
-        lostRevenueCents: c.lostRevenueCents,
-      }));
-    }
+    const customers = withList ? await this.namedLost(scope, current.customers.slice(0, take)) : null;
 
     return {
       from: range.from,
@@ -685,11 +678,57 @@ export class AnalyticsService {
     };
   }
 
+  /**
+   * The customers inactive right now — 3+ orders, none for `days` days —
+   * read from the segment query «Клиенты → Неактивные» pages through
+   * (`segmentCustomersSql`), so with the same days and `scope` (the people
+   * scope: every store whatever it prices in, or one store) the count and
+   * the people are the very same. Money is R = D ÷ T × A per customer with
+   * D up to today and A their average check in `currency` (a customer with
+   * no orders in it adds 0); `withList` names the biggest estimates first.
+   * Across several stores, `activeElsewhere` counts the regulars inactive at
+   * one store who still order at another, as the customers list does.
+   */
+  async inactiveNow(
+    scope: AnalyticsScope,
+    days: number,
+    options: InactiveNowOptions,
+    now = new Date(),
+  ): Promise<InactiveNowDto> {
+    const spend = options.currencies.length > 1 ? options.currency : null;
+    const acrossStores = scope.storeIds === null || scope.storeIds.length > 1;
+    const [rows, activeElsewhere] = await Promise.all([
+      this.inactiveRows(scope, days, options.timeZone, spend, now),
+      acrossStores
+        ? inactiveAtOneStoreOnly(this.prisma, scope, { lastOrderBefore: inactiveBefore(days, now) })
+        : Promise.resolve(null),
+    ]);
+    const asOf = churnAsOfDay(now, options.timeZone);
+    const fallbackIntervalDays = rows.some((r) => r.visits < 2)
+      ? await this.averageVisitInterval(scope, now, options.timeZone)
+      : null;
+    const summary = summarizeLost(rows, { asOfDay: asOf, fallbackIntervalDays });
+    const customers =
+      options.withList && options.take > 0
+        ? await this.namedLost(scope, summary.customers.slice(0, options.take))
+        : null;
+    return {
+      inactiveDays: days,
+      asOf,
+      timeZone: options.timeZone,
+      count: summary.count,
+      lostRevenueCents: summary.lostRevenueCents,
+      currency: options.currency,
+      customers,
+      activeElsewhere,
+    };
+  }
+
   /** Inactive customers who came back during the range, against the period before. */
   async winBack(
     scope: AnalyticsScope,
     range: DateRange,
-    window: ChurnWindow,
+    window: number,
     take = 20,
     now = new Date(),
   ): Promise<WinBackDto> {
@@ -733,6 +772,81 @@ export class AnalyticsService {
   }
 
   // ── helpers ────────────────────────────────────────────────────────────
+
+  /** Lost or inactive customers with the name and phone they gave, for a list. */
+  private async namedLost(scope: AnalyticsScope, listed: LostCustomer[]): Promise<ChurnDto['customers']> {
+    const labels = await customerLabels(
+      this.prisma,
+      scope,
+      listed.map((c) => c.userId),
+    );
+    return listed.map((c) => ({
+      userId: c.userId,
+      name: labels.get(c.userId)?.name ?? null,
+      phone: labels.get(c.userId)?.phone ?? null,
+      orders: c.orders,
+      totalCents: c.totalCents,
+      avgCheckCents: c.avgCheckCents,
+      lastOrderAt: c.lastOrderAt.toISOString(),
+      daysSinceLastOrder: c.daysSinceLastOrder,
+      visits: c.visits,
+      visitIntervalDays: c.visitIntervalDays,
+      lostRevenueCents: c.lostRevenueCents,
+    }));
+  }
+
+  /**
+   * The inactive segment right now with each one's visits — calendar days
+   * in `timeZone` with a counted order in scope. The people are the rows of
+   * `segmentCustomersSql`, nobody added or dropped: the visits only join
+   * onto them. Spend is in `spend` when given.
+   */
+  private async inactiveRows(
+    scope: AnalyticsScope,
+    days: number,
+    timeZone: string,
+    spend: string | null,
+    now: Date,
+  ): Promise<CustomerTotals[]> {
+    const day = localDate(timeZone);
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        userId: string;
+        lastOrderAt: Date;
+        orders: number;
+        totalCents: bigint;
+        moneyOrders: number;
+        visits: number;
+        firstVisitDay: string;
+        lastVisitDay: string;
+      }>
+    >`
+      WITH inactive AS (${segmentCustomersSql(scope, 'inactive', days, now, spend)})
+      SELECT i."userId" AS "userId",
+             i."lastOrderAt" AS "lastOrderAt",
+             i."orders" AS "orders",
+             i."totalCents" AS "totalCents",
+             i."moneyOrders" AS "moneyOrders",
+             COUNT(DISTINCT ${day})::int AS "visits",
+             to_char(MIN(${day}), 'YYYY-MM-DD') AS "firstVisitDay",
+             to_char(MAX(${day}), 'YYYY-MM-DD') AS "lastVisitDay"
+      FROM inactive i
+      JOIN "Order" o ON o."userId" = i."userId"
+      JOIN "Store" s ON s.id = o."storeId"
+      ${whereAll([...scopeConditions(scope), COUNTED])}
+      GROUP BY i."userId", i."lastOrderAt", i."orders", i."totalCents", i."moneyOrders"
+    `;
+    return rows.map((r) => ({
+      userId: r.userId,
+      lastOrderAt: r.lastOrderAt,
+      orders: num(r.orders),
+      totalCents: num(r.totalCents),
+      moneyOrders: num(r.moneyOrders),
+      visits: num(r.visits),
+      firstVisitDay: r.firstVisitDay,
+      lastVisitDay: r.lastVisitDay,
+    }));
+  }
 
   /**
    * The lost customers of one period with their estimate. A customer with a
@@ -835,7 +949,7 @@ export class AnalyticsService {
     scope: AnalyticsScope,
     start: Date,
     end: Date,
-    window: ChurnWindow,
+    window: number,
     now: Date,
   ): Promise<WinBackSummary> {
     const asOf = new Date(Math.min(end.getTime(), now.getTime()));

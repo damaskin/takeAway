@@ -1,10 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Currency, PromoStatus, PromoType } from '@prisma/client';
-import type { PromoErrorCode } from '@takeaway/shared-types';
+import { MAX_INACTIVE_DAYS, MIN_INACTIVE_DAYS, type PromoErrorCode } from '@takeaway/shared-types';
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
-
-import { INACTIVE_DAYS } from '../../customers/customer-segment';
 
 /** Largest amount an Int column holds. */
 const MAX_INT = 2_147_483_647;
@@ -106,10 +104,16 @@ export class CreatePromoDto {
   @IsIn([PromoStatus.DRAFT, PromoStatus.RUNNING, PromoStatus.SCHEDULED])
   status?: PromoStatus;
   @ApiProperty({ enum: Currency, required: false }) @IsOptional() @IsEnum(Currency) currency?: Currency;
-  @ApiPropertyOptional({ enum: INACTIVE_DAYS, description: 'Only for inactive customers: days without an order' })
+  @ApiPropertyOptional({
+    minimum: MIN_INACTIVE_DAYS,
+    maximum: MAX_INACTIVE_DAYS,
+    description: 'Only for inactive customers: days without an order',
+  })
   @IsOptional()
   @Type(() => Number)
-  @IsIn([...INACTIVE_DAYS])
+  @IsInt()
+  @Min(MIN_INACTIVE_DAYS)
+  @Max(MAX_INACTIVE_DAYS)
   inactiveDays?: number;
   @ApiPropertyOptional({ description: 'With inactiveDays: only orders at this store of the brand count' })
   @IsOptional()
@@ -143,10 +147,12 @@ export class UpdatePromoDto {
   @ApiPropertyOptional() @IsOptional() @IsDateString() startsAt?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() endsAt?: string;
   @ApiPropertyOptional({ enum: Currency }) @IsOptional() @IsEnum(Currency) currency?: Currency;
-  @ApiPropertyOptional({ enum: INACTIVE_DAYS, nullable: true, type: Number })
+  @ApiPropertyOptional({ minimum: MIN_INACTIVE_DAYS, maximum: MAX_INACTIVE_DAYS, nullable: true, type: Number })
   @IsOptional()
   @Type(() => Number)
-  @IsIn([...INACTIVE_DAYS])
+  @IsInt()
+  @Min(MIN_INACTIVE_DAYS)
+  @Max(MAX_INACTIVE_DAYS)
   inactiveDays?: number | null;
   @ApiPropertyOptional({ nullable: true, type: String })
   @IsOptional()
