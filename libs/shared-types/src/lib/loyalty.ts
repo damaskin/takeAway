@@ -54,7 +54,7 @@ export interface Promo {
   status: PromoStatus;
   currency: string;
   redemptionsCount: number;
-  /** Set: only for customers with 3+ orders and none for this many days (3, 7 or 14). */
+  /** Set: only for customers with 3+ orders and none for this many days (1–365, see INACTIVE_DAY_PRESETS). */
   inactiveDays: number | null;
   /** With `inactiveDays`: only orders at this store count. */
   segmentStoreId: string | null;

@@ -19,3 +19,4 @@ export * from './lib/images';
 export * from './lib/option-presets/option-presets';
 export * from './lib/takeaway-promo';
 export * from './lib/payment-terminal';
+export * from './lib/customer-segment';
