@@ -43,9 +43,11 @@ export interface BrandOnboardingProgress {
   /** Recommended, not counted: a product with a photo. */
   photos: boolean;
   approved: boolean;
+  /** The brand's own payment terminal is connected. Missing from older APIs (read as done). */
+  payments?: boolean;
   /** An order that was not cancelled or expired. Missing from older APIs. */
   hasOrders?: boolean;
-  /** Required steps done of `total` (4); payments always count. */
+  /** Required steps done of `total` (4). */
   done: number;
   total: number;
   /** Launched: every step done and the brand approved — or it has sold already. */

@@ -730,6 +730,7 @@ No card is bound, no key pair is needed, card data never touches us.
 | `AGROPROMBANK_QR_LOGIN`                    | login for remote operations, issued by the bank                                                                                                                                                        |
 | `AGROPROMBANK_QR_PASSWORD` / `_FILE`       | its password                                                                                                                                                                                           |
 | `AGROPROMBANK_QR_EXTERNAL_TOKEN` / `_FILE` | optional token the bank may issue instead of login/password; when set, `Login` and `Password` go out empty                                                                                             |
+| `AGROPROMBANK_QR_DEVICE_ID`                | optional device id the bank issues for payment notifications; goes in `DeviceId` (otherwise `-1`). Per brand: «ID устройства» in the brand terminal                                                    |
 | `AGROPROMBANK_QR_TERMINAL_ID`              | the QR terminal, `QRT\d{15}`                                                                                                                                                                           |
 | `AGROPROMBANK_QR_CODE_FORMAT`              | what the QR code says. Default `{terminal}:{rub}:{extid}`; placeholders `{terminal}`, `{rub}` (sum as `12.50`), `{kop}` (sum in kopecks), `{extid}`. See question 1.                                   |
 | `AGROPROMBANK_QR_APP_LINK`                 | optional link that opens the bank app on the same phone with the code; placeholders `{code}` (URL-encoded QR text), `{extid}`, `{terminal}`. Unset: the clients show the QR code only. See question 2. |
@@ -739,8 +740,11 @@ No card is bound, no key pair is needed, card data never touches us.
 The external id of an invoice (`extid`) is our `Payment.invoiceId`, taken from
 the same `agroprombank_invoice_seq` with the same digits-only
 `AGROPROMBANK_INVOICE_PREFIX` as the other flows: unique for the terminal
-forever, never reused. The SOAP header always carries `DeviceId` and `PushId`
-`-1`, as the documentation asks of a non-mobile client.
+forever, never reused. The SOAP header carries `PushId` `-1` and `DeviceId` `-1`, as the
+documentation asks of a non-mobile client — unless the bank issued the
+merchant a device id for payment notifications (the brand terminal's «ID
+устройства», `AGROPROMBANK_QR_DEVICE_ID` for takeAway's own), which then goes
+in `DeviceId`. Maxim's instructions to brands (2026-11-18) ask the bank for it.
 
 `GET /config/features` gains `qrPaymentCurrencies: string[]` — `["RUP"]` while
 the QR payment is on and configured, `[]` otherwise; always present. A client
@@ -996,11 +1000,11 @@ against takeAway's compensations (`docs/settlements.md`).
 The brand signs its own acquiring contract with ЗАО «Агропромбанк» and passes
 takeAway, for each flow it wants:
 
-| Flow                          | From the bank                                                                                       | From the brand / us                                                                                                      |
-| ----------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Bound cards (sections 1–10)   | merchant id, terminal id, the merchant certificate for our key; whether the terminal allows preauth | a key pair generated for the brand (section 2); the CSR goes to the bank, the private key into the admin, never by email |
-| Web-платёж (section 11)       | MerchantLogin, MerchantPass (MerchantId if not the login); ResultURL registered                     | —                                                                                                                        |
-| Мобильный платёж (section 12) | QR terminal (`QRT` + 15 digits), login and password for remote operations or an ExternalToken       | the callback URL registered for that terminal                                                                            |
+| Flow                          | From the bank                                                                                                                                     | From the brand / us                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Bound cards (sections 1–10)   | merchant id, terminal id, the merchant certificate for our key; whether the terminal allows preauth                                               | a key pair generated for the brand (section 2); the CSR goes to the bank, the private key into the admin, never by email |
+| Web-платёж (section 11)       | MerchantLogin, MerchantPass (MerchantId if not the login); ResultURL registered                                                                   | —                                                                                                                        |
+| Мобильный платёж (section 12) | QR terminal (`QRT` + 15 digits), login and password for remote operations or an ExternalToken; the device id for payment notifications, if issued | the callback URL registered for that terminal                                                                            |
 
 The bank's own certificate (to verify its answers) is normally the same for
 every merchant: leave it empty and the env one is used. Only fill it in if the
@@ -1017,7 +1021,8 @@ Admin → «Бренды» → the brand's card → «Платёжный тер�
 - **Web-платёж** — MerchantLogin, MerchantId (optional), MerchantPass, bank
   certificate (optional).
 - **Мобильный платёж (QR)** — QR terminal, login and password, or an
-  ExternalToken.
+  ExternalToken; «ID устройства» (optional, `qrDeviceId`) when the bank
+  issued one for payment notifications.
 - **Общее** — «Терминал поддерживает преавторизацию» (hold at checkout,
   capture on accept; off — bound cards are charged on accept and Web-платёж
   at checkout, like takeAway's own terminal today), the bank's test mode, a
@@ -1038,7 +1043,13 @@ credentials; «нет подключения» — network, signature or missing
 the reason.
 
 The brand's own roles see in «Настройки» only whether their terminal is
-connected (`GET /admin/brands/:brandId/payment-terminal/status`).
+connected (`GET /admin/brands/:brandId/payment-terminal/status`); while it is
+not, the page lists how to get the data from Agroprombank (partner manager →
+login and password for remote access → device id for notifications → contact
+takeAway). The «Запуск бренда» step «Оплата» is done only once the brand's
+own terminal has at least one section (`GET /my-brand/onboarding`
+`payments`, rule `brandLaunch`), and shows the same instructions until then
+(since 2026-11-18; before, the step always read as done).
 
 ### 13.3 Routing and fallback
 

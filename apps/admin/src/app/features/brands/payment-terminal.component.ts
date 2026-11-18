@@ -19,7 +19,8 @@ type PlainField =
   | 'webMerchantLogin'
   | 'webMerchantId'
   | 'qrTerminalId'
-  | 'qrLogin';
+  | 'qrLogin'
+  | 'qrDeviceId';
 /** Write-only fields: empty — keep what is stored. */
 type SecretField =
   | 'cardPrivateKey'
@@ -33,7 +34,7 @@ type SecretField =
 const SECTION_FIELDS: Record<PaymentTerminalFlow, Array<PlainField | SecretField>> = {
   card: ['cardMerchantId', 'cardTerminalId', 'cardPrivateKey', 'cardCertificate', 'cardBankCertificate'],
   web: ['webMerchantLogin', 'webMerchantId', 'webMerchantPass', 'webBankCertificate'],
-  qr: ['qrTerminalId', 'qrLogin', 'qrPassword', 'qrExternalToken'],
+  qr: ['qrTerminalId', 'qrLogin', 'qrPassword', 'qrExternalToken', 'qrDeviceId'],
 };
 
 interface Draft {
@@ -407,6 +408,15 @@ interface Draft {
                     (input)="setSecret('qrExternalToken', $event)"
                   />
                 </label>
+                <label>
+                  <span>{{ 'admin.brands.terminal.fields.qrDeviceId' | translate }}</span>
+                  <input
+                    type="text"
+                    autocomplete="off"
+                    [value]="d.plain.qrDeviceId"
+                    (input)="setPlain('qrDeviceId', $event)"
+                  />
+                </label>
                 @if (v.qr.source === 'BRAND') {
                   <label class="check wide">
                     <input type="checkbox" [checked]="d.clear.qr" (change)="setClear('qr', $event)" />
@@ -681,6 +691,7 @@ function draftOf(v: PaymentTerminalView): Draft {
       webMerchantId: v.web.merchantId ?? '',
       qrTerminalId: v.qr.terminalId ?? '',
       qrLogin: v.qr.login ?? '',
+      qrDeviceId: v.qr.deviceId ?? '',
     },
     secret: {
       cardPrivateKey: '',

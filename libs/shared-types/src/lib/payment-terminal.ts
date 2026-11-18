@@ -56,6 +56,8 @@ export interface PaymentTerminalQrSection {
   login: string | null;
   password: PaymentTerminalSecret;
   externalToken: PaymentTerminalSecret;
+  /** The device id the bank issued for payment notifications; null — `-1` goes out. */
+  deviceId: string | null;
 }
 
 /** What takeAway's default terminal (env) is, for the «по умолчанию» line. */
@@ -107,6 +109,8 @@ export interface UpsertPaymentTerminalRequest {
   qrPassword?: string | null;
   /** Write-only. */
   qrExternalToken?: string | null;
+  /** The device id the bank issues for payment notifications; empty — `-1`. */
+  qrDeviceId?: string | null;
   holdUntilAccepted?: boolean;
   isTest?: boolean;
   note?: string | null;

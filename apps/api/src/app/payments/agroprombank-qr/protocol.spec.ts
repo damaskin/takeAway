@@ -69,6 +69,21 @@ describe('QR payment protocol', () => {
       );
     });
 
+    it('sends the device id the bank issued for notifications, PushId still -1', () => {
+      const xml = buildQrRequest(
+        'GetPaymentStateExtId',
+        DEFAULT_QR_NAMESPACE,
+        { ...credentials, deviceId: ' DEV-42 ' },
+        [['extid', '1100042']],
+      );
+      const envelope = parseXml(xml);
+      const header = envelope.children.find((n) => n.type === 'element' && n.name === 'soap:Header');
+      const creds = header?.type === 'element' ? header.children[0] : undefined;
+      if (creds?.type !== 'element') throw new Error('no credentials');
+      expect(text(creds, 'DeviceId')).toBe('DEV-42');
+      expect(text(creds, 'PushId')).toBe('-1');
+    });
+
     it('sends login and password empty when the bank issued a token instead', () => {
       const xml = buildQrRequest(
         'ClosePaymentExtId',

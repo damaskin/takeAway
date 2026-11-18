@@ -33,6 +33,7 @@ describe('BrandOwnerService', () => {
     store: { count: jest.Mock };
     category: { count: jest.Mock };
     product: { count: jest.Mock };
+    paymentTerminal: { findMany: jest.Mock };
   };
   let notifier: { brandResubmitted: jest.Mock };
   let feedback: { createFromBusiness: jest.Mock };
@@ -52,6 +53,7 @@ describe('BrandOwnerService', () => {
       store: { count: jest.fn().mockResolvedValue(0) },
       category: { count: jest.fn().mockResolvedValue(0) },
       product: { count: jest.fn().mockResolvedValue(0) },
+      paymentTerminal: { findMany: jest.fn().mockResolvedValue([]) },
     };
     notifier = { brandResubmitted: jest.fn().mockResolvedValue(undefined) };
     feedback = { createFromBusiness: jest.fn().mockResolvedValue({ id: 'f1', createdAt: '2026-10-10T12:00:00Z' }) };
@@ -270,6 +272,7 @@ describe('BrandOwnerService', () => {
         menu: false,
         photos: false,
         cardPayments: false,
+        payments: false,
         hasOrders: false,
         complete: false,
       });
@@ -297,10 +300,23 @@ describe('BrandOwnerService', () => {
       brandState(null, BrandModerationStatus.APPROVED);
       prisma.store.count.mockResolvedValue(1);
       products(5, 0);
-      flags.cardPaymentFlow = 'web';
+      prisma.paymentTerminal.findMany.mockResolvedValue([
+        { brandId: 'b1', cardMerchantId: null, webMerchantLogin: null, qrTerminalId: 'QRT000000000000001' },
+      ]);
 
       await expect(service.onboarding(owner)).resolves.toEqual(
-        expect.objectContaining({ brandProfile: false, photos: false, menu: true, cardPayments: true, complete: true }),
+        expect.objectContaining({ brandProfile: false, photos: false, menu: true, payments: true, complete: true }),
+      );
+      expect(prisma.paymentTerminal.findMany).toHaveBeenCalledWith({ where: { brandId: 'b1', retiredAt: null } });
+    });
+
+    it('holds the launch until the brand terminal is connected', async () => {
+      brandState(null, BrandModerationStatus.APPROVED);
+      prisma.store.count.mockResolvedValue(1);
+      products(5, 0);
+
+      await expect(service.onboarding(owner)).resolves.toEqual(
+        expect.objectContaining({ menu: true, payments: false, complete: false }),
       );
     });
 

@@ -41,6 +41,7 @@ const PLAIN_FIELDS = {
   webMerchantId: 'webMerchantId',
   qrTerminalId: 'qrTerminalId',
   qrLogin: 'qrLogin',
+  qrDeviceId: 'qrDeviceId',
 } as const;
 
 /** Certificates (public, stored as PEM) as the request names them. */
@@ -77,6 +78,7 @@ const EMPTY: TerminalData = {
   qrLogin: null,
   qrPasswordCipher: null,
   qrExternalTokenCipher: null,
+  qrDeviceId: null,
   holdUntilAccepted: false,
   isTest: false,
   note: null,
@@ -361,6 +363,7 @@ export class PaymentTerminalsAdminService {
         login: row?.qrLogin ?? null,
         password: this.secretState(row?.qrPasswordCipher ?? null),
         externalToken: this.secretState(row?.qrExternalTokenCipher ?? null),
+        deviceId: row?.qrDeviceId ?? null,
       },
       holdUntilAccepted: row?.holdUntilAccepted ?? false,
       isTest: row?.isTest ?? false,

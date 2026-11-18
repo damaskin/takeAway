@@ -97,6 +97,14 @@ export class UpsertPaymentTerminalDto implements UpsertPaymentTerminalRequest {
   @MaxLength(1024)
   qrExternalToken?: string | null;
 
+  @ApiPropertyOptional({
+    description: 'The device id the bank issues for payment notifications (DeviceId); empty — -1.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  qrDeviceId?: string | null;
+
   @ApiPropertyOptional({ description: 'The terminal allows preauthorization (hold at checkout, capture on accept)' })
   @IsOptional()
   @IsBoolean()

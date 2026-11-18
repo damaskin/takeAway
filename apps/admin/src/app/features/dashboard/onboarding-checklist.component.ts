@@ -15,7 +15,17 @@ interface ChecklistStep {
   /** Translation key of the line under the title. */
   text: string;
   link?: string;
+  /** Translation keys of the numbered how-to under the line, while the step is not done. */
+  howTo?: readonly string[];
 }
+
+/** How a brand gets its mobile payment connected — the «Оплата» step and «Настройки». */
+export const PAYMENT_SETUP_STEPS = [
+  'admin.paymentSetup.steps.manager',
+  'admin.paymentSetup.steps.login',
+  'admin.paymentSetup.steps.device',
+  'admin.paymentSetup.steps.contact',
+] as const;
 
 type ChecklistState = { data: BrandOnboarding } | { failed: true } | null;
 
@@ -117,6 +127,14 @@ const FLASH_MS = 6000;
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                     step.text | translate
                   }}</span>
+                  @if (step.howTo && !step.done) {
+                    <ol class="ob-howto" [attr.data-testid]="'onboarding-howto-' + step.key">
+                      @for (line of step.howTo; track line) {
+                        <li>{{ line | translate }}</li>
+                      }
+                    </ol>
+                    <span class="ob-howto-note">{{ 'admin.paymentSetup.note' | translate }}</span>
+                  }
                 </div>
                 @if (step.link && !step.done) {
                   <a
@@ -203,6 +221,21 @@ const FLASH_MS = 6000;
       .ob-step[data-next='true'] {
         border-color: var(--color-caramel);
         background: var(--color-caramel-light);
+      }
+      .ob-howto {
+        margin: 4px 0 0;
+        padding-left: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--color-text-primary);
+      }
+      .ob-howto-note {
+        font-family: var(--font-sans);
+        font-size: 11px;
+        color: var(--color-text-tertiary);
       }
       .ob-next {
         margin-left: 6px;
@@ -341,7 +374,7 @@ export class OnboardingChecklistComponent {
     return [
       { key: 'store', done: d.store, text: `${base}.store.${d.store ? 'done' : 'todo'}`, link: '/stores' },
       { key: 'menu', done: d.menu, text: `${base}.menu.${d.menu ? 'done' : 'todo'}`, link: '/menu' },
-      { key: 'payments', done: true, text: `${base}.payments.${d.cardPayments ? 'card' : 'onSite'}` },
+      payments(d, base),
       {
         key: 'moderation',
         done: d.moderationStatus === 'APPROVED',
@@ -428,4 +461,16 @@ export class OnboardingChecklistComponent {
     this.dismissed.set(true);
     this.flashStep.set(null);
   }
+}
+
+/**
+ * «Оплата»: done once the brand's own terminal is connected (guests pay the
+ * brand directly since 2026-11-14); until then, how to get the data from
+ * Agroprombank. An API older than the field reads as done, as the step used to.
+ */
+function payments(d: BrandOnboarding, base: string): ChecklistStep {
+  const done = d.payments ?? true;
+  return done
+    ? { key: 'payments', done, text: `${base}.payments.done` }
+    : { key: 'payments', done, text: `${base}.payments.todo`, howTo: PAYMENT_SETUP_STEPS };
 }

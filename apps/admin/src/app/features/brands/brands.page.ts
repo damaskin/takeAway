@@ -566,7 +566,7 @@ export class AdminBrandsPage {
   }
 
   stepDone(o: BrandOnboardingProgress, step: (typeof BRAND_LAUNCH_STEPS)[number]): boolean {
-    return step === 'payments' ? true : o[step];
+    return step === 'payments' ? (o.payments ?? true) : o[step];
   }
 
   defaultPercent(plan: BrandPlan): number {
@@ -711,6 +711,12 @@ function withModeration(b: AdminBrand): AdminBrand {
   if (!o) return b;
   const approved = b.moderationStatus === 'APPROVED';
   if (approved === o.approved) return b;
-  const launch = brandLaunch({ store: o.store, menu: o.menu, approved, hasOrders: o.hasOrders ?? false });
+  const launch = brandLaunch({
+    store: o.store,
+    menu: o.menu,
+    payments: o.payments ?? true,
+    approved,
+    hasOrders: o.hasOrders ?? false,
+  });
   return { ...b, onboarding: { ...o, approved, ...launch } };
 }

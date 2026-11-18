@@ -2010,6 +2010,9 @@ model PaymentTerminal {
   qrLogin                String?
   qrPasswordCipher       String?
   qrExternalTokenCipher  String?
+  /// The device id the bank issues for payment notifications (`DeviceId` in
+  /// the credentials header); none — `-1`, as for a server client.
+  qrDeviceId             String?
   /// The terminal allows preauthorization: a card is held at checkout and
   /// captured on accept. Off — charged on accept (bound cards) or at checkout
   /// (Web-платёж), as with takeAway's own terminal today.

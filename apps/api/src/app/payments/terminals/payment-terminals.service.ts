@@ -153,6 +153,7 @@ export class PaymentTerminalsService {
       login: row.qrLogin,
       password: this.reveal(row, 'qrPasswordCipher'),
       externalToken: this.reveal(row, 'qrExternalTokenCipher'),
+      deviceId: row.qrDeviceId,
     };
   }
 

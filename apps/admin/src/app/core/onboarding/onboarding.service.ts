@@ -17,8 +17,14 @@ export interface BrandOnboarding {
   menu: boolean;
   /** Recommended, not required: a product has a photo. Missing from older APIs. */
   photos?: boolean;
-  /** Card payments are on for the platform; otherwise customers pay on pickup. */
+  /** Card payments are on for the platform. Superseded by `payments`. */
   cardPayments: boolean;
+  /**
+   * The brand's own payment terminal is connected — the «Оплата» step. Until
+   * then the step explains how to get the data from Agroprombank. Missing
+   * from older APIs (the step then reads as done, as it used to).
+   */
+  payments?: boolean;
   /** The brand has an order that was not cancelled or expired. Missing from older APIs. */
   hasOrders?: boolean;
   /** Launched: the steps are done and the brand is approved — or it has sold already. */

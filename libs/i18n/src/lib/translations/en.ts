@@ -1078,6 +1078,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       RU: 'Русский',
       EN: 'English',
     },
+    paymentSetup: {
+      steps: {
+        manager: 'Contact your Agroprombank manager in the partner relations department.',
+        login: 'Ask for the login and password for remote access — they are needed for the QR integration.',
+        device: 'Ask for the device ID for payment notifications.',
+        contact: 'With this data, contact your takeAway representative to set up and switch on online payment.',
+      },
+      note: 'The connection data is issued by Agroprombank and is needed to integrate your business with the takeAway payment system.',
+    },
     onboarding: {
       banner: {
         pending:
@@ -1124,9 +1133,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         payments: {
           title: 'Payments',
-          card: 'Card payments are on: customers pay online when they order.',
-          onSite:
-            'Pay on pickup: customers pay when they collect their order. Online card payments are switched on by the platform.',
+          done: 'Mobile payment is connected: customers’ money goes to your account.',
+          todo: 'To take «Mobile payment» through takeAway:',
         },
         moderation: {
           title: 'Review',
@@ -1416,7 +1424,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       terminal: {
         label: 'Payment terminal',
         connected: 'your venue’s own terminal is connected — guests’ payments land on your account',
-        default: 'not connected yet — payments go through takeAway’s terminal. To connect your own, contact support',
+        default: 'not connected yet. To take «Mobile payment»:',
       },
       title: 'Brand settings',
       subtitle: 'Edit your brand name, logo, currency and theme colors.',
@@ -1500,6 +1508,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
           qrLogin: 'Login',
           qrPassword: 'Password',
           qrExternalToken: 'ExternalToken (instead of login and password)',
+          qrDeviceId: 'Device ID for notifications (if the bank issued one)',
           holdUntilAccepted:
             'The terminal supports preauthorization: the amount is held at checkout and taken when the venue accepts the order',
           isTest: 'Bank test mode',

@@ -9,19 +9,21 @@ const fresh = {
   readyStores: 0,
   listedProducts: 0,
   photographedProducts: 0,
+  paymentTerminal: false,
   hasOrders: false,
 };
 
 describe('progressOf', () => {
-  it('counts payments as done from the start: a fresh brand is 1 of 4', () => {
+  it('starts at 0 of 4: payments wait for the brand terminal', () => {
     expect(progressOf(fresh)).toEqual({
       brandProfile: false,
       store: false,
       menu: false,
       photos: false,
+      payments: false,
       approved: false,
       hasOrders: false,
-      done: 1,
+      done: 0,
       total: 4,
       complete: false,
     });
@@ -29,11 +31,11 @@ describe('progressOf', () => {
 
   it('needs a product customers can see for the menu, not a photo of it', () => {
     const p = progressOf({ ...fresh, readyStores: 1, listedProducts: 3 });
-    expect(p).toMatchObject({ store: true, menu: true, photos: false, done: 3 });
+    expect(p).toMatchObject({ store: true, menu: true, photos: false, done: 2 });
   });
 
   it('takes the logo and photos as recommendations that do not hold the launch back', () => {
-    const facts = { ...fresh, readyStores: 1, listedProducts: 1 };
+    const facts = { ...fresh, readyStores: 1, listedProducts: 1, paymentTerminal: true };
     expect(progressOf({ ...facts, moderationStatus: BrandModerationStatus.PENDING }).complete).toBe(false);
     expect(progressOf({ ...facts, moderationStatus: BrandModerationStatus.APPROVED })).toMatchObject({
       brandProfile: false,
@@ -46,9 +48,13 @@ describe('progressOf', () => {
   it('counts a brand that has sold as launched, whatever the checklist says', () => {
     expect(progressOf({ ...fresh, moderationStatus: BrandModerationStatus.APPROVED, hasOrders: true })).toMatchObject({
       menu: false,
-      done: 2,
+      done: 1,
       complete: true,
     });
+  });
+
+  it('counts payments once the brand terminal is connected', () => {
+    expect(progressOf({ ...fresh, paymentTerminal: true })).toMatchObject({ payments: true, done: 1 });
   });
 });
 
@@ -70,6 +76,13 @@ describe('onboardingProgressOf', () => {
         findMany: jest.fn().mockResolvedValue([{ brandId: 'sold' }]),
       },
       product: { groupBy: productGroups },
+      paymentTerminal: {
+        findMany: jest.fn().mockResolvedValue([
+          // A QR section is enough; a retired row is never read (where: retiredAt null).
+          { brandId: 'live', cardMerchantId: null, webMerchantLogin: null, qrTerminalId: 'QRT000000000000001' },
+          { brandId: 'half', cardMerchantId: null, webMerchantLogin: null, qrTerminalId: null },
+        ]),
+      },
     };
 
     const progress = await onboardingProgressOf(prisma as unknown as PrismaService, [
@@ -80,8 +93,12 @@ describe('onboardingProgressOf', () => {
     ]);
 
     expect(progress.get('live')).toMatchObject({ done: 4, photos: true, complete: true });
-    expect(progress.get('half')).toMatchObject({ store: false, menu: true, photos: false, done: 2 });
-    expect(progress.get('new')).toMatchObject({ done: 1, complete: false });
+    expect(progress.get('half')).toMatchObject({ store: false, menu: true, photos: false, done: 1 });
+    expect(progress.get('new')).toMatchObject({ done: 0, payments: false, complete: false });
+    expect(progress.get('half')).toMatchObject({ payments: false });
+    expect(prisma.paymentTerminal.findMany).toHaveBeenCalledWith({
+      where: { brandId: { in: ['live', 'half', 'new', 'sold'] }, retiredAt: null },
+    });
     // A test sale is a launch, photos or not.
     expect(progress.get('sold')).toMatchObject({ menu: false, hasOrders: true, complete: true });
     expect(prisma.store.groupBy).toHaveBeenCalledWith(

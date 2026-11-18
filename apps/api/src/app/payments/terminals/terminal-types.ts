@@ -51,6 +51,8 @@ export interface QrTerminal extends TerminalSource {
   login: string | null;
   password: string | null;
   externalToken: string | null;
+  /** The device id the bank issued for payment notifications; null — `-1`. */
+  deviceId: string | null;
 }
 
 /** For logs: «terminal of brand X» or «the default terminal». */

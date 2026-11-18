@@ -93,13 +93,28 @@ describe('OnboardingChecklistComponent', () => {
     expect(list.visible()).toBe(false);
   });
 
-  it('describes payments as on-site until card payments are switched on', async () => {
-    const onSite = await render('BRAND_ADMIN');
-    expect(onSite.steps().find((s) => s.key === 'payments')?.text).toBe('admin.onboarding.checklist.payments.onSite');
+  it('asks for the brand terminal until it is connected, with how to get the data from the bank', async () => {
+    const todo = await render('BRAND_ADMIN', { ...fresh, payments: false });
+    const step = todo.steps().find((s) => s.key === 'payments');
+    expect(step).toMatchObject({ done: false, text: 'admin.onboarding.checklist.payments.todo' });
+    expect(step?.howTo).toEqual([
+      'admin.paymentSetup.steps.manager',
+      'admin.paymentSetup.steps.login',
+      'admin.paymentSetup.steps.device',
+      'admin.paymentSetup.steps.contact',
+    ]);
 
     TestBed.resetTestingModule();
-    const card = await render('BRAND_ADMIN', { ...fresh, cardPayments: true });
-    expect(card.steps().find((s) => s.key === 'payments')?.text).toBe('admin.onboarding.checklist.payments.card');
+    const done = await render('BRAND_ADMIN', { ...fresh, payments: true });
+    expect(done.steps().find((s) => s.key === 'payments')).toMatchObject({
+      done: true,
+      text: 'admin.onboarding.checklist.payments.done',
+    });
+
+    TestBed.resetTestingModule();
+    // An API older than the field: the step reads as done, as it used to.
+    const older = await render('BRAND_ADMIN');
+    expect(older.steps().find((s) => s.key === 'payments')?.done).toBe(true);
   });
 
   it('goes away once everything is done and the brand is approved', async () => {

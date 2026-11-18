@@ -1,6 +1,7 @@
 import { BrandModerationStatus, OrderStatus, type Prisma } from '@prisma/client';
 import { BRAND_LAUNCH_STEPS, brandLaunch } from '@takeaway/utils';
 
+import { hasSection } from '../payments/terminals/payment-terminals.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
 /** A store a customer can order from: somewhere to collect the order, and a time it is open. */
@@ -44,10 +45,12 @@ export interface OnboardingProgress {
   menu: boolean;
   /** Recommended: at least one product has a photo. Not counted towards the launch. */
   photos: boolean;
+  /** The brand's own payment terminal is connected (docs/agroprombank-payments.md §13). */
+  payments: boolean;
   approved: boolean;
   /** The brand has an order that was not cancelled or expired. */
   hasOrders: boolean;
-  /** Required steps done of {@link ONBOARDING_STEPS}; payments always count, there is nothing to do for them. */
+  /** Required steps done of {@link ONBOARDING_STEPS}. */
   done: number;
   total: number;
   /** Launched: every required step done and the brand approved — or it has sold already. */
@@ -60,6 +63,8 @@ export interface OnboardingFacts {
   readyStores: number;
   listedProducts: number;
   photographedProducts: number;
+  /** An active terminal of the brand with at least one complete section. */
+  paymentTerminal: boolean;
   hasOrders: boolean;
 }
 
@@ -72,9 +77,10 @@ export function progressOf(f: OnboardingFacts): OnboardingProgress {
     store,
     menu,
     photos: f.photographedProducts > 0,
+    payments: f.paymentTerminal,
     approved,
     hasOrders: f.hasOrders,
-    ...brandLaunch({ store, menu, approved, hasOrders: f.hasOrders }),
+    ...brandLaunch({ store, menu, payments: f.paymentTerminal, approved, hasOrders: f.hasOrders }),
   };
 }
 
@@ -83,11 +89,12 @@ export async function onboardingFactsOf(
   prisma: PrismaService,
   brand: { id: string; logoUrl: string | null; moderationStatus: BrandModerationStatus },
 ): Promise<OnboardingFacts> {
-  const [readyStores, listedProducts, photographedProducts, sold] = await Promise.all([
+  const [readyStores, listedProducts, photographedProducts, sold, terminals] = await Promise.all([
     prisma.store.count({ where: { brandId: brand.id, ...READY_STORE_WHERE } }),
     prisma.product.count({ where: { brandId: brand.id, ...LISTED_PRODUCT_WHERE } }),
     prisma.product.count({ where: { brandId: brand.id, ...PHOTOGRAPHED_PRODUCT_WHERE } }),
     prisma.order.findFirst({ where: { store: { brandId: brand.id }, ...SOLD_ORDER_WHERE }, select: { id: true } }),
+    prisma.paymentTerminal.findMany({ where: { brandId: brand.id, retiredAt: null } }),
   ]);
   return {
     logoUrl: brand.logoUrl,
@@ -95,8 +102,14 @@ export async function onboardingFactsOf(
     readyStores,
     listedProducts,
     photographedProducts,
+    paymentTerminal: terminals.some(terminalConnected),
     hasOrders: sold !== null,
   };
+}
+
+/** A terminal that takes money for at least one flow. */
+function terminalConnected(row: Parameters<typeof hasSection>[0]): boolean {
+  return hasSection(row, 'card') || hasSection(row, 'web') || hasSection(row, 'qr');
 }
 
 /**
@@ -109,7 +122,7 @@ export async function onboardingProgressOf(
 ): Promise<Map<string, OnboardingProgress>> {
   const ids = brands.map((b) => b.id);
   if (ids.length === 0) return new Map();
-  const [stores, listed, photographed, selling] = await Promise.all([
+  const [stores, listed, photographed, selling, terminals] = await Promise.all([
     prisma.store.groupBy({
       by: ['brandId'],
       where: { brandId: { in: ids }, ...READY_STORE_WHERE },
@@ -131,10 +144,12 @@ export async function onboardingProgressOf(
       distinct: ['brandId'],
       select: { brandId: true },
     }),
+    prisma.paymentTerminal.findMany({ where: { brandId: { in: ids }, retiredAt: null } }),
   ]);
   const count = (rows: Array<{ brandId: string; _count: { _all: number } }>, id: string) =>
     rows.find((r) => r.brandId === id)?._count._all ?? 0;
   const sold = new Set(selling.map((s) => s.brandId));
+  const paying = new Set(terminals.filter(terminalConnected).map((t) => t.brandId));
   return new Map(
     brands.map((b) => [
       b.id,
@@ -144,6 +159,7 @@ export async function onboardingProgressOf(
         readyStores: count(stores, b.id),
         listedProducts: count(listed, b.id),
         photographedProducts: count(photographed, b.id),
+        paymentTerminal: paying.has(b.id),
         hasOrders: sold.has(b.id),
       }),
     ]),

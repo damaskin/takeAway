@@ -187,6 +187,7 @@ export class AgroprombankQrClient {
         login: qr.login ?? '',
         password: qr.password ?? '',
         externalToken: qr.externalToken ?? '',
+        deviceId: qr.deviceId ?? '',
       },
     };
   }

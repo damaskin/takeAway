@@ -5,9 +5,10 @@
  * (which recounts after a moderation decision without reloading the list).
  *
  * Required: a store customers can order from (address and opening hours), a
- * menu with at least one product customers can see, payments (nothing to do:
- * card acceptance is the platform's switch, until then guests pay on
- * pickup) and the platform's approval. A logo and product photos are
+ * menu with at least one product customers can see, payments — the brand's
+ * own Agroprombank terminal is connected, since guests pay the brand
+ * directly (2026-11-14; until then the step says how to get one) — and the
+ * platform's approval. A logo and product photos are
  * recommended, not required: a product without a photo still sells — the
  * app shows it as a text row, the website and Telegram with an
  * illustration.
@@ -27,13 +28,15 @@ export interface BrandLaunchFacts {
   store: boolean;
   /** A product customers can see: visible, in a visible category that is not add-ons only. */
   menu: boolean;
+  /** The brand's own payment terminal is connected for at least one flow. */
+  payments: boolean;
   approved: boolean;
   /** An order that was not cancelled or expired. */
   hasOrders: boolean;
 }
 
 export interface BrandLaunch {
-  /** Required steps done, of {@link total}; payments always count. */
+  /** Required steps done, of {@link total}. */
   done: number;
   total: number;
   /** Launched: every required step done, or the brand has sold already. */
@@ -41,7 +44,7 @@ export interface BrandLaunch {
 }
 
 export function brandLaunch(facts: BrandLaunchFacts): BrandLaunch {
-  const done = BRAND_LAUNCH_STEPS.filter((step) => step === 'payments' || facts[step]).length;
+  const done = BRAND_LAUNCH_STEPS.filter((step) => facts[step]).length;
   const total = BRAND_LAUNCH_STEPS.length;
   return { done, total, complete: done === total || facts.hasOrders };
 }
