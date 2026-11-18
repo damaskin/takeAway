@@ -12,7 +12,6 @@ export * from './lib/store-kinds';
 export * from './lib/store-time-zone';
 export * from './lib/phone';
 export * from './lib/product-kind';
-export * from './lib/product-options';
 export * from './lib/option-groups';
 export * from './lib/upsell';
 export * from './lib/category-kind';
