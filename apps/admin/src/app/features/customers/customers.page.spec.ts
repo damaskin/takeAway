@@ -84,7 +84,23 @@ describe('CustomersPage', () => {
     expect(list.mock.lastCall?.[0].inactiveDays).toBeUndefined();
   });
 
-  it('opens on the segment a link brought — the list the win-back tab counts', async () => {
+  it('opens on the segment a link brought — the list the dashboard card and the win-back tab count', async () => {
+    const fixture = await render({ segment: 'inactive', inactiveDays: '30', storeId: 's1' });
+    expect(list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ brandId: 'b1', segment: 'inactive', inactiveDays: 30, storeId: 's1' }),
+    );
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el.querySelector('.cu-segment-hint'))).toContain('не заказывали 30 дн.');
+    expect(text(el.querySelector('app-inactive-days button[aria-pressed="true"]'))).toBe('30 дн.');
+    const broadcast = new URL((el.querySelector('.cu-segment-hint a') as HTMLAnchorElement).href);
+    expect(Object.fromEntries(broadcast.searchParams)).toEqual({
+      audience: 'INACTIVE',
+      inactiveDays: '30',
+      storeId: 's1',
+    });
+  });
+
+  it('still opens an older link that says `days=`', async () => {
     const fixture = await render({ segment: 'inactive', days: '7', storeId: 's1' });
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({ brandId: 'b1', segment: 'inactive', inactiveDays: 7, storeId: 's1' }),
@@ -108,7 +124,36 @@ describe('CustomersPage', () => {
     ) as HTMLButtonElement;
     inactive.click();
     expect(navigate).toHaveBeenCalledWith([], {
-      queryParams: { segment: 'inactive', days: 14, storeId: null, currency: null },
+      queryParams: { segment: 'inactive', inactiveDays: 14, days: null, storeId: null, currency: null },
+      replaceUrl: true,
+    });
+  });
+
+  it('picks the threshold with the shared picker — 7 / 14 / 30 / 90 or a custom number — into the address', async () => {
+    const fixture = await render({ segment: 'inactive', days: '7' });
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const el = fixture.nativeElement as HTMLElement;
+    const buttons = () => [...el.querySelectorAll<HTMLButtonElement>('app-inactive-days button')];
+    expect(buttons().map(text)).toEqual(['7 дн.', '14 дн.', '30 дн.', '90 дн.', 'Свой…']);
+
+    buttons()
+      .find((b) => text(b) === '90 дн.')
+      ?.click();
+    expect(navigate).toHaveBeenLastCalledWith([], {
+      queryParams: { segment: 'inactive', inactiveDays: 90, days: null, storeId: null, currency: null },
+      replaceUrl: true,
+    });
+
+    buttons()
+      .find((b) => text(b) === 'Свой…')
+      ?.click();
+    fixture.detectChanges();
+    const field = el.querySelector('app-inactive-days input') as HTMLInputElement;
+    field.value = '60';
+    field.dispatchEvent(new Event('input'));
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(navigate).toHaveBeenLastCalledWith([], {
+      queryParams: { segment: 'inactive', inactiveDays: 60, days: null, storeId: null, currency: null },
       replaceUrl: true,
     });
   });
@@ -132,7 +177,7 @@ describe('CustomersPage', () => {
 
     stores[0]?.click();
     expect(navigate).toHaveBeenCalledWith([], {
-      queryParams: { segment: 'inactive', days: 14, storeId: 's2', currency: null },
+      queryParams: { segment: 'inactive', inactiveDays: 14, days: null, storeId: 's2', currency: null },
       replaceUrl: true,
     });
   });

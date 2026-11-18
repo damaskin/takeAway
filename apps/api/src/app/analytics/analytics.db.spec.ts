@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
+import { inactiveCustomerIds } from '../customers/customer-segment';
 import { CustomersService } from '../customers/customers.service';
 import type { CustomersQueryDto } from '../customers/dto/customers.dto';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -46,6 +47,20 @@ interface Seed {
 }
 
 const americano = (quantity = 1): Line => ({ name: 'Американо', quantity, unitPriceCents: AMERICANO });
+
+/**
+ * Regulars who went quiet, for the inactive-now check: one at the centre
+ * since 9 August (every 4 days before), one at test2 since July, one who
+ * stopped on 25 September (inactive for 14 days, not for 30) and one who
+ * came only twice (never a regular).
+ */
+const QUIET: Array<{ userId: string; storeId: string; days: string[] }> = [
+  { userId: 'it-quiet-centre', storeId: CENTER, days: ['2026-08-01', '2026-08-05', '2026-08-09'] },
+  { userId: 'it-quiet-test2', storeId: TEST2, days: ['2026-07-01', '2026-07-08', '2026-07-15', '2026-07-22'] },
+  { userId: 'it-quiet-recent', storeId: CENTER, days: ['2026-09-11', '2026-09-18', '2026-09-25'] },
+  { userId: 'it-twice', storeId: CENTER, days: ['2026-08-01', '2026-08-02'] },
+];
+const QUIET_ORDERS = QUIET.flatMap((q) => q.days.map((_, i) => `${q.userId}-${i}`));
 
 /** The tester's week at the centre, a regular's visit, a cancelled order and a sale in lei. */
 const SEEDS: Seed[] = [
@@ -403,13 +418,92 @@ suite('analytics money on Postgres', () => {
     expect(once?.lostRevenueCents).toBe(Math.round((once!.daysSinceLastOrder / 3.5) * AMERICANO));
     expect(churn.lostRevenueCents).toBe(regular!.lostRevenueCents + once!.lostRevenueCents);
   });
+
+  it('shows the same inactive people on the card, in «Возврат клиентов» and in «Клиенты → Неактивные» for N = 30', async () => {
+    await prisma.user.createMany({ data: QUIET.map((q) => ({ id: q.userId, name: q.userId })) });
+    for (const q of QUIET) {
+      for (const [i, day] of q.days.entries()) {
+        const at = new Date(`${day}T07:00:00Z`);
+        await prisma.order.create({
+          data: {
+            id: `${q.userId}-${i}`,
+            userId: q.userId,
+            storeId: q.storeId,
+            status: 'PICKED_UP',
+            pickupAt: at,
+            createdAt: at,
+            subtotalCents: AMERICANO,
+            totalCents: AMERICANO,
+            currency: 'RUP',
+            orderCode: `${q.userId}-${i}`,
+            qrToken: `${q.userId}-${i}`,
+          },
+        });
+      }
+    }
+    const customers = new CustomersService(prisma as unknown as PrismaService);
+    const now = new Date('2026-10-10T00:00:00Z');
+    // The brand prices in roubles and lei: people are counted over every store, money in roubles.
+    const money = { currency: 'RUP', currencies: ['MDL', 'RUP'] };
+    const options = { timeZone: 'Europe/Chisinau', ...money };
+    const brand: AnalyticsScope = { brandIds: [BRAND], storeIds: null };
+    const test2: AnalyticsScope = { brandIds: [BRAND], storeIds: [TEST2] };
+
+    for (const scope of [brand, roubles, test2]) {
+      // The card names its top three; the tab asks for the count alone; the
+      // list pages the segment; a campaign is sent to it.
+      const card = await analytics.inactiveNow(scope, 30, { ...options, withList: true, take: 100 }, now);
+      const tab = await analytics.inactiveNow(scope, 30, { ...options, withList: true, take: 0 }, now);
+      const list = await customers.list(
+        scope,
+        { segment: 'inactive', inactiveDays: 30, pageSize: 100 } as CustomersQueryDto,
+        now,
+        money,
+      );
+      const audience = await inactiveCustomerIds(prisma as unknown as PrismaService, scope, 30, now);
+      const people = list.items.map((c) => c.userId).sort();
+      expect(people.length).toBeGreaterThan(0);
+      expect(card.count).toBe(list.total);
+      expect(tab.count).toBe(list.total);
+      expect((card.customers ?? []).map((c) => c.userId).sort()).toEqual(people);
+      expect([...audience].sort()).toEqual(people);
+      expect(card.activeElsewhere).toEqual(scope === test2 ? null : list.activeElsewhere);
+    }
+
+    const card = await analytics.inactiveNow(brand, 30, { ...options, withList: true, take: 100 }, now);
+    const ids = (card.customers ?? []).map((c) => c.userId);
+    expect(ids).toEqual(expect.arrayContaining(['it-quiet-centre', 'it-quiet-test2']));
+    expect(ids).not.toContain('it-quiet-recent');
+    expect(ids).not.toContain('it-twice');
+    // 62 days since 9 August, a visit every 4 days, 14 roubles: 62 ÷ 4 × 1 400 = 21 700.
+    expect(card.customers?.find((c) => c.userId === 'it-quiet-centre')).toMatchObject({
+      daysSinceLastOrder: 62,
+      visitIntervalDays: 4,
+      lostRevenueCents: 21_700,
+    });
+    expect(card.lostRevenueCents).toBe((card.customers ?? []).reduce((sum, c) => sum + c.lostRevenueCents, 0));
+
+    // Fourteen days take in the one who stopped on 25 September, on the card and in the list alike.
+    const fortnight = await analytics.inactiveNow(brand, 14, { ...options, withList: false, take: 0 }, now);
+    const fortnightList = await customers.list(
+      brand,
+      { segment: 'inactive', inactiveDays: 14, pageSize: 100 } as CustomersQueryDto,
+      now,
+      money,
+    );
+    expect(fortnight.count).toBe(card.count + 1);
+    expect(fortnightList.total).toBe(fortnight.count);
+    expect(fortnightList.items.map((c) => c.userId)).toContain('it-quiet-recent');
+  });
 });
 
 async function cleanUp(prisma: PrismaClient): Promise<void> {
-  const orders = [...SEEDS.map((s) => s.id), 'it-once-0', 'it-once-1', 'it-once-2'];
+  const orders = [...SEEDS.map((s) => s.id), 'it-once-0', 'it-once-1', 'it-once-2', ...QUIET_ORDERS];
   await prisma.orderItem.deleteMany({ where: { orderId: { in: orders } } });
   await prisma.order.deleteMany({ where: { id: { in: orders } } });
   await prisma.store.deleteMany({ where: { id: { in: [CENTER, TEST2, LEI] } } });
-  await prisma.user.deleteMany({ where: { id: { in: ['it-tester', 'it-regular', 'it-once'] } } });
+  await prisma.user.deleteMany({
+    where: { id: { in: ['it-tester', 'it-regular', 'it-once', ...QUIET.map((q) => q.userId)] } },
+  });
   await prisma.brand.deleteMany({ where: { id: BRAND } });
 }

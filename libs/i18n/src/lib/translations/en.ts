@@ -3012,7 +3012,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       audienceInactive: 'Inactive · {{days}}+ d',
       inactive: {
         days: 'No order for',
-        daysOption: '{{days}} days or more',
         store: 'Orders at',
         allStores: 'All stores',
         hint: "Ordered at least 3 times, then nothing for the chosen number of days. The list is worked out when it is sent: whoever has come back by then won't get it.",
@@ -3340,7 +3339,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         churn: {
           title: 'Inactive customers: how many and the revenue missed',
-          description: "How many regulars haven't ordered for 14 days, and what that costs.",
+          description: "How many regulars haven't ordered for a while (14 days or your own), and what that costs.",
         },
         promo: {
           title: 'Promo codes',
@@ -3814,6 +3813,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         loadError: 'Could not load the takeAway promos.',
       },
     },
+    inactiveDays: {
+      label: 'No order for',
+      custom: 'Custom…',
+      input: 'Days without an order, {{min}} to {{max}}',
+      apply: 'OK',
+    },
     dateRange: {
       label: 'Period',
       days: '{{days}} d',
@@ -3830,6 +3835,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       hint: 'Ordered from you at least 3 times, then nothing for {{days}} days, and that ran out inside the period.',
       definition: 'An inactive customer has ordered from you at least {{min}} times but not in the last {{days}} days.',
       lost: 'became inactive',
+      now: 'inactive now',
       lostRevenue: 'revenue missed',
       lostRevenueHint:
         'What a customer would have brought coming at their usual pace: days without a visit ÷ usual interval × average check. A forecast, not lost profit.',
@@ -3842,6 +3848,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       vsPrevious: '{{change}} vs the period before ({{count}} then)',
       daysAgo: '{{days}} d ago',
       toRetention: 'Win-back',
+      toCustomers: 'All inactive →',
       none: 'Nobody became inactive in this period.',
       activeElsewhere:
         'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive.',
@@ -3904,7 +3911,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
         regular: 'Regulars — 3 orders or more.',
         inactive: 'Inactive — ordered from you at least 3 times, but not in the last {{days}} days.',
       },
-      inactiveDays: 'No order for',
       storeFilter: 'Store',
       allStores: 'All stores',
       currencyLabel: 'Currency of the amounts',

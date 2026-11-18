@@ -275,6 +275,110 @@ export const CHURN = {
   ],
 };
 
+/**
+ * Regulars and how long each has stayed away — the brand's inactive segment.
+ * Whoever has been away longer than N days is inactive for N, so the
+ * dashboard card, «Возврат клиентов» and «Клиенты → Неактивные» all answer
+ * from this one list, as the API answers them from one query: 14 days are
+ * the first five (90 MDL missed), 30 days three, 90 days one.
+ */
+export const QUIET_REGULARS = [
+  { userId: 'customer-1', name: 'Анна', daysAway: 120, lostRevenueCents: 4_000 },
+  { userId: 'customer-2', name: 'Борис', daysAway: 60, lostRevenueCents: 2_500 },
+  { userId: 'customer-3', name: 'Вера', daysAway: 35, lostRevenueCents: 1_500 },
+  { userId: 'customer-4', name: 'Глеб', daysAway: 20, lostRevenueCents: 600 },
+  { userId: 'customer-5', name: 'Дина', daysAway: 16, lostRevenueCents: 400 },
+  { userId: 'customer-6', name: 'Егор', daysAway: 10, lostRevenueCents: 300 },
+  { userId: 'customer-7', name: 'Жанна', daysAway: 8, lostRevenueCents: 200 },
+];
+
+/** The threshold a request asks for; 14 when it says nothing. */
+function inactiveDaysOf(params: URLSearchParams, name: string): number {
+  const days = Number(params.get(name));
+  return Number.isInteger(days) && days >= 1 && days <= 365 ? days : 14;
+}
+
+function quietFor(days: number) {
+  return QUIET_REGULARS.filter((c) => c.daysAway > days);
+}
+
+/** `GET /admin/analytics/inactive` — the card, and the count on «Возврат клиентов». */
+function inactiveNow(params: URLSearchParams) {
+  const days = inactiveDaysOf(params, 'inactiveDays');
+  const people = quietFor(days);
+  const take = Number(params.get('take') ?? 3);
+  return {
+    inactiveDays: days,
+    asOf: PERIOD.to,
+    timeZone: PERIOD.timeZone,
+    count: people.length,
+    lostRevenueCents: people.reduce((sum, c) => sum + c.lostRevenueCents, 0),
+    currency: 'MDL',
+    customers:
+      take > 0
+        ? people.slice(0, take).map((c) => ({
+            userId: c.userId,
+            name: c.name,
+            phone: null,
+            orders: 6,
+            totalCents: 27_000,
+            avgCheckCents: 4_500,
+            lastOrderAt: '2026-09-12T08:30:00.000Z',
+            daysSinceLastOrder: c.daysAway,
+            visits: 6,
+            visitIntervalDays: 11,
+            lostRevenueCents: c.lostRevenueCents,
+          }))
+        : null,
+    activeElsewhere: null,
+  };
+}
+
+/** `GET /admin/customers` — everyone, or the inactive segment for the days asked. */
+function customersPage(params: URLSearchParams) {
+  const people =
+    params.get('segment') === 'inactive' ? quietFor(inactiveDaysOf(params, 'inactiveDays')) : QUIET_REGULARS;
+  return {
+    items: people.map((c) => ({
+      userId: c.userId,
+      name: c.name,
+      phone: null,
+      orders: 6,
+      totalCents: 27_000,
+      avgCheckCents: 4_500,
+      firstOrderAt: '2026-05-01T08:30:00.000Z',
+      lastOrderAt: '2026-09-12T08:30:00.000Z',
+      avgDaysBetweenOrders: 11,
+      daysSinceLastOrder: c.daysAway,
+      favouriteStoreId: STORE.id,
+      favouriteStoreName: STORE.name,
+      favouriteProduct: null,
+    })),
+    total: people.length,
+    page: 1,
+    pageSize: 25,
+    currency: 'MDL',
+    currencies: ['MDL'],
+    activeElsewhere: params.get('segment') === 'inactive' && !params.get('storeId') ? { count: 0, stores: [] } : null,
+  };
+}
+
+/** `GET /admin/analytics/winback` — nobody came back; the threshold echoes the request. */
+function winBack(params: URLSearchParams) {
+  const none = { lapsedAtStart: 0, returned: 0, returnRatePercent: null, orders: 0, revenueCents: 0 };
+  return {
+    from: PERIOD.from,
+    to: PERIOD.to,
+    timeZone: PERIOD.timeZone,
+    window: inactiveDaysOf(params, 'window'),
+    current: none,
+    previous: none,
+    returnedDeltaPercent: null,
+    revenueDeltaPercent: null,
+    customers: [],
+  };
+}
+
 export const PLATFORM_OVERVIEW = {
   period: PERIOD,
   currency: 'MDL',
@@ -1225,7 +1329,12 @@ export async function installFakeApi(context: BrowserContext, role: FakeRole = '
     }
 
     if (path === '/admin/analytics/overview') return json(route, BUSINESS_OVERVIEW);
-    if (path === '/admin/analytics/churn') return json(route, CHURN);
+    if (path === '/admin/analytics/churn') {
+      return json(route, { ...CHURN, window: inactiveDaysOf(url.searchParams, 'window') });
+    }
+    if (path === '/admin/analytics/inactive') return json(route, inactiveNow(url.searchParams));
+    if (path === '/admin/analytics/winback') return json(route, winBack(url.searchParams));
+    if (path === '/admin/customers') return json(route, customersPage(url.searchParams));
     if (path === '/admin/platform/overview') return json(route, PLATFORM_OVERVIEW);
     if (path === '/admin/analytics/order-statuses') {
       return json(route, {

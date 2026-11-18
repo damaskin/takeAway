@@ -15,13 +15,13 @@ import {
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Campaign, CampaignAudience, CampaignChannel } from '@prisma/client';
+import { MAX_INACTIVE_DAYS, MIN_INACTIVE_DAYS, isInactiveDays } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
-import { INACTIVE_DAYS } from '../customers/customer-segment';
 import { PrismaService } from '../prisma/prisma.service';
 import { CampaignModerationService } from './campaign-moderation.service';
 import {
@@ -87,7 +87,7 @@ export class CampaignsController {
   @ApiQuery({ name: 'brandId', required: false, type: String })
   @ApiQuery({ name: 'audience', required: false, enum: CAMPAIGN_AUDIENCES })
   @ApiQuery({ name: 'channel', required: false, enum: CAMPAIGN_CHANNELS })
-  @ApiQuery({ name: 'inactiveDays', required: false, enum: [...INACTIVE_DAYS] })
+  @ApiQuery({ name: 'inactiveDays', required: false, type: Number, description: '1–365, INACTIVE only' })
   @ApiQuery({ name: 'storeId', required: false, type: String })
   @ApiOkResponse({ type: CampaignPreviewDto })
   async preview(
@@ -261,8 +261,8 @@ export class CampaignsController {
   }
 
   /**
-   * The INACTIVE segment's days and store, checked: one of the windows, and
-   * a store of this brand. Other audiences carry neither.
+   * The INACTIVE segment's days and store, checked: a whole number of days
+   * in the bounds, and a store of this brand. Other audiences carry neither.
    */
   private async audienceSpec(
     brandId: string,
@@ -271,8 +271,10 @@ export class CampaignsController {
     storeId?: string,
   ): Promise<AudienceSpec> {
     if (audience !== 'INACTIVE') return { audience };
-    if (inactiveDays !== undefined && !(INACTIVE_DAYS as readonly number[]).includes(inactiveDays)) {
-      throw new BadRequestException(`inactiveDays must be one of ${INACTIVE_DAYS.join(', ')}`);
+    if (inactiveDays !== undefined && !isInactiveDays(inactiveDays)) {
+      throw new BadRequestException(
+        `inactiveDays must be a whole number from ${MIN_INACTIVE_DAYS} to ${MAX_INACTIVE_DAYS}`,
+      );
     }
     if (storeId) {
       const store = await this.prisma.store.findFirst({ where: { id: storeId, brandId }, select: { id: true } });

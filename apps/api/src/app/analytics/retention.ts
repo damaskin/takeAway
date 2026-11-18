@@ -1,3 +1,5 @@
+import { INACTIVE_MIN_ORDERS } from '@takeaway/shared-types';
+
 import { daysBetween, localDay } from './analytics-range';
 
 /**
@@ -5,12 +7,15 @@ import { daysBetween, localDay } from './analytics-range';
  * plain numbers.
  *
  * A customer is *inactive* («неактивный», once called lost) when they have
- * ordered at least {@link INACTIVE_MIN_ORDERS} times and `window` days (3,
- * 7 or 14) pass after their last order with no next one. The moment that
- * happens — the last order plus the window — is when the business lost
- * them. "Lost in a period" counts the customers whose moment falls inside
- * it and who have not come back by its end. Somebody who ordered once or
- * twice is not a regular yet, so their silence is not counted as a loss.
+ * ordered at least {@link INACTIVE_MIN_ORDERS} times and `window` days pass
+ * after their last order with no next one — one threshold for the whole
+ * product, any whole number of days from 1 to 365 (`@takeaway/shared-types`,
+ * customer-segment). The moment that happens — the last order plus the
+ * window — is when the business lost them. "Lost in a period" counts the
+ * customers whose moment falls inside it and who have not come back by its
+ * end. Somebody who ordered once or twice is not a regular yet, so their
+ * silence is not counted as a loss. Who is inactive *now* is
+ * `customers/customer-segment.ts`.
  *
  * A customer is *won back* in a period when they were already inactive at
  * its start (their last order before it is more than `window` days older
@@ -23,11 +28,7 @@ import { daysBetween, localDay } from './analytics-range';
  * analytics time zone, with at least one counted order.
  */
 
-export const CHURN_WINDOWS = [3, 7, 14] as const;
-export type ChurnWindow = (typeof CHURN_WINDOWS)[number];
-
-/** Orders a customer needs before going quiet makes them inactive. */
-export const INACTIVE_MIN_ORDERS = 3;
+export { INACTIVE_MIN_ORDERS };
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -40,7 +41,7 @@ const DAY_MS = 24 * 60 * 60_000;
 export function churnBounds(
   start: Date,
   end: Date,
-  window: ChurnWindow,
+  window: number,
   now: Date = new Date(),
 ): { asOf: Date; lastOrderFrom: Date; lastOrderBefore: Date } {
   const asOf = new Date(Math.min(end.getTime(), now.getTime()));
@@ -52,7 +53,7 @@ export function churnBounds(
 }
 
 /** Last order before a period that leaves a customer already lost at its start. */
-export function lapsedBefore(start: Date, window: ChurnWindow): Date {
+export function lapsedBefore(start: Date, window: number): Date {
   return new Date(start.getTime() - window * DAY_MS);
 }
 
@@ -62,6 +63,12 @@ export interface CustomerTotals {
   lastOrderAt: Date;
   orders: number;
   totalCents: number;
+  /**
+   * The orders `totalCents` adds up, when that is not all of them — spend in
+   * one currency while the stores price in several. The average check divides
+   * by it; `orders` by default.
+   */
+  moneyOrders?: number;
   /** Visits: calendar days, in the analytics time zone, with at least one counted order. */
   visits: number;
   /** The first and the last of those days, `YYYY-MM-DD`. */
@@ -104,8 +111,9 @@ export interface ChurnEstimateOptions {
   fallbackIntervalDays: number | null;
 }
 
-export function avgCheck(totals: Pick<CustomerTotals, 'orders' | 'totalCents'>): number {
-  return totals.orders > 0 ? Math.round(totals.totalCents / totals.orders) : 0;
+export function avgCheck(totals: Pick<CustomerTotals, 'orders' | 'totalCents' | 'moneyOrders'>): number {
+  const orders = totals.moneyOrders ?? totals.orders;
+  return orders > 0 ? Math.round(totals.totalCents / orders) : 0;
 }
 
 /** The last calendar day before `asOf` in `timeZone`: the period's last day, or today while it runs. */
@@ -167,10 +175,20 @@ export function summarizeChurn(
   bounds: ChurnBounds,
   options: ChurnEstimateOptions,
 ): ChurnSummary {
-  const lost = lostInPeriod(rows, bounds)
+  return summarizeLost(lostInPeriod(rows, bounds), options);
+}
+
+/**
+ * R = D ÷ T × A for each of `rows` — every one of them counts — biggest
+ * estimate first, and their sum: the customers inactive right now, with D up
+ * to today, or those lost in a period ({@link summarizeChurn}).
+ */
+export function summarizeLost(rows: readonly CustomerTotals[], options: ChurnEstimateOptions): ChurnSummary {
+  const lost = rows
     .map<LostCustomer>((r) => {
       const daysAway = Math.max(0, daysBetween(r.lastVisitDay, options.asOfDay));
       const own = visitInterval(r.visits, r.firstVisitDay, r.lastVisitDay);
+      const checkOrders = r.moneyOrders ?? r.orders;
       return {
         ...r,
         avgCheckCents: avgCheck(r),
@@ -180,7 +198,7 @@ export function summarizeChurn(
           daysAway,
           intervalDays: own ?? options.fallbackIntervalDays,
           // The exact average, not the rounded one: the estimate is rounded once.
-          avgCheckCents: r.orders > 0 ? r.totalCents / r.orders : 0,
+          avgCheckCents: checkOrders > 0 ? r.totalCents / checkOrders : 0,
         }),
       };
     })

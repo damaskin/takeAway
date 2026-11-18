@@ -1,6 +1,5 @@
 import { resolveDateRange } from './analytics-range';
 import {
-  CHURN_WINDOWS,
   type CustomerTotals,
   INACTIVE_MIN_ORDERS,
   churnAsOfDay,
@@ -9,6 +8,7 @@ import {
   lostRevenueEstimate,
   percentChange,
   summarizeChurn,
+  summarizeLost,
   summarizeWinBack,
   visitInterval,
 } from './retention';
@@ -37,6 +37,9 @@ describe('churnBounds', () => {
     expect(lapsedBefore(start, 7).toISOString()).toBe('2026-08-29T00:00:00.000Z');
   });
 });
+
+const start30 = new Date('2026-09-05T00:00:00Z');
+const end30 = new Date('2026-10-05T00:00:00Z');
 
 describe('summarizeChurn', () => {
   const bounds = churnBounds(new Date('2026-09-05T00:00:00Z'), new Date('2026-10-05T00:00:00Z'), 14, day('2026-12-01'));
@@ -132,9 +135,11 @@ describe('summarizeChurn', () => {
     expect(summary).toEqual({ count: 0, lostRevenueCents: 0, customers: [] });
   });
 
-  it('works with the 3-day window too', () => {
+  it('works with any window: the old 3 days, or 30', () => {
+    const month = churnBounds(start30, end30, 30, day('2026-12-01'));
+    expect(month.lastOrderFrom.toISOString()).toBe('2026-08-06T00:00:00.000Z');
+    expect(month.lastOrderBefore.toISOString()).toBe('2026-09-05T00:00:00.000Z');
     const short = churnBounds(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-08T00:00:00Z'), 3, day('2026-12-01'));
-    expect(CHURN_WINDOWS).toEqual([3, 7, 14]);
     const summary = summarizeChurn(
       [customer('a', '2026-10-02', 5, 5_000, 5, '2026-09-20'), customer('b', '2026-10-06', 5, 5_000, 5, '2026-09-20')],
       short,
@@ -165,6 +170,46 @@ describe('summarizeChurn', () => {
 
   it('is zero without anyone lost', () => {
     expect(summarizeChurn([], bounds, options)).toEqual({ count: 0, lostRevenueCents: 0, customers: [] });
+  });
+});
+
+describe('summarizeLost — the inactive right now', () => {
+  const row = (userId: string, overrides: Partial<CustomerTotals> = {}): CustomerTotals => ({
+    userId,
+    lastOrderAt: day('2026-09-10'),
+    orders: 3,
+    totalCents: 3_000,
+    visits: 3,
+    firstVisitDay: '2026-08-27',
+    lastVisitDay: '2026-09-10',
+    ...overrides,
+  });
+
+  it('counts every row with D up to today, without any period filter', () => {
+    // Today 18.11: 69 days since 10.09, a visit every 7 days, 1 000 a check: 9 857.14… → 9 857.
+    const summary = summarizeLost([row('a'), row('b', { lastOrderAt: day('2026-01-01') })], {
+      asOfDay: '2026-11-18',
+      fallbackIntervalDays: null,
+    });
+    expect(summary.count).toBe(2);
+    expect(summary.customers[0]).toMatchObject({ daysSinceLastOrder: 69, lostRevenueCents: 9_857 });
+  });
+
+  it('takes the average check over the orders in the shown currency', () => {
+    // Five orders, three of them in the currency adding up to 3 000: A = 1 000, not 600.
+    const summary = summarizeLost([row('a', { orders: 5, moneyOrders: 3 })], {
+      asOfDay: '2026-11-18',
+      fallbackIntervalDays: null,
+    });
+    expect(summary.customers[0]).toMatchObject({ avgCheckCents: 1_000, lostRevenueCents: 9_857 });
+  });
+
+  it('adds nothing for a customer with no orders in that currency', () => {
+    const summary = summarizeLost([row('a', { totalCents: 0, moneyOrders: 0 })], {
+      asOfDay: '2026-11-18',
+      fallbackIntervalDays: null,
+    });
+    expect(summary).toMatchObject({ count: 1, lostRevenueCents: 0 });
   });
 });
 

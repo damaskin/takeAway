@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { DEFAULT_INACTIVE_DAYS, MAX_INACTIVE_DAYS, MIN_INACTIVE_DAYS } from '@takeaway/shared-types';
 
-import { CUSTOMER_SEGMENTS, type CustomerSegment, INACTIVE_DAYS, type InactiveDays } from '../customer-segment';
+import { CUSTOMER_SEGMENTS, type CustomerSegment } from '../customer-segment';
 import { PRODUCT_KINDS, type ProductKind } from '../product-kind';
 
 export const CUSTOMER_SORTS = [
@@ -51,14 +52,17 @@ export class CustomersQueryDto {
   segment?: CustomerSegment;
 
   @ApiPropertyOptional({
-    enum: INACTIVE_DAYS,
-    default: 14,
-    description: 'Days without an order, for segment=inactive.',
+    minimum: MIN_INACTIVE_DAYS,
+    maximum: MAX_INACTIVE_DAYS,
+    default: DEFAULT_INACTIVE_DAYS,
+    description: 'Days without an order, for segment=inactive: 7, 14, 30, 90 or any whole number in the bounds.',
   })
   @IsOptional()
   @Type(() => Number)
-  @IsIn([...INACTIVE_DAYS])
-  inactiveDays?: InactiveDays;
+  @IsInt()
+  @Min(MIN_INACTIVE_DAYS)
+  @Max(MAX_INACTIVE_DAYS)
+  inactiveDays?: number;
 
   @ApiPropertyOptional({ enum: CUSTOMER_SORTS, default: 'lastOrderAt' })
   @IsOptional()

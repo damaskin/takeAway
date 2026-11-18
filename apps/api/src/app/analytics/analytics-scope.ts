@@ -43,6 +43,13 @@ export interface AnalyticsContext extends MoneyScope {
   features: ReadonlySet<PlanFeature>;
 }
 
+/** People rather than money, now rather than a period: {@link AnalyticsScopeResolver.people} with its time zone and features. */
+export interface PeopleContext extends MoneyScope {
+  /** The zone the scope's calendar days — visits, today — are counted in. */
+  timeZone: string;
+  features: ReadonlySet<PlanFeature>;
+}
+
 export interface AnalyticsRequest extends RangeInput {
   brandId?: string;
   storeId?: string;
@@ -106,6 +113,18 @@ export class AnalyticsScopeResolver {
   async people(user: AuthenticatedUser, request: AnalyticsRequest): Promise<MoneyScope> {
     const { scope, parent, storeId, currency, currencies } = await this.withCurrency(user, request);
     return { scope, parent, storeId, currency, currencies };
+  }
+
+  /**
+   * {@link people} with the scope's time zone and the features of its
+   * brands — for figures about who is inactive right now, which must count
+   * the same people as «Клиенты».
+   */
+  async peopleContext(user: AuthenticatedUser, request: AnalyticsRequest): Promise<PeopleContext> {
+    const { scope, parent, storeId, platform, stores, currency, currencies } = await this.withCurrency(user, request);
+    const features = await this.plans.features(user.role, scope.brandIds);
+    const timeZone = platform ? 'UTC' : zoneOf(parent, stores);
+    return { scope, parent, storeId, currency, currencies, timeZone, features };
   }
 
   /**

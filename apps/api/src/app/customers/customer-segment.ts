@@ -1,30 +1,31 @@
 import { Prisma } from '@prisma/client';
+import { DEFAULT_INACTIVE_DAYS, INACTIVE_MIN_ORDERS } from '@takeaway/shared-types';
 
 import type { AnalyticsScope } from '../analytics/analytics-scope';
 import { COUNTED, REVENUE, num, scopeConditions, utc, whereAll } from '../analytics/analytics-sql';
-import { CHURN_WINDOWS, type ChurnWindow, INACTIVE_MIN_ORDERS } from '../analytics/retention';
 import type { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Customer segments — one definition behind the «Клиенты» filter, the
- * campaign audience and the promo restriction, so the three always mean the
- * same people:
+ * dashboard card «Неактивные клиенты», «Возврат клиентов → Сейчас
+ * неактивны», the campaign audience and the promo restriction, so they
+ * always mean the same people:
  *
  * - regular («Постоянные») — at least {@link INACTIVE_MIN_ORDERS} counted
  *   orders;
  * - inactive («Неактивные») — a regular whose last counted order is more
- *   than `days` days old (3, 7 or 14, the windows of the analytics).
+ *   than `days` days old: one threshold for the whole product, any whole
+ *   number of days from 1 to 365 (`@takeaway/shared-types`, 14 by default).
  *
  * Orders count as in the analytics: anything but cancelled or expired, in
  * the scope (the brand, or one of its stores). Deleted accounts are left
- * out — there is nobody to bring back.
+ * out — there is nobody to bring back. Every reader goes through
+ * {@link segmentCustomersSql}, so no two of them can drift apart.
  */
 export const CUSTOMER_SEGMENTS = ['all', 'regular', 'inactive'] as const;
 export type CustomerSegment = (typeof CUSTOMER_SEGMENTS)[number];
 
-export const INACTIVE_DAYS = CHURN_WINDOWS;
-export type InactiveDays = ChurnWindow;
-export const DEFAULT_INACTIVE_DAYS: InactiveDays = 14;
+export { DEFAULT_INACTIVE_DAYS };
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -82,6 +83,28 @@ export function segmentSql(segment: CustomerSegment, days: number, now = new Dat
   return null;
 }
 
+/**
+ * The people of a segment in a scope right now, one row each with the
+ * columns of {@link perCustomerSql} (spend in `currency` when given). The
+ * one query behind every list and count of a segment: «Клиенты» filters and
+ * pages it, the dashboard card and «Возврат клиентов» count the inactive
+ * from it, an INACTIVE campaign is sent to it — with the same days and scope
+ * they are the same people.
+ */
+export function segmentCustomersSql(
+  scope: AnalyticsScope,
+  segment: CustomerSegment,
+  days: number,
+  now = new Date(),
+  currency?: string | null,
+): Prisma.Sql {
+  const condition = segmentSql(segment, days, now);
+  return Prisma.sql`
+    SELECT p.* FROM (${perCustomerSql(scope, undefined, currency)}) p
+    ${condition ? Prisma.sql`WHERE ${condition}` : Prisma.empty}
+  `;
+}
+
 /** Everyone in the inactive segment of a scope — the people an INACTIVE campaign goes to. */
 export async function inactiveCustomerIds(
   prisma: PrismaService,
@@ -90,9 +113,7 @@ export async function inactiveCustomerIds(
   now = new Date(),
 ): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ userId: string }>>`
-    WITH per_user AS (${perCustomerSql(scope)})
-    SELECT p."userId" AS "userId" FROM per_user p
-    WHERE ${inactiveSql(days, now)}
+    SELECT s."userId" AS "userId" FROM (${segmentCustomersSql(scope, 'inactive', days, now)}) s
   `;
   return rows.map((r) => r.userId);
 }
