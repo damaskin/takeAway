@@ -9,7 +9,6 @@ import { map } from 'rxjs';
 import {
   AnalyticsApi,
   type AnalyticsPeriod,
-  type ChurnWindow,
   type CohortStats,
   type RevenueSeries,
   type StaffPerformance,
@@ -18,7 +17,7 @@ import {
 } from '../../core/analytics/analytics.service';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
-import { DEFAULT_INACTIVE_DAYS, parseInactiveDays } from '../../core/customers/inactive-segment';
+import { DEFAULT_INACTIVE_DAYS, inactiveDaysFromQuery } from '../../core/customers/inactive-segment';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 import {
@@ -65,7 +64,9 @@ interface ChartBar {
  * One period picker and one store filter drive every tab; the tab is in the
  * address (`?tab=stores`) so a link opens the right one. A link may also
  * bring its period (`days`, or `from`+`to`), store (`storeId`) and the
- * inactivity window (`window`) — the dashboard's «Возврат» button does.
+ * inactivity threshold (`inactiveDays`; `window` in older links) — the
+ * dashboard's «Возврат клиентов» button does. The threshold is picked again
+ * on the «Возврат клиентов» tab and goes into the address.
  * Money is counted the dashboard's way — revenue is sales less discounts,
  * gift cards included — in one currency: a brand whose stores price in
  * several picks one.
@@ -422,7 +423,8 @@ interface ChartBar {
               [brandId]="id"
               [period]="period()"
               [currency]="currency()"
-              [window]="churnWindow"
+              [inactiveDays]="inactiveDays()"
+              (inactiveDaysChange)="pickInactiveDays($event)"
               (storePicked)="storeId.set($event)"
             />
           }
@@ -657,10 +659,11 @@ export class AdminAnalyticsPage {
   readonly range = signal<DateRangeValue>(rangeFromQuery(this.opened) ?? { days: 14 });
   readonly storeId = signal<string | null>(this.opened.get('storeId'));
   /**
-   * The «Возврат клиентов» tab's inactivity threshold: 14 days, or the one of
-   * the dashboard card that opened it (`?window=`). The tab has no picker for it.
+   * The «Возврат клиентов» tab's inactivity threshold, picked under its
+   * definition: 14 days, or the one a link brought (`?inactiveDays=` from the
+   * dashboard card; `?window=` in older links).
    */
-  readonly churnWindow: ChurnWindow = parseInactiveDays(this.opened.get('window')) ?? DEFAULT_INACTIVE_DAYS;
+  readonly inactiveDays = signal(inactiveDaysFromQuery(this.opened, 'window') ?? DEFAULT_INACTIVE_DAYS);
   /** The currency picked when the brand's stores price in several. */
   private readonly currencyPick = signal<string | null>(null);
 
@@ -754,6 +757,16 @@ export class AdminAnalyticsPage {
   pickCurrency(currency: string): void {
     this.storeId.set(null);
     this.currencyPick.set(currency);
+  }
+
+  /** A new threshold goes into the address, so a reload or a shared link keeps it. */
+  pickInactiveDays(days: number): void {
+    this.inactiveDays.set(days);
+    void this.router.navigate([], {
+      queryParams: { inactiveDays: days, window: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   setTab(tab: Tab): void {

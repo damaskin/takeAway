@@ -1,43 +1,45 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import type { Subscription } from 'rxjs';
 
-import {
-  AnalyticsApi,
-  type AnalyticsPeriod,
-  type ChurnStats,
-  type ChurnWindow,
-} from '../../core/analytics/analytics.service';
+import { AnalyticsApi, type AnalyticsPeriod, type InactiveNow } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
-import { DEFAULT_INACTIVE_DAYS, INACTIVE_MIN_ORDERS } from '../../core/customers/inactive-segment';
+import { DEFAULT_INACTIVE_DAYS, INACTIVE_MIN_ORDERS, customersLink } from '../../core/customers/inactive-segment';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { PlanAccess } from '../../core/plans/plan-access.service';
+import { InactiveDaysComponent } from '../../shared/inactive-days.component';
 import { PlanLockComponent } from '../../shared/plan-lock.component';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 
 /**
  * «Неактивные клиенты» on the business home, right under the KPIs: regulars
- * (3+ orders) who went 14 days without an order during the dashboard's
- * period. The period picked on top of the dashboard is the only choice here,
- * as on the analytics' «Возврат клиентов» tab (Maxim's list 7, item 1): the
- * 3 / 7 / 14 threshold stays in «Клиенты», campaigns and promo codes.
- * The money comes first — the revenue missed: what each would have brought
- * coming at their usual pace, days away ÷ usual interval × average check —
- * then how many they are. Every plan sees both; PRO also sees who they are,
- * biggest estimate first, and the «Возврат» button, which opens the
- * win-back tab of the analytics on the same period and store.
+ * (3+ orders) who have not ordered for N days right now. N is 14 unless
+ * picked here — 7 / 14 / 30 / 90 or «Свой…», the same picker as on
+ * «Возврат клиентов» and in «Клиенты» (owner, 2026-11-18: one threshold
+ * everywhere). With the same N and store the count and the people are those
+ * of «Клиенты → Неактивные» and of «Сейчас неактивны» on the win-back tab:
+ * one API query behind all three. The dashboard's store and currency apply;
+ * its period does not change who is inactive now.
+ *
+ * The money comes first — what each would have brought by today coming at
+ * their usual pace, days away ÷ usual interval × average check — then how
+ * many they are. Every plan sees both; PRO also sees the top three, «Все
+ * неактивные» (the customers list on the same N and store) and «Возврат
+ * клиентов» (the win-back tab on this N, the dashboard's period and store).
  */
 @Component({
   selector: 'app-churn-widget',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, PlanLockComponent],
+  imports: [RouterLink, TranslatePipe, PlanLockComponent, InactiveDaysComponent],
   template: `
     <article class="dash-card churn">
-      <header class="dash-card-head">
+      <header class="dash-card-head churn-head">
         <h2>{{ 'admin.churn.title' | translate }}</h2>
+        <app-inactive-days [(days)]="days" [showLabel]="false" />
       </header>
-      <p class="dash-muted">{{ 'admin.churn.definition' | translate: { min: minOrders, days: inactiveDays } }}</p>
+      <p class="dash-muted">{{ 'admin.churn.definition' | translate: { min: minOrders, days: days() } }}</p>
 
       <div class="churn-body">
         <div class="churn-figures">
@@ -52,11 +54,8 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
             <span class="churn-note">{{ 'admin.churn.lostRevenueHint' | translate }}</span>
           </div>
           <div>
-            <span class="churn-label">{{ 'admin.churn.lost' | translate }}</span>
-            <span class="churn-value">{{ stats()?.count ?? '—' }}</span>
-            @if (delta(); as d) {
-              <span class="churn-note churn-delta" [style.color]="d.tone">{{ d.text }}</span>
-            }
+            <span class="churn-label">{{ 'admin.churn.now' | translate }}</span>
+            <span class="churn-value" data-testid="churn-count">{{ stats()?.count ?? '—' }}</span>
           </div>
         </div>
 
@@ -81,11 +80,21 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
                 }
               </ul>
             }
-            @if (canSeeAnalytics()) {
-              <a routerLink="/analytics" [queryParams]="retentionQuery()" class="churn-cta">{{
-                'admin.churn.toRetention' | translate
-              }}</a>
-            }
+            <div class="churn-links">
+              @if (canSeeAnalytics()) {
+                <a routerLink="/analytics" [queryParams]="retentionQuery()" class="churn-cta">{{
+                  'admin.churn.toRetention' | translate
+                }}</a>
+              }
+              @if (canSeeCustomers() && plans.has('customers')) {
+                <a
+                  class="churn-all"
+                  [routerLink]="customersQuery().commands"
+                  [queryParams]="customersQuery().queryParams"
+                  >{{ 'admin.churn.toCustomers' | translate }}</a
+                >
+              }
+            </div>
           </div>
         } @else if (stats() && !plans.has('churnList')) {
           <app-plan-lock feature="churnList" [compact]="true" />
@@ -175,8 +184,9 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         font-size: 12px;
         color: var(--color-text-tertiary);
       }
-      .churn-delta {
-        font-weight: 600;
+      .churn-head {
+        flex-wrap: wrap;
+        gap: 8px 12px;
       }
       .churn-side {
         display: flex;
@@ -210,6 +220,18 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
       .churn-list span:last-child {
         color: var(--color-text-tertiary);
         white-space: nowrap;
+      }
+      .churn-links {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 14px;
+      }
+      .churn-all {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-caramel);
       }
       .churn-cta {
         align-self: flex-start;
@@ -255,7 +277,6 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 export class ChurnWidgetComponent {
   private readonly api = inject(AnalyticsApi);
   private readonly fmt = inject(LocaleFormatService);
-  private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthStore);
   readonly plans = inject(PlanAccess);
 
@@ -264,20 +285,30 @@ export class ChurnWidgetComponent {
   readonly currency = input<string | null | undefined>(null);
 
   readonly minOrders = INACTIVE_MIN_ORDERS;
-  /** Days without an order that make a regular inactive: always 14 here, like the «Возврат клиентов» tab. */
-  readonly inactiveDays: ChurnWindow = DEFAULT_INACTIVE_DAYS;
-  readonly stats = signal<ChurnStats | null>(null);
+  /** Days without an order that make a regular inactive: 14 until picked here. */
+  readonly days = signal(DEFAULT_INACTIVE_DAYS);
+  readonly stats = signal<InactiveNow | null>(null);
 
   private readonly role = computed(() => this.auth.user()?.role as AdminRole | undefined);
   // The dashboard is open to store managers; analytics and customers are not.
   readonly canSeeAnalytics = computed(() => canAccess(this.role(), 'analytics'));
   readonly canSeeCustomers = computed(() => canAccess(this.role(), 'customers'));
 
-  /** The win-back tab on the same period and store as here (its threshold is 14 days too). */
+  /** The store and currency of the dashboard; a new period alone does not ask again. */
+  private readonly scope = computed(
+    () => ({ storeId: this.period().storeId ?? null, currency: this.period().currency ?? null }),
+    { equal: (a, b) => a.storeId === b.storeId && a.currency === b.currency },
+  );
+
+  /** «Клиенты → Неактивные» on the same days and store: the same people. */
+  readonly customersQuery = computed(() => customersLink({ days: this.days(), storeId: this.scope().storeId }));
+
+  /** The win-back tab on this threshold and the dashboard's period and store. */
   readonly retentionQuery = computed(() => {
     const p = this.period();
     return {
       tab: 'retention',
+      inactiveDays: this.days(),
       ...(p.from || p.to ? { from: p.from, to: p.to } : { days: p.days }),
       storeId: p.storeId ?? undefined,
     };
@@ -288,31 +319,23 @@ export class ChurnWidgetComponent {
     return { ...this.retentionQuery(), storeId };
   }
 
-  /** More customers going inactive is the bad direction. */
-  readonly delta = computed<{ text: string; tone: string } | null>(() => {
-    const s = this.stats();
-    if (!s || s.countDeltaPercent === null) return null;
-    const v = s.countDeltaPercent;
-    const arrow = v > 0 ? '▲ ' : v < 0 ? '▼ ' : '';
-    const tone = v > 0 ? 'var(--color-berry)' : v < 0 ? '#3E8868' : 'var(--color-text-tertiary)';
-    const text = this.translate.instant('admin.churn.vsPrevious', {
-      change: `${arrow}${this.fmt.percent(Math.abs(v))}`,
-      count: s.previous.count,
-    });
-    return { text, tone };
-  });
+  private request: Subscription | null = null;
 
   constructor() {
     effect(() => {
       const brandId = this.brandId();
-      const period = this.period();
-      untracked(() =>
-        this.api.churn(brandId, period, this.inactiveDays, 3).subscribe({
+      const scope = this.scope();
+      const days = this.days();
+      untracked(() => {
+        // A slower answer for the previous choice must not overwrite this one.
+        this.request?.unsubscribe();
+        this.request = this.api.inactive(brandId, scope, days, 3).subscribe({
           next: (s) => this.stats.set(s),
           error: () => this.stats.set(null),
-        }),
-      );
+        });
+      });
     });
+    inject(DestroyRef).onDestroy(() => this.request?.unsubscribe());
   }
 
   money(cents: number): string {

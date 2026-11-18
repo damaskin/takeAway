@@ -1,6 +1,6 @@
 import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { TranslatePipe, TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { PlanFeature } from '@takeaway/shared-types';
@@ -55,12 +55,20 @@ const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace
 describe('AdminAnalyticsPage', () => {
   let revenue: jest.Mock;
 
-  async function render(stores: StoreAdminDto[] = [store('s1', 'Балка', 'RUP')], series: RevenueSeries = WEEK) {
+  async function render(
+    stores: StoreAdminDto[] = [store('s1', 'Балка', 'RUP')],
+    series: RevenueSeries = WEEK,
+    query: Record<string, string> | null = null,
+  ) {
     revenue = jest.fn().mockReturnValue(of(series));
+    const params = convertToParamMap(query ?? {});
     TestBed.configureTestingModule({
       imports: [AdminAnalyticsPage],
       providers: [
         provideRouter([]),
+        ...(query
+          ? [{ provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: params }, queryParamMap: of(params) } }]
+          : []),
         provideTranslateService(),
         {
           provide: AnalyticsApi,
@@ -148,5 +156,28 @@ describe('AdminAnalyticsPage', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(revenue).toHaveBeenLastCalledWith('b1', { days: 14, storeId: null, currency: 'RUP' });
+  });
+
+  it('opens «Возврат клиентов» on the threshold a link brought, older `window` links too', async () => {
+    const fromCard = await render(undefined, undefined, { tab: 'retention', inactiveDays: '30' });
+    expect(fromCard.componentInstance.inactiveDays()).toBe(30);
+    TestBed.resetTestingModule();
+    const older = await render(undefined, undefined, { tab: 'retention', window: '3' });
+    expect(older.componentInstance.inactiveDays()).toBe(3);
+    TestBed.resetTestingModule();
+    const plain = await render(undefined, undefined, { tab: 'retention' });
+    expect(plain.componentInstance.inactiveDays()).toBe(14);
+  });
+
+  it('puts a threshold picked on the tab into the address', async () => {
+    const fixture = await render(undefined, undefined, { tab: 'retention', window: '7' });
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance.pickInactiveDays(45);
+    expect(fixture.componentInstance.inactiveDays()).toBe(45);
+    expect(navigate).toHaveBeenCalledWith([], {
+      queryParams: { inactiveDays: 45, window: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   });
 });

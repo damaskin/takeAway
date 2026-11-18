@@ -114,8 +114,12 @@ export interface StaffPerformance {
   ordersPerHour: number | null;
 }
 
-/** Days without an order after which a regular (3+ orders) is inactive. */
-export type ChurnWindow = 3 | 7 | 14;
+/**
+ * Days without an order after which a regular (3+ orders) is inactive: one
+ * threshold for the whole admin — 7, 14, 30, 90 or any whole number from 1
+ * to 365 (`@takeaway/shared-types`).
+ */
+export type ChurnWindow = number;
 
 export interface RetentionCustomer {
   userId: string;
@@ -154,6 +158,25 @@ export interface ChurnStats extends AnalyticsPeriodEcho {
   customers: RetentionCustomer[] | null;
   /** Null for one store; missing from older APIs. */
   activeElsewhere?: LapsedAtStores | null;
+}
+
+/**
+ * The dashboard card «Неактивные клиенты»: regulars inactive right now for
+ * `inactiveDays` days — the people of «Клиенты → Неактивные» with the same
+ * days and store — and what they would have brought by today.
+ */
+export interface InactiveNow {
+  inactiveDays: number;
+  /** Today in `timeZone`. */
+  asOf: string;
+  timeZone: string;
+  count: number;
+  lostRevenueCents: number;
+  currency: string | null;
+  /** The biggest estimates first; null on a plan without the list or when none were asked for. */
+  customers: RetentionCustomer[] | null;
+  /** Null for one store. */
+  activeElsewhere: LapsedAtStores | null;
 }
 
 export interface WinBackPeriod {
@@ -263,6 +286,22 @@ export class AnalyticsApi {
     take?: number,
   ): Observable<WinBackStats> {
     return this.get('winback', brandId, period, { window, take });
+  }
+
+  /**
+   * Who is inactive right now (no period): the store and the currency of
+   * `scope` count, its days do not. `take` names that many (PRO); 0 — only
+   * the count and the money.
+   */
+  inactive(
+    brandId: string | null | undefined,
+    scope: Pick<AnalyticsPeriod, 'storeId' | 'currency'>,
+    inactiveDays: number,
+    take = 3,
+  ): Observable<InactiveNow> {
+    return this.http.get<InactiveNow>(`${this.api.baseUrl}/admin/analytics/inactive`, {
+      params: params({ brandId, storeId: scope.storeId, currency: scope.currency, inactiveDays, take }),
+    });
   }
 
   private get<T>(

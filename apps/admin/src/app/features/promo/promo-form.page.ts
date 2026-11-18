@@ -7,16 +7,11 @@ import { type Promo, type PromoStatus, type PromoType, isPromoEditable } from '@
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
-import {
-  DEFAULT_INACTIVE_DAYS,
-  INACTIVE_DAYS,
-  type InactiveDays,
-  campaignLink,
-  parseInactiveDays,
-} from '../../core/customers/inactive-segment';
+import { DEFAULT_INACTIVE_DAYS, campaignLink, parseInactiveDays } from '../../core/customers/inactive-segment';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { AdminPromoApi } from '../../core/promo/promo.service';
 import { FormPageComponent } from '../../shared/form-page.component';
+import { InactiveDaysComponent } from '../../shared/inactive-days.component';
 import { PROMO_ERROR_WORDING } from './promo-errors';
 
 type Audience = 'ALL' | 'INACTIVE';
@@ -40,6 +35,10 @@ const OTHER_VALUE = [Validators.required, Validators.min(0)];
  * or paused promo nobody has used, can change in full; any other promo
  * opens read-only — its status moves from the list.
  *
+ * «Только неактивным клиентам» takes its days from the picker the dashboard
+ * card, «Возврат клиентов» and «Клиенты» share (7 / 14 / 30 / 90 /
+ * «Свой…»); a code saved with 3 days keeps them.
+ *
  * `?for=inactive&inactiveDays=&storeId=` (from «Возврат») opens it as a
  * win-back code: only inactive customers can use it, 15 % off for two
  * weeks, once per customer. `&then=campaign` takes the saved code straight
@@ -51,7 +50,7 @@ const OTHER_VALUE = [Validators.required, Validators.min(0)];
 @Component({
   selector: 'app-promo-form',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent, InactiveDaysComponent],
   template: `
     <app-form-page
       [backTo]="[list]"
@@ -172,14 +171,10 @@ const OTHER_VALUE = [Validators.required, Validators.min(0)];
             </select>
           </label>
           @if (audience() === 'INACTIVE') {
-            <label class="field">
+            <div class="field form-row-full">
               <span class="field-label">{{ 'admin.promo.form.inactiveDays' | translate }}</span>
-              <select formControlName="inactiveDays" class="field-input">
-                @for (d of inactiveDays; track d) {
-                  <option [ngValue]="d">{{ 'admin.campaigns.inactive.daysOption' | translate: { days: d } }}</option>
-                }
-              </select>
-            </label>
+              <app-inactive-days formControlName="inactiveDays" [showLabel]="false" />
+            </div>
             @if (stores().length > 1) {
               <label class="field">
                 <span class="field-label">{{ 'admin.promo.form.store' | translate }}</span>
@@ -231,7 +226,6 @@ export class PromoFormPage {
   readonly promoId = input<string>();
 
   readonly list = LIST;
-  readonly inactiveDays = INACTIVE_DAYS;
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly loaded = signal<Promo | null>(null);
@@ -262,7 +256,7 @@ export class PromoFormPage {
     endsAt: new FormControl(toLocalInput(new Date(Date.now() + 7 * DAY_MS)), { nonNullable: true }),
     status: new FormControl<PromoStatus>('RUNNING', { nonNullable: true }),
     audience: new FormControl<Audience>('ALL', { nonNullable: true }),
-    inactiveDays: new FormControl<InactiveDays>(DEFAULT_INACTIVE_DAYS, { nonNullable: true }),
+    inactiveDays: new FormControl<number>(DEFAULT_INACTIVE_DAYS, { nonNullable: true }),
     storeId: new FormControl('', { nonNullable: true }),
   });
 
@@ -336,7 +330,7 @@ export class PromoFormPage {
    */
   private afterSave(promo: Promo): void {
     const segment = promo.inactiveDays
-      ? { days: parseInactiveDays(String(promo.inactiveDays)) ?? DEFAULT_INACTIVE_DAYS, storeId: promo.segmentStoreId }
+      ? { days: parseInactiveDays(promo.inactiveDays) ?? DEFAULT_INACTIVE_DAYS, storeId: promo.segmentStoreId }
       : null;
     if (segment && this.thenCampaign() && !this.editing()) {
       const link = campaignLink(segment, promo.code);
@@ -388,7 +382,7 @@ export class PromoFormPage {
           endsAt: toLocalInput(new Date(promo.endsAt)),
           status: promo.status,
           audience: promo.inactiveDays ? 'INACTIVE' : 'ALL',
-          inactiveDays: parseInactiveDays(String(promo.inactiveDays)) ?? DEFAULT_INACTIVE_DAYS,
+          inactiveDays: parseInactiveDays(promo.inactiveDays) ?? DEFAULT_INACTIVE_DAYS,
           storeId: promo.segmentStoreId ?? '',
         });
         if (!isPromoEditable(promo)) this.form.disable();

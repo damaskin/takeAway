@@ -11,14 +11,10 @@ import { API_CONFIG } from '../../core/api/api.config';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
-import {
-  DEFAULT_INACTIVE_DAYS,
-  INACTIVE_DAYS,
-  type InactiveDays,
-  parseInactiveDays,
-} from '../../core/customers/inactive-segment';
+import { DEFAULT_INACTIVE_DAYS, parseInactiveDays } from '../../core/customers/inactive-segment';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { FormPageComponent } from '../../shared/form-page.component';
+import { InactiveDaysComponent } from '../../shared/inactive-days.component';
 import {
   CAMPAIGN_AUDIENCES,
   CAMPAIGN_CHANNELS,
@@ -40,6 +36,10 @@ import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
  * approves it — at once, or at the time picked here. A platform admin's
  * campaign needs no review, so their button reads «Отправить».
  *
+ * The inactive audience takes its days from the same picker as the
+ * dashboard card, «Возврат клиентов» and «Клиенты» (7 / 14 / 30 / 90 /
+ * «Свой…»); a campaign saved with 3 days keeps them.
+ *
  * `?audience=INACTIVE&inactiveDays=&storeId=` (from «Возврат», «Клиенты →
  * Неактивные» or a saved win-back code) opens it on the inactive segment
  * with a ready "we miss you" copy; `&code=` puts that promo code in it. The
@@ -48,7 +48,7 @@ import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
 @Component({
   selector: 'app-campaign-form',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent, InactiveDaysComponent],
   template: `
     <app-form-page
       [backTo]="['/campaigns']"
@@ -112,14 +112,10 @@ import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
 
         @if (audience() === 'INACTIVE') {
           <div class="form-row">
-            <label class="field">
+            <div class="field form-row-full">
               <span class="field-label">{{ 'admin.campaigns.inactive.days' | translate }}</span>
-              <select formControlName="inactiveDays" class="field-input">
-                @for (d of inactiveDays; track d) {
-                  <option [ngValue]="d">{{ 'admin.campaigns.inactive.daysOption' | translate: { days: d } }}</option>
-                }
-              </select>
-            </label>
+              <app-inactive-days formControlName="inactiveDays" [showLabel]="false" />
+            </div>
             @if (stores().length > 1) {
               <label class="field">
                 <span class="field-label">{{ 'admin.campaigns.inactive.store' | translate }}</span>
@@ -272,7 +268,6 @@ export class CampaignFormPage implements OnInit {
 
   readonly channels = CAMPAIGN_CHANNELS;
   readonly audiences = CAMPAIGN_AUDIENCES;
-  readonly inactiveDays = INACTIVE_DAYS;
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly creating = signal(false);
   readonly error = signal<string | null>(null);
@@ -292,7 +287,7 @@ export class CampaignFormPage implements OnInit {
     body: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
     channel: new FormControl<CampaignRow['channel']>('PUSH', { nonNullable: true }),
     audience: new FormControl<CampaignRow['audience']>('ALL', { nonNullable: true }),
-    inactiveDays: new FormControl<InactiveDays>(DEFAULT_INACTIVE_DAYS, { nonNullable: true }),
+    inactiveDays: new FormControl<number>(DEFAULT_INACTIVE_DAYS, { nonNullable: true }),
     storeId: new FormControl('', { nonNullable: true }),
     /** `datetime-local` value in the admin's time zone; empty — as soon as it is approved. */
     scheduledAt: new FormControl('', { nonNullable: true }),
@@ -460,7 +455,7 @@ export class CampaignFormPage implements OnInit {
           body: row.body,
           channel: row.channel,
           audience: row.audience,
-          inactiveDays: parseInactiveDays(String(row.inactiveDays ?? '')) ?? DEFAULT_INACTIVE_DAYS,
+          inactiveDays: parseInactiveDays(row.inactiveDays) ?? DEFAULT_INACTIVE_DAYS,
           storeId: row.storeId ?? '',
           scheduledAt: row.scheduledAt ? toLocalInput(new Date(row.scheduledAt)) : '',
         });
@@ -517,7 +512,7 @@ export class CampaignFormPage implements OnInit {
     brandId: string | null,
     audience: CampaignRow['audience'],
     channel: CampaignRow['channel'],
-    segment: { days: InactiveDays; storeId: string },
+    segment: { days: number; storeId: string },
   ): void {
     this.previewSub?.unsubscribe();
     this.preview.set(null);

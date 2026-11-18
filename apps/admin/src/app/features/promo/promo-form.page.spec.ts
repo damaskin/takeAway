@@ -124,4 +124,35 @@ describe('PromoFormPage', () => {
 
     expect(text(root(fixture).querySelector('[role="alert"]'))).toBe('Этот код уже занят — придумайте другой.');
   });
+
+  it('restricts a code to the inactive with the shared picker, a custom number of days included', async () => {
+    const fixture = await render();
+    const page = fixture.componentInstance;
+    page.form.patchValue({ code: 'back20', label: 'Возвращайтесь', value: 20, audience: 'INACTIVE' });
+    fixture.detectChanges();
+    const buttons = () => [...root(fixture).querySelectorAll<HTMLButtonElement>('app-inactive-days button')];
+    expect(buttons().map(text)).toEqual(['7 дн.', '14 дн.', '30 дн.', '90 дн.', 'Свой…']);
+    expect(text(root(fixture).querySelector('app-inactive-days button[aria-pressed="true"]'))).toBe('14 дн.');
+
+    buttons()
+      .find((b) => text(b) === 'Свой…')
+      ?.click();
+    fixture.detectChanges();
+    const field = root(fixture).querySelector('app-inactive-days input') as HTMLInputElement;
+    field.value = '45';
+    field.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    (root(fixture).querySelector('.idays-apply') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(text(root(fixture).querySelector('.promo-hint'))).toContain('не заказывал 45 дн.');
+
+    page.submit();
+    expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ code: 'BACK20', inactiveDays: 45 }));
+  });
+
+  it('opens a code saved with the old 3 days on 3 days', async () => {
+    const fixture = await render('p1', promo({ inactiveDays: 3 }));
+    expect(fixture.componentInstance.form.controls.inactiveDays.value).toBe(3);
+    expect(text(root(fixture).querySelector('app-inactive-days button[aria-pressed="true"]'))).toBe('3 дн.');
+  });
 });

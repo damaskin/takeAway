@@ -13,16 +13,11 @@ import {
   type CustomerSegment,
   type CustomerSort,
 } from '../../core/customers/customers.service';
-import {
-  DEFAULT_INACTIVE_DAYS,
-  INACTIVE_DAYS,
-  type InactiveDays,
-  campaignLink,
-  parseInactiveDays,
-} from '../../core/customers/inactive-segment';
+import { DEFAULT_INACTIVE_DAYS, campaignLink, inactiveDaysFromQuery } from '../../core/customers/inactive-segment';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
+import { InactiveDaysComponent } from '../../shared/inactive-days.component';
 
 const SEGMENTS: readonly CustomerSegment[] = ['all', 'regular', 'inactive'];
 
@@ -41,10 +36,13 @@ const PAGE_SIZE = 25;
  * what they spent, how often they come, where, and what they keep ordering.
  * A row opens the customer's history. Deleted accounts are not listed.
  *
- * Segments — all, regulars (3+ orders), inactive (3+ orders, none for 3, 7
- * or 14 days) — and the store are in the address (`?segment=inactive&days=7
- * &storeId=`): the win-back tab and the dashboard link here, and the way
- * back from a customer keeps the filter.
+ * Segments — all, regulars (3+ orders), inactive (3+ orders, none for N
+ * days: 7 / 14 / 30 / 90 / «Свой…», the picker of the dashboard card and of
+ * «Возврат клиентов») — and the store are in the address
+ * (`?segment=inactive&inactiveDays=30&storeId=`; older links say `days=`):
+ * the win-back tab and the dashboard link here with the same N and store,
+ * so the list holds the very people they count, and the way back from a
+ * customer keeps the filter.
  *
  * People are counted over every store of the brand, whatever it prices in.
  * Spend is in one currency: with stores in several, a picker
@@ -55,7 +53,7 @@ const PAGE_SIZE = 25;
 @Component({
   selector: 'app-customers',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, InactiveDaysComponent],
   template: `
     <section class="cu">
       <header class="cu-head">
@@ -78,18 +76,7 @@ const PAGE_SIZE = 25;
           </button>
         }
         @if (segment() === 'inactive') {
-          <span class="cu-days-label">{{ 'admin.customers.inactiveDays' | translate }}</span>
-          @for (d of inactiveDays; track d) {
-            <button
-              type="button"
-              class="cu-pill cu-pill-small"
-              [class.cu-pill-on]="days() === d"
-              [attr.aria-pressed]="days() === d"
-              (click)="setFilter({ days: d })"
-            >
-              {{ 'admin.churn.window' | translate: { days: d } }}
-            </button>
-          }
+          <app-inactive-days class="cu-days" [days]="days()" (daysChange)="setFilter({ days: $event })" />
         }
       </div>
       @if (segment() !== 'all') {
@@ -319,20 +306,13 @@ const PAGE_SIZE = 25;
         font-weight: 600;
         cursor: pointer;
       }
-      .cu-pill-small {
-        height: 28px;
-        padding: 0 10px;
-        font-size: 12px;
-      }
       .cu-pill-on {
         background: var(--color-espresso);
         border-color: transparent;
         color: white;
       }
-      .cu-days-label {
+      .cu-days {
         margin-left: 8px;
-        font-size: 12px;
-        color: var(--color-text-tertiary);
       }
       .cu-segment-hint {
         margin: -6px 0 0;
@@ -515,7 +495,6 @@ export class CustomersPage {
 
   readonly sorts = SORTS;
   readonly segments = SEGMENTS;
-  readonly inactiveDays = INACTIVE_DAYS;
   readonly stores = signal<StoreAdminDto[]>([]);
 
   private readonly params = toSignal(inject(ActivatedRoute).queryParamMap, { requireSync: true });
@@ -523,7 +502,8 @@ export class CustomersPage {
     const raw = this.params().get('segment') as CustomerSegment | null;
     return raw && SEGMENTS.includes(raw) ? raw : 'all';
   });
-  readonly days = computed<InactiveDays>(() => parseInactiveDays(this.params().get('days')) ?? DEFAULT_INACTIVE_DAYS);
+  /** `?inactiveDays=`, or `?days=` of older links. */
+  readonly days = computed(() => inactiveDaysFromQuery(this.params(), 'days') ?? DEFAULT_INACTIVE_DAYS);
   readonly storeId = computed(() => this.params().get('storeId'));
   /** `?currency=` — the currency spend is shown in; null lets the API pick the brand's. */
   readonly currency = computed(() => this.params().get('currency'));
@@ -603,7 +583,7 @@ export class CustomersPage {
   /** Segment, days, store and currency live in the address, so links and the way back keep them. */
   setFilter(change: {
     segment?: CustomerSegment;
-    days?: InactiveDays;
+    days?: number;
     storeId?: string | null;
     currency?: string | null;
   }): void {
@@ -612,7 +592,8 @@ export class CustomersPage {
     void this.router.navigate([], {
       queryParams: {
         segment: segment === 'all' ? null : segment,
-        days: segment === 'inactive' ? (change.days ?? this.days()) : null,
+        inactiveDays: segment === 'inactive' ? (change.days ?? this.days()) : null,
+        days: null,
         storeId: change.storeId === undefined ? this.storeId() : change.storeId,
         currency: change.currency === undefined ? this.currency() : change.currency,
       },
