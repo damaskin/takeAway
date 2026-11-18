@@ -10,7 +10,6 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
 import { AdminCatalogApi, type CategoryAdminDto } from '../../core/catalog/admin-catalog.service';
 import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { FormPageComponent } from '../../shared/form-page.component';
-import { CategoryOptionsPanelComponent } from './category-options-panel.component';
 import { describeMenuError } from './menu-errors';
 import { MENU_FORM_STYLES } from './menu-form.styles';
 import { formatMinutesInput, minutesValidator, parseMinutes, slugValidator } from './menu-input';
@@ -34,7 +33,7 @@ import { formatMinutesInput, minutesValidator, parseMinutes, slugValidator } fro
 @Component({
   selector: 'app-category-form',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent, CategoryOptionsPanelComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent],
   styles: [MENU_FORM_STYLES],
   template: `
     <app-form-page
@@ -153,19 +152,6 @@ import { formatMinutesInput, minutesValidator, parseMinutes, slugValidator } fro
         </details>
       </form>
     </app-form-page>
-
-    @if (loaded(); as category) {
-      <section style="padding: 0 clamp(16px, 3vw, 28px) clamp(16px, 3vw, 28px); max-width: 960px; margin: 0 auto">
-        <app-category-options-panel
-          [categoryId]="category.id"
-          [categoryName]="category.name"
-          [kind]="savedKind()"
-          [brandId]="category.brandId"
-          [currency]="currency()"
-          [productCount]="category._count?.products ?? null"
-        />
-      </section>
-    }
   `,
 })
 export class CategoryFormPage {
@@ -180,7 +166,7 @@ export class CategoryFormPage {
   readonly kinds = CATEGORY_KINDS;
   readonly isEdit = computed(() => !!this.categoryId());
   readonly loadedName = signal<string | null>(null);
-  /** The category as saved; the option set below works on it. */
+  /** The category as saved. */
   readonly loaded = signal<CategoryAdminDto | null>(null);
   readonly loading = signal(false);
   readonly saving = signal(false);
@@ -190,7 +176,6 @@ export class CategoryFormPage {
   readonly prepNotice = signal<string | null>(null);
   /** The owner picked a kind: the name no longer decides it. */
   private readonly kindTouched = signal(false);
-  readonly currency = computed(() => this.activeBrand.active()?.currency ?? null);
 
   readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
@@ -213,8 +198,6 @@ export class CategoryFormPage {
     const seconds = CATEGORY_KIND_PREP_SECONDS[this.kind()];
     return seconds !== null && parseMinutes(this.prepText()) !== seconds;
   });
-  /** The set offered below follows the saved kind, not one picked and not saved yet. */
-  readonly savedKind = computed<CategoryKind>(() => this.loaded()?.kind ?? 'OTHER');
   readonly savedPrepSeconds = computed(() => this.loaded()?.defaultPrepTimeSeconds ?? null);
 
   constructor() {

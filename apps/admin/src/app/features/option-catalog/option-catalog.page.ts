@@ -10,7 +10,15 @@ import {
 } from '@takeaway/shared-types';
 import { type Observable, forkJoin } from 'rxjs';
 
-import { groupsOfKind, moveWrites, nextSortOrder, sortCatalog } from '../../core/catalog/option-catalog';
+import {
+  type ScopeFilter,
+  SCOPE_FILTERS,
+  groupsOfKind,
+  matchesScopeFilter,
+  moveWrites,
+  nextSortOrder,
+  sortCatalog,
+} from '../../core/catalog/option-catalog';
 import { OptionCatalogApi } from '../../core/catalog/option-catalog.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { MENU_FORM_STYLES } from '../menu/menu-form.styles';
@@ -23,8 +31,9 @@ type PendingDelete = { group: CatalogGroup; option: CatalogOption | null };
 /**
  * «Каталог добавок» — the platform's one catalog of option groups
  * (SUPER_ADMIN, `docs/option-groups.md`). Variants and add-ons in two
- * lists; each group with its type, bounds, condition and how many products
- * use it, and its options under it. The takeAway team creates, edits,
+ * lists, filtered by whom they are for (Напитки / Еда / Все); each group
+ * with its type, scope, bounds, condition and how many products use it,
+ * and its options under it. The takeAway team creates, edits,
  * orders (up/down) and deletes groups and options here; a brand only
  * attaches groups to its products and prices them. A group attached to a
  * product cannot be deleted — the API refuses (OPTION_GROUP_IN_USE) and the
@@ -161,6 +170,21 @@ type PendingDelete = { group: CatalogGroup; option: CatalogOption | null };
       } @else if (loaded() && groups().length === 0) {
         <p class="hint" style="margin: 0">{{ 'admin.optionsCatalog.catalog.empty' | translate }}</p>
       }
+
+      <div class="flex items-center flex-wrap" style="gap: 8px" role="group" data-testid="option-catalog-scope">
+        @for (f of scopeFilters; track f) {
+          <button
+            type="button"
+            class="tab"
+            [class.active]="scopeFilter() === f"
+            [attr.aria-pressed]="scopeFilter() === f"
+            (click)="scopeFilter.set(f)"
+            [attr.data-testid]="'scope-filter-' + f"
+          >
+            {{ 'admin.optionsCatalog.scope.filter.' + f | translate }}
+          </button>
+        }
+      </div>
 
       @for (kind of kinds; track kind) {
         <h2 class="kind-title">{{ 'admin.optionsCatalog.kindsPlural.' + kind | translate }}</h2>
@@ -351,10 +375,13 @@ export class OptionCatalogPage {
   readonly addFormKey = signal(0);
   readonly pendingDelete = signal<PendingDelete | null>(null);
 
-  readonly byKind = computed<Record<OptionGroupKind, CatalogGroup[]>>(() => ({
-    VARIANT: groupsOfKind(this.groups(), 'VARIANT'),
-    ADDON: groupsOfKind(this.groups(), 'ADDON'),
-  }));
+  readonly scopeFilters = SCOPE_FILTERS;
+  /** Напитки / Еда / Все: a shared group shows under both. */
+  readonly scopeFilter = signal<ScopeFilter>('ALL');
+  readonly byKind = computed<Record<OptionGroupKind, CatalogGroup[]>>(() => {
+    const shown = this.groups().filter((g) => matchesScopeFilter(g, this.scopeFilter()));
+    return { VARIANT: groupsOfKind(shown, 'VARIANT'), ADDON: groupsOfKind(shown, 'ADDON') };
+  });
 
   /** Option id → «Холодный (Подача)», for the conditions. */
   private readonly optionLabels = computed(() => {
@@ -367,11 +394,11 @@ export class OptionCatalogPage {
     this.load();
   }
 
-  /** «A · Выбор из списка · выбрать от 0 до 2 · только если выбрано: Холодный (Подача) · в товарах: 3». */
+  /** «A · Выбор из списка · Напитки · выбрать от 0 до 2 · только если выбрано: Холодный (Подача) · в товарах: 3». */
   describeGroup(g: CatalogGroup): string {
     const t = (key: string, params?: Record<string, unknown>) =>
       this.translate.instant(`admin.optionsCatalog.${key}`, params);
-    const parts = [`${g.type} · ${t(`types.${g.type}`)}`];
+    const parts = [`${g.type} · ${t(`types.${g.type}`)}`, t(`scope.${g.scope ?? 'BOTH'}`)];
     if (g.type === 'A') parts.push(t('catalog.select', { min: g.minSelect ?? 0, max: g.maxSelect ?? 1 }));
     if (g.showIfOptionId) {
       parts.push(t('catalog.showIf', { option: this.optionLabels().get(g.showIfOptionId) ?? '—' }));

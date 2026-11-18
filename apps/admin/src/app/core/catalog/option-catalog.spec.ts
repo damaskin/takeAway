@@ -4,10 +4,13 @@ import {
   attachableGroups,
   attachedGroups,
   configFromDraft,
+  configShowsProduct,
   draftFromConfig,
   effectiveDefault,
+  isOptionOn,
   isQtyRangeValid,
   isSelectRangeValid,
+  matchesScopeFilter,
   moveWrites,
   nextSortOrder,
   sameConfig,
@@ -15,9 +18,11 @@ import {
   settingsById,
   sortCatalog,
   withDefault,
-  withDelta,
   withGroup,
   withGroupMoved,
+  withOptionOn,
+  withPrice,
+  withPriceForGroup,
   withoutGroup,
 } from './option-catalog';
 
@@ -53,6 +58,7 @@ function group(id: string, extra: Partial<CatalogGroup> = {}): CatalogGroup {
 
 const SIZE = group('size', {
   kind: 'VARIANT',
+  scope: 'DRINKS',
   minSelect: 1,
   sortOrder: 5,
   options: [option('size', 's', 0), option('size', 'm', 1, { isDefault: true }), option('size', 'l', 2)],
@@ -70,6 +76,7 @@ const SYRUPS = group('syrups', {
 });
 const NO_ONION = group('remove', {
   type: 'B',
+  scope: 'FOOD',
   minSelect: null,
   maxSelect: null,
   options: [option('remove', 'onion', 0)],
@@ -137,6 +144,33 @@ describe('options catalog helpers', () => {
     });
   });
 
+  describe('scopes', () => {
+    it('offers a drink the drink and shared groups, food the food and shared ones, OTHER all', () => {
+      const settings = settingsById([]);
+      const ids = (kind: Parameters<typeof attachableGroups>[3]) =>
+        attachableGroups(ALL, settings, new Set(), kind).map((g) => g.id);
+      expect(ids('HOT_DRINKS')).toEqual(['syrups', 'size', 'serve', 'sugar']);
+      expect(ids('FOOD')).toEqual(['syrups', 'remove', 'serve', 'sugar']);
+      expect(ids('OTHER')).toEqual(['syrups', 'size', 'remove', 'serve', 'sugar']);
+    });
+
+    it('filters «Напитки» / «Еда» / «Все», a shared group under each', () => {
+      expect(ALL.filter((g) => matchesScopeFilter(g, 'DRINKS')).map((g) => g.id)).toEqual([
+        'syrups',
+        'size',
+        'serve',
+        'sugar',
+      ]);
+      expect(ALL.filter((g) => matchesScopeFilter(g, 'FOOD')).map((g) => g.id)).toEqual([
+        'syrups',
+        'remove',
+        'serve',
+        'sugar',
+      ]);
+      expect(ALL.filter((g) => matchesScopeFilter(g, 'ALL'))).toHaveLength(5);
+    });
+  });
+
   describe('bounds', () => {
     it('checks an A group: max from 1, min not above max', () => {
       expect(isSelectRangeValid(0, 2)).toBe(true);
@@ -176,15 +210,57 @@ describe('options catalog helpers', () => {
       expect(withGroupMoved(draft, ALL, 'syrups', -1).groupIds).toEqual(['size', 'serve', 'syrups']);
     });
 
-    it('stores what a variant adds to the base price, and nothing for one that adds 0', () => {
+    it('stores what a variant adds to the base price, and nothing for one that adds 0 or is left empty', () => {
       let draft = withGroup(empty, 'size');
-      draft = withDelta(draft, 'l', 1000);
-      draft = withDelta(draft, 's', -500);
-      draft = withDelta(draft, 'm', 0);
+      draft = withPrice(draft, SIZE, 'l', 1000);
+      draft = withPrice(draft, SIZE, 's', -500);
+      draft = withPrice(draft, SIZE, 'm', 0);
       expect(configFromDraft(draft, ALL).overrides).toEqual([
-        { optionId: 'l', priceCents: 1000, isDefault: null },
-        { optionId: 's', priceCents: -500, isDefault: null },
+        { optionId: 'l', priceCents: 1000, isDefault: null, enabled: null },
+        { optionId: 's', priceCents: -500, isDefault: null, enabled: null },
       ]);
+      expect(configFromDraft(withPrice(draft, SIZE, 'l', null), ALL).overrides).toHaveLength(1);
+    });
+
+    it("keeps an add-on's own price on the product, 0 included, and none for the brand's", () => {
+      let draft = withGroup(empty, 'syrups');
+      draft = withPrice(draft, SYRUPS, 'vanilla', 0);
+      draft = withPrice(draft, SYRUPS, 'caramel', 700);
+      draft = withPrice(draft, SYRUPS, 'mint', null);
+      expect(configFromDraft(draft, ALL).overrides).toEqual([
+        { optionId: 'caramel', priceCents: 700, isDefault: null, enabled: null },
+        { optionId: 'vanilla', priceCents: 0, isDefault: null, enabled: null },
+      ]);
+    });
+
+    it('applies one price to every option of the group («Применить ко всем»), or none to all', () => {
+      let draft = withPrice(withGroup(empty, 'syrups'), SYRUPS, 'vanilla', 500);
+      draft = withPriceForGroup(draft, SYRUPS, 'vanilla');
+      expect(draft.prices).toEqual({ vanilla: 500, caramel: 500, mint: 500 });
+      expect(withPriceForGroup(draft, SIZE, 'm').prices).toEqual(draft.prices);
+      expect(withPriceForGroup(withPrice(draft, SYRUPS, 'mint', null), SYRUPS, 'mint').prices).toEqual({});
+    });
+
+    // A shawarma's «Основа» without «Булка».
+    it('switches an option off on the product and back', () => {
+      const draft = withOptionOn(withGroup(empty, 'size'), 's', false);
+      expect(isOptionOn(draft, 's')).toBe(false);
+      expect(configFromDraft(draft, ALL).overrides).toEqual([
+        { optionId: 's', priceCents: null, isDefault: null, enabled: false },
+      ]);
+      expect(configFromDraft(withOptionOn(draft, 's', true), ALL).overrides).toEqual([]);
+    });
+
+    it('tells whether customers see the product: a variant and an add-on it offers', () => {
+      const none = settingsById([]);
+      const config = (draft: ReturnType<typeof withGroup>) => configFromDraft(draft, ALL);
+      expect(configShowsProduct(config(withGroup(empty, 'size')), ALL, none)).toBe(false);
+      const both = withGroup(withGroup(empty, 'size'), 'remove');
+      expect(configShowsProduct(config(both), ALL, none)).toBe(true);
+      // Its only add-on switched off on the product, or by the brand.
+      expect(configShowsProduct(config(withOptionOn(both, 'onion', false)), ALL, none)).toBe(false);
+      const brandOff = settingsById([{ optionId: 'onion', priceCents: 0, enabled: false, stoppedStoreIds: [] }]);
+      expect(configShowsProduct(config(both), ALL, brandOff)).toBe(false);
     });
 
     it('moves the default of a one-of group and remembers only what differs from the catalog', () => {
@@ -192,8 +268,8 @@ describe('options catalog helpers', () => {
       expect(effectiveDefault(draft, SIZE.options[2] as CatalogOption)).toBe(true);
       expect(effectiveDefault(draft, SIZE.options[1] as CatalogOption)).toBe(false);
       expect(configFromDraft(draft, ALL).overrides).toEqual([
-        { optionId: 'l', priceCents: null, isDefault: true },
-        { optionId: 'm', priceCents: null, isDefault: false },
+        { optionId: 'l', priceCents: null, isDefault: true, enabled: null },
+        { optionId: 'm', priceCents: null, isDefault: false, enabled: null },
       ]);
       // Back to the catalog's default: nothing of the product's own is left.
       expect(configFromDraft(withDefault(draft, SIZE, 'm', true), ALL).overrides).toEqual([]);
@@ -212,7 +288,7 @@ describe('options catalog helpers', () => {
     });
 
     it('drops the values of a detached group from what is saved', () => {
-      const draft = withoutGroup(withDelta(withGroup(empty, 'size'), 'l', 1000), 'size');
+      const draft = withoutGroup(withPrice(withGroup(empty, 'size'), SIZE, 'l', 1000), 'size');
       expect(configFromDraft(draft, ALL)).toEqual({ groups: [], overrides: [] });
     });
 
@@ -223,8 +299,9 @@ describe('options catalog helpers', () => {
           { groupId: 'size', sortOrder: 0 },
         ],
         overrides: [
-          { optionId: 'l', priceCents: 1000, isDefault: null },
-          { optionId: 'vanilla', priceCents: null, isDefault: true },
+          { optionId: 'l', priceCents: 1000, isDefault: null, enabled: null },
+          { optionId: 'm', priceCents: null, isDefault: null, enabled: false },
+          { optionId: 'vanilla', priceCents: null, isDefault: true, enabled: null },
         ],
       };
       const read = configFromDraft(draftFromConfig(saved), ALL);

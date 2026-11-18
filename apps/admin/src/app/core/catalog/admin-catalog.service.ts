@@ -5,8 +5,6 @@ import type { BrandPlan, CategoryKind, StoreKind } from '@takeaway/shared-types'
 
 import { API_CONFIG } from '../api/api.config';
 
-export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
-
 export interface BrandDto {
   id: string;
   slug: string;
@@ -142,102 +140,10 @@ export interface StoreImagesDto {
   galleryUrls: string[];
 }
 
-export interface VariationAdminDto {
-  id: string;
-  type: VariationType;
-  name: string;
-  priceDeltaCents: number;
-  prepTimeDeltaSeconds: number;
-  sortOrder: number;
-  isDefault: boolean;
-  ingredientId: string | null;
-  ingredient: IngredientSummaryDto | null;
-}
-
-/** An option's ingredient as the product editor shows it. */
-export interface IngredientSummaryDto {
-  id: string;
-  name: string;
-  isAvailable: boolean;
-}
-
-/**
- * An add-on of the brand library («Добавки») — the one place it is defined:
- * name, usual price, one in-stock switch for every option made of it.
- */
-export interface IngredientDto extends IngredientSummaryDto {
-  brandId: string;
-  /** Usual surcharge in minor units; what a product picking it from the library charges. */
-  priceCents: number;
-  /** Products offering it (an extra or a milk made of it). */
-  products: Array<{ id: string; name: string }>;
-  /** The add-on group an extra made of it starts in («Сиропы»); null = «Добавки». Missing from older APIs. */
-  group?: string | null;
-}
-
-export interface ModifierAdminDto {
-  id: string;
-  slug: string;
-  name: string;
-  priceDeltaCents: number;
-  prepTimeDeltaSeconds: number;
-  minCount: number;
-  maxCount: number;
-  sortOrder: number;
-  ingredientId: string | null;
-  ingredient: IngredientSummaryDto | null;
-  /** Group the add-on is shown under («Сиропы», «Убрать»); null = «Добавки». Missing from older APIs. */
-  group?: string | null;
-}
-
 export interface ProductDetailDto extends ProductAdminDto {
-  variations: VariationAdminDto[];
-  modifiers: ModifierAdminDto[];
-  /** The product's category, for the choice groups that fit its kind. Missing from older APIs. */
+  /** The product's category, for the catalog groups that fit its kind. Missing from older APIs. */
   category?: { name: string; kind: CategoryKind };
 }
-
-export interface CreateVariationInput {
-  type: VariationAdminDto['type'];
-  /** May be left out with `ingredientId`: the add-on's name. */
-  name?: string;
-  /** Left out: the linked add-on's usual price, else 0. */
-  priceDeltaCents?: number;
-  prepTimeDeltaSeconds?: number;
-  isDefault?: boolean;
-  sortOrder?: number;
-  /**
-   * Omitted on create: a milk joins the library entry of its name (one the
-   * library lacks is made for the platform team, refused for a brand).
-   * `null` = not tracked (the platform team's call for a milk).
-   */
-  ingredientId?: string | null;
-}
-
-export type UpdateVariationInput = Partial<CreateVariationInput>;
-
-export interface CreateModifierInput {
-  /** Built from the name on the server when omitted. */
-  slug?: string;
-  /** May be left out with `ingredientId`: the add-on's name. */
-  name?: string;
-  /** Left out: the linked add-on's usual price, else 0. */
-  priceDeltaCents?: number;
-  prepTimeDeltaSeconds?: number;
-  minCount?: number;
-  maxCount?: number;
-  sortOrder?: number;
-  /**
-   * Omitted on create: joins the library entry of its name (one the library
-   * lacks is made for the platform team, refused for a brand). `null` = not
-   * tracked (the platform team's call).
-   */
-  ingredientId?: string | null;
-  /** Omitted on create: the library entry's group. `null` = «Добавки». */
-  group?: string | null;
-}
-
-export type UpdateModifierInput = Partial<CreateModifierInput>;
 
 export interface CategoryAdminDto {
   id: string;
@@ -249,11 +155,11 @@ export interface CategoryAdminDto {
   visible: boolean;
   /** Not sold on its own: hidden from customer menus, its products only go into drinks as add-ons. */
   addOnsOnly?: boolean;
-  /** Hot drinks, food…: the fields of its products and its option presets. Missing from older APIs (= OTHER). */
+  /** Hot drinks, food…: the fields of its products and the catalog groups they are offered. Missing from older APIs (= OTHER). */
   kind?: CategoryKind;
   /** Preparation time a new product of the category starts with, seconds. */
   defaultPrepTimeSeconds?: number | null;
-  _count?: { products: number; options?: number };
+  _count?: { products: number };
   /** Its products with no photo — a text row with no picture in the app. Missing from older APIs. */
   productsWithoutPhoto?: number;
 }
@@ -279,6 +185,12 @@ export interface ProductAdminDto {
   carbsGrams: number | null;
   /** Stores that sell it (same price everywhere); empty = sold nowhere. */
   storeIds: string[];
+  /**
+   * Its options let customers see it: at least one variant and one add-on it
+   * offers (owner, 2026-11-18). False: «Не видно покупателям». Missing from
+   * older APIs (read as true).
+   */
+  optionsComplete?: boolean;
 }
 
 /** A store a product can be listed in, for the product form's picker. */
@@ -311,54 +223,6 @@ export interface UpdateCategoryInput {
   defaultPrepTimeSeconds?: number | null;
 }
 
-/** What an option of a category's set becomes on a product. */
-export type CategoryOptionKind = 'VARIATION' | 'MODIFIER';
-
-/** One option of a category's set («Опции категории»). */
-export interface CategoryOptionDto {
-  id: string;
-  categoryId: string;
-  kind: CategoryOptionKind;
-  variationType: VariationType | null;
-  name: string;
-  priceDeltaCents: number;
-  group: string | null;
-  isDefault: boolean;
-  maxCount: number;
-  sortOrder: number;
-  ingredientId: string | null;
-  ingredient: IngredientSummaryDto | null;
-}
-
-/** An option sent to a category's set; a library add-on may be named by `ingredientId` alone. */
-export interface CategoryOptionInput {
-  kind: CategoryOptionKind;
-  variationType?: VariationType;
-  name?: string;
-  ingredientId?: string | null;
-  priceDeltaCents?: number;
-  group?: string | null;
-  isDefault?: boolean;
-  maxCount?: number;
-}
-
-export interface UpdateCategoryOptionInput {
-  name?: string;
-  priceDeltaCents?: number;
-  group?: string | null;
-  isDefault?: boolean;
-  maxCount?: number;
-  sortOrder?: number;
-}
-
-/** What «apply to the category's products» added. */
-export interface ApplyCategoryOptionsResult {
-  total: number;
-  products: number;
-  variations: number;
-  modifiers: number;
-}
-
 /**
  * What the product editor sends; `null` clears an optional value. Caffeine,
  * allergens and diet tags are not editable since 2026-11-05 — the API
@@ -386,7 +250,7 @@ export interface CreateProductInput extends Partial<Omit<ProductFieldsInput, 'na
   basePriceCents: number;
   /** Omitted = every store of the brand. */
   storeIds?: string[];
-  /** False: no copy of the category's option set (and no category prep time). Omitted = true. */
+  /** False: no category prep time either. Omitted = true. */
   applyCategoryOptions?: boolean;
 }
 
@@ -431,15 +295,6 @@ export interface AvailabilityProductDto {
   stop: AvailabilityStopDto | null;
 }
 
-export interface AvailabilityIngredientDto {
-  id: string;
-  name: string;
-  /** False = switched off for the whole brand in the ingredient library. */
-  isAvailable: boolean;
-  stop: AvailabilityStopDto | null;
-  productNames: string[];
-}
-
 /**
  * A catalog option the store uses (its group is on a product sold here) and
  * the brand has, with its stop in this store.
@@ -454,13 +309,12 @@ export interface AvailabilityOptionDto {
   productNames: string[];
 }
 
-/** One store's stop-list: what it sells and which add-ins it has run out of. */
+/** One store's stop-list: what it sells and which catalog options it has run out of. */
 export interface StoreAvailabilityDto {
   storeId: string;
   storeName: string;
   timezone: string;
   products: AvailabilityProductDto[];
-  ingredients: AvailabilityIngredientDto[];
   /** Catalog options, in catalog order. Missing from older API builds. */
   options?: AvailabilityOptionDto[];
 }
@@ -494,30 +348,6 @@ export class AdminCatalogApi {
 
   getProduct(id: string): Observable<ProductDetailDto> {
     return this.http.get<ProductDetailDto>(`${this.api.baseUrl}/admin/products/${id}`);
-  }
-
-  createVariation(productId: string, input: CreateVariationInput): Observable<VariationAdminDto> {
-    return this.http.post<VariationAdminDto>(`${this.api.baseUrl}/admin/products/${productId}/variations`, input);
-  }
-
-  updateVariation(variationId: string, input: UpdateVariationInput): Observable<VariationAdminDto> {
-    return this.http.patch<VariationAdminDto>(`${this.api.baseUrl}/admin/products/variations/${variationId}`, input);
-  }
-
-  deleteVariation(variationId: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/products/variations/${variationId}`);
-  }
-
-  createModifier(productId: string, input: CreateModifierInput): Observable<ModifierAdminDto> {
-    return this.http.post<ModifierAdminDto>(`${this.api.baseUrl}/admin/products/${productId}/modifiers`, input);
-  }
-
-  updateModifier(modifierId: string, input: UpdateModifierInput): Observable<ModifierAdminDto> {
-    return this.http.patch<ModifierAdminDto>(`${this.api.baseUrl}/admin/products/modifiers/${modifierId}`, input);
-  }
-
-  deleteModifier(modifierId: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/products/modifiers/${modifierId}`);
   }
 
   updateStore(id: string, input: UpdateStoreInput): Observable<StoreAdminDto> {
@@ -571,40 +401,6 @@ export class AdminCatalogApi {
   deleteCategory(id: string, moveProductsTo?: string): Observable<void> {
     const params: Record<string, string> = moveProductsTo ? { moveProductsTo } : {};
     return this.http.delete<void>(`${this.api.baseUrl}/admin/categories/${id}`, { params });
-  }
-
-  listCategoryOptions(categoryId: string): Observable<CategoryOptionDto[]> {
-    return this.http.get<CategoryOptionDto[]>(`${this.api.baseUrl}/admin/categories/${categoryId}/options`);
-  }
-
-  /** Appends to the set (options it has are skipped); answers the whole set. */
-  addCategoryOptions(categoryId: string, options: CategoryOptionInput[]): Observable<CategoryOptionDto[]> {
-    return this.http.post<CategoryOptionDto[]>(`${this.api.baseUrl}/admin/categories/${categoryId}/options`, {
-      options,
-    });
-  }
-
-  updateCategoryOption(
-    categoryId: string,
-    optionId: string,
-    input: UpdateCategoryOptionInput,
-  ): Observable<CategoryOptionDto[]> {
-    return this.http.patch<CategoryOptionDto[]>(
-      `${this.api.baseUrl}/admin/categories/${categoryId}/options/${optionId}`,
-      input,
-    );
-  }
-
-  deleteCategoryOption(categoryId: string, optionId: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/categories/${categoryId}/options/${optionId}`);
-  }
-
-  /** Copies what each product of the category lacks from its set. */
-  applyCategoryOptions(categoryId: string): Observable<ApplyCategoryOptionsResult> {
-    return this.http.post<ApplyCategoryOptionsResult>(
-      `${this.api.baseUrl}/admin/categories/${categoryId}/options/apply`,
-      {},
-    );
   }
 
   /** Every product of the category gets the category's default preparation time. */
@@ -675,17 +471,6 @@ export class AdminCatalogApi {
     return this.http.get<StoreAvailabilityDto>(`${this.api.baseUrl}/admin/stores/${storeId}/availability`);
   }
 
-  stopIngredientInStore(storeId: string, ingredientId: string, expiresAt?: string): Observable<AvailabilityStopDto> {
-    return this.http.put<AvailabilityStopDto>(
-      `${this.api.baseUrl}/admin/stores/${storeId}/ingredient-stops/${ingredientId}`,
-      expiresAt ? { expiresAt } : {},
-    );
-  }
-
-  resumeIngredientInStore(storeId: string, ingredientId: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/ingredient-stops/${ingredientId}`);
-  }
-
   createProduct(input: CreateProductInput): Observable<ProductAdminDto> {
     return this.http.post<ProductAdminDto>(`${this.api.baseUrl}/admin/products`, input);
   }
@@ -700,40 +485,5 @@ export class AdminCatalogApi {
 
   deleteProduct(id: string): Observable<void> {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/products/${id}`);
-  }
-
-  listIngredients(brandId: string): Observable<IngredientDto[]> {
-    return this.http.get<IngredientDto[]>(`${this.api.baseUrl}/admin/ingredients`, { params: { brandId } });
-  }
-
-  /** The platform team only: a brand gets 403 INGREDIENT_LIBRARY_LOCKED. */
-  createIngredient(input: {
-    brandId: string;
-    name: string;
-    priceCents?: number;
-    group?: string | null;
-  }): Observable<IngredientDto> {
-    return this.http.post<IngredientDto>(`${this.api.baseUrl}/admin/ingredients`, input);
-  }
-
-  /** Add-on groups the brand uses, for suggestions. */
-  listOptionGroups(brandId: string): Observable<string[]> {
-    return this.http.get<string[]>(`${this.api.baseUrl}/admin/ingredients/groups`, { params: { brandId } });
-  }
-
-  /**
-   * A new name, price or group also reaches every option that still carries
-   * the old one. A brand may change `isAvailable` and `priceCents` only.
-   */
-  updateIngredient(
-    id: string,
-    input: { name?: string; priceCents?: number; isAvailable?: boolean; group?: string | null },
-  ): Observable<IngredientDto> {
-    return this.http.patch<IngredientDto>(`${this.api.baseUrl}/admin/ingredients/${id}`, input);
-  }
-
-  /** Takes the add-on off every product that offers it, then out of the library. The platform team only. */
-  deleteIngredient(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/ingredients/${id}`);
   }
 }

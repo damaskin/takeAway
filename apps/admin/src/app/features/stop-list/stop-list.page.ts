@@ -6,7 +6,6 @@ import { map, type Observable } from 'rxjs';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import {
   AdminCatalogApi,
-  type AvailabilityIngredientDto,
   type AvailabilityOptionDto,
   type AvailabilityProductDto,
   type AvailabilityStopDto,
@@ -22,20 +21,18 @@ import { formatStoreTime, isStopActive, nextMidnightIn } from '../menu/stock';
 type Tab = 'products' | 'addons';
 type Until = 'manual' | 'endOfDay';
 
-type Source = 'product' | 'ingredient' | 'option';
+type Source = 'product' | 'option';
 
-/** A row the page can switch: a product, an old add-in or a catalog option, with its stop in this store. */
+/** A row the page can switch: a product or a catalog option, with its stop in this store. */
 interface Row {
   id: string;
   source: Source;
   name: string;
-  /** "Used in …" for an old add-in, the note for a catalog option. */
+  /** The note of a catalog option («300–350 мл»). */
   detail: string;
   /** The heading the row is listed under: a product's category, a catalog option's group. */
   heading: string | null;
   stop: AvailabilityStopDto | null;
-  /** An add-in switched off for the whole brand — nothing to switch here. */
-  brandOff: boolean;
 }
 
 /**
@@ -48,9 +45,9 @@ interface Row {
  * Laid out as one column of big rows so it works on the kitchen tablet and
  * on a phone.
  *
- * «Добавки» lists the old add-ins and, since 2026-11-09, the catalog options
- * the store uses and the brand has, under their groups — from the store's
- * availability, so kitchen STAFF and a PIN session see them too.
+ * «Добавки» lists the catalog options the store uses and the brand has,
+ * under their groups — from the store's availability, so kitchen STAFF and a
+ * PIN session see them too.
  */
 @Component({
   selector: 'app-stop-list',
@@ -235,9 +232,6 @@ interface Row {
               @if (row.detail) {
                 <span class="hint">{{ row.detail }}</span>
               }
-              @if (row.brandOff) {
-                <span class="error">{{ 'admin.stopList.brandOff' | translate }}</span>
-              }
             </div>
             <button
               type="button"
@@ -247,7 +241,7 @@ interface Row {
               role="switch"
               [attr.aria-checked]="!stopped(row)"
               [attr.aria-label]="row.name"
-              [disabled]="pending().has(row.id) || row.brandOff"
+              [disabled]="pending().has(row.id)"
               (click)="toggle(row)"
               data-testid="stop-toggle"
             >
@@ -294,23 +288,10 @@ export class StopListPage {
       detail: '',
       heading: p.categoryName,
       stop: p.stop,
-      brandOff: false,
     })),
   );
-  readonly addonRows = computed<Row[]>(() => [
-    ...(this.view()?.ingredients ?? []).map<Row>((i: AvailabilityIngredientDto) => ({
-      id: i.id,
-      source: 'ingredient',
-      name: i.name,
-      detail: this.translate.instant('admin.stopList.usedIn', { products: i.productNames.join(', ') }),
-      heading: null,
-      stop: i.stop,
-      brandOff: !i.isAvailable,
-    })),
-    ...this.optionRows(),
-  ]);
   /** The catalog options the store uses and the brand has, each under its group. */
-  readonly optionRows = computed<Row[]>(() =>
+  readonly addonRows = computed<Row[]>(() =>
     (this.view()?.options ?? []).map<Row>((o: AvailabilityOptionDto) => ({
       id: o.id,
       source: 'option',
@@ -318,7 +299,6 @@ export class StopListPage {
       detail: o.note ?? '',
       heading: o.groupName,
       stop: o.stop,
-      brandOff: false,
     })),
   );
   readonly rows = computed(() => (this.tab() === 'products' ? this.productRows() : this.addonRows()));
@@ -383,16 +363,12 @@ export class StopListPage {
             .stopInStore(storeId, row.id, expiresAt ?? null)
             .pipe(map((s) => ({ expiresAt: s?.expiresAt ?? expiresAt ?? null })))
         : this.options.resumeInStore(storeId, row.id).pipe(map(() => null));
-    } else if (kind === 'product') {
+    } else {
       request = stop
         ? this.api
             .addStopListEntry(storeId, { productId: row.id, ...(expiresAt ? { expiresAt } : {}) })
             .pipe(map((entry) => ({ expiresAt: entry.expiresAt })))
         : this.api.removeStopListEntry(storeId, row.id).pipe(map(() => null));
-    } else {
-      request = stop
-        ? this.api.stopIngredientInStore(storeId, row.id, expiresAt).pipe(map((s) => ({ expiresAt: s.expiresAt })))
-        : this.api.resumeIngredientInStore(storeId, row.id).pipe(map(() => null));
     }
 
     this.setPending(row.id, true);
@@ -420,9 +396,7 @@ export class StopListPage {
       if (kind === 'option') {
         return { ...view, options: (view.options ?? []).map((o) => (o.id === id ? { ...o, stop } : o)) };
       }
-      return kind === 'product'
-        ? { ...view, products: view.products.map((p) => (p.id === id ? { ...p, stop } : p)) }
-        : { ...view, ingredients: view.ingredients.map((i) => (i.id === id ? { ...i, stop } : i)) };
+      return { ...view, products: view.products.map((p) => (p.id === id ? { ...p, stop } : p)) };
     });
   }
 

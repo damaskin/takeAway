@@ -5,7 +5,6 @@ import type {
   BrandOptionSetting,
   CatalogGroup,
   CatalogOption,
-  LegacyOptionsSummary,
   ProductOptionGroupsConfig,
   UpsertCatalogGroupRequest,
   UpsertCatalogOptionRequest,
@@ -28,8 +27,7 @@ export interface BrandOptionChange {
 /**
  * The options catalog («Добавки и варианты», `docs/option-groups.md`): the
  * platform's groups and options (SUPER_ADMIN), the catalog as one brand has
- * it, a store's stops, a product's attached groups and the brand's older
- * per-product options.
+ * it, a store's stops and a product's attached groups.
  */
 @Injectable({ providedIn: 'root' })
 export class OptionCatalogApi {
@@ -105,13 +103,14 @@ export class OptionCatalogApi {
     );
   }
 
-  /** SUPER_ADMIN: what the brand still has of the older per-product options. */
-  legacySummary(brandId: string): Observable<LegacyOptionsSummary> {
-    return this.http.get<LegacyOptionsSummary>(`${this.api.baseUrl}/admin/brands/${brandId}/legacy-options`);
-  }
-
-  /** SUPER_ADMIN: deletes them; answers what was deleted. */
-  clearLegacy(brandId: string): Observable<LegacyOptionsSummary> {
-    return this.http.post<LegacyOptionsSummary>(`${this.api.baseUrl}/admin/brands/${brandId}/legacy-options/clear`, {});
+  /**
+   * «Применить ко всем»: one price for every option of an add-on group, for
+   * the whole brand. Answers the group's settings.
+   */
+  applyGroupPrice(brandId: string, groupId: string, priceCents: number): Observable<BrandOptionSetting[]> {
+    return this.http.put<BrandOptionSetting[]>(
+      `${this.api.baseUrl}/admin/brands/${brandId}/option-groups/${groupId}/price`,
+      { priceCents },
+    );
   }
 }

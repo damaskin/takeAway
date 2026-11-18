@@ -120,18 +120,7 @@ const USER = {
   telegramUserId: null,
 };
 
-/** One add-on of the library, used by the latte, at its usual price. */
-export const OAT_MILK = {
-  id: 'ing-oat',
-  brandId: BRAND.id,
-  name: 'Овсяное молоко',
-  isAvailable: true,
-  priceCents: 500,
-  group: null,
-  products: [{ id: PRODUCT.id, name: PRODUCT.name }],
-};
-
-/** The stop-list of the one store: the product on sale, the oat milk too. */
+/** The stop-list of the one store: the product on sale, the catalog options it uses too. */
 export const AVAILABILITY = {
   storeId: STORE.id,
   storeName: STORE.name,
@@ -146,7 +135,6 @@ export const AVAILABILITY = {
       stop: null,
     },
   ],
-  ingredients: [{ id: OAT_MILK.id, name: OAT_MILK.name, isAvailable: true, stop: null, productNames: [PRODUCT.name] }],
   // Catalog options the store uses (their group is on a product sold here) and the brand has.
   options: [
     {
@@ -506,6 +494,7 @@ interface FakeGroup {
   minSelect: number | null;
   maxSelect: number | null;
   showIfOptionId: string | null;
+  scope: 'DRINKS' | 'FOOD' | 'BOTH';
   sortOrder: number;
   options: FakeOption[];
 }
@@ -519,7 +508,12 @@ interface FakeSetting {
 
 interface FakeProductGroups {
   groups: Array<{ groupId: string; sortOrder: number }>;
-  overrides: Array<{ optionId: string; priceCents: number | null; isDefault: boolean | null }>;
+  overrides: Array<{
+    optionId: string;
+    priceCents: number | null;
+    isDefault: boolean | null;
+    enabled?: boolean | null;
+  }>;
 }
 
 function fakeOption(
@@ -543,12 +537,18 @@ function fakeOption(
   };
 }
 
-/** A slice of the seed (spec §7): coffee sizes and serving, milk, syrups, sugar, ice on iced. */
+/**
+ * A slice of the seed (spec §7): coffee sizes and serving, milk, syrups,
+ * sugar, ice on iced — for drinks — and a shawarma's base and sauces for food.
+ */
 function seedOptionGroups(): FakeGroup[] {
-  const group = (g: Omit<FakeGroup, 'minSelect' | 'maxSelect' | 'showIfOptionId'> & Partial<FakeGroup>): FakeGroup => ({
+  const group = (
+    g: Omit<FakeGroup, 'minSelect' | 'maxSelect' | 'showIfOptionId' | 'scope'> & Partial<FakeGroup>,
+  ): FakeGroup => ({
     minSelect: null,
     maxSelect: null,
     showIfOptionId: null,
+    scope: 'DRINKS',
     ...g,
   });
   return [
@@ -619,14 +619,41 @@ function seedOptionGroups(): FakeGroup[] {
       sortOrder: 5,
       options: [fakeOption('g-ice', 'opt-ice', 'Лёд', 0, { minQty: 0, maxQty: 3, defaultQty: 0 })],
     }),
+    group({
+      id: 'g-base',
+      kind: 'VARIANT',
+      type: 'A',
+      name: 'Основа',
+      scope: 'FOOD',
+      minSelect: 1,
+      maxSelect: 1,
+      sortOrder: 6,
+      options: [
+        fakeOption('g-base', 'opt-lavash', 'Лаваш', 0, { isDefault: true }),
+        fakeOption('g-base', 'opt-bun', 'Булка', 1),
+      ],
+    }),
+    group({
+      id: 'g-dish-sauce',
+      kind: 'ADDON',
+      type: 'A',
+      name: 'Соус в блюдо',
+      scope: 'BOTH',
+      minSelect: 0,
+      maxSelect: 2,
+      sortOrder: 7,
+      options: [fakeOption('g-dish-sauce', 'opt-garlic', 'Чесночный', 0)],
+    }),
   ];
 }
 
 /**
  * The catalog endpoints over one in-memory state per browser context, so a
  * suite sees what it created: SUPER_ADMIN's groups and options, the brand's
- * prices, switches and store stops, a product's attached groups and the
- * brand's old options. Answers null for a path it does not own.
+ * prices, switches and store stops, a product's attached groups — and the
+ * product list and card with `optionsComplete` read from them (a variant and
+ * an add-on the brand has and the product did not switch off). Answers null
+ * for a path it does not own.
  */
 function optionsCatalog() {
   const groups = seedOptionGroups();
@@ -634,7 +661,6 @@ function optionsCatalog() {
     ['opt-oat', { optionId: 'opt-oat', priceCents: 1000, enabled: true, stoppedStoreIds: [] }],
   ]);
   const products = new Map<string, FakeProductGroups>();
-  let legacy = { products: 1, variations: 0, modifiers: 1, categoryOptions: 0, ingredients: 1 };
   let nextId = 1;
 
   const productCount = (groupId: string) =>
@@ -643,6 +669,31 @@ function optionsCatalog() {
   const findOption = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id);
   const setting = (optionId: string): FakeSetting =>
     settings.get(optionId) ?? { optionId, priceCents: 0, enabled: true, stoppedStoreIds: [] };
+  /** The rule the API applies to every menu (owner, 2026-11-18). */
+  const optionsComplete = (productId: string) => {
+    const config = products.get(productId);
+    if (!config) return false;
+    const off = new Set(config.overrides.filter((o) => o.enabled === false).map((o) => o.optionId));
+    const offers = (kind: FakeGroup['kind']) =>
+      config.groups.some((link) => {
+        const group = groups.find((g) => g.id === link.groupId);
+        return group?.kind === kind && group.options.some((o) => setting(o.id).enabled && !off.has(o.id));
+      });
+    return offers('VARIANT') && offers('ADDON');
+  };
+  /** What «Добавки» shows read-only: every variant of an attached group with what it adds, the add-ons a product prices. */
+  const productPrices = () =>
+    [...products.entries()].flatMap(([productId, config]) =>
+      config.groups.flatMap((link) => {
+        const group = groups.find((g) => g.id === link.groupId);
+        if (!group) return [];
+        return group.options.flatMap((o) => {
+          const own = config.overrides.find((x) => x.optionId === o.id)?.priceCents ?? null;
+          if (group.kind === 'ADDON' && own === null) return [];
+          return [{ optionId: o.id, productId, productName: PRODUCT.name, priceCents: own ?? 0 }];
+        });
+      }),
+    );
 
   return async (route: Route, path: string): Promise<void | null> => {
     const method = route.request().method();
@@ -655,6 +706,7 @@ function optionsCatalog() {
           minSelect: null,
           maxSelect: null,
           showIfOptionId: null,
+          scope: 'BOTH',
           sortOrder: groups.length,
           ...(body() as Partial<FakeGroup>),
           id: `g-new-${nextId++}`,
@@ -713,7 +765,18 @@ function optionsCatalog() {
       return json(route, option);
     }
     if (/^\/admin\/brands\/[^/]+\/options$/.test(path)) {
-      return json(route, { groups: listed(), settings: [...settings.values()] });
+      return json(route, { groups: listed(), settings: [...settings.values()], productPrices: productPrices() });
+    }
+    if ((m = /^\/admin\/brands\/[^/]+\/option-groups\/([^/]+)\/price$/.exec(path)) && method === 'PUT') {
+      const group = groups.find((g) => g.id === m?.[1]);
+      if (!group) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      const priceCents = body()['priceCents'] as number;
+      const answer = group.options.map((o) => {
+        const next = { ...setting(o.id), priceCents };
+        settings.set(o.id, next);
+        return next;
+      });
+      return json(route, answer);
     }
     if ((m = /^\/admin\/brands\/[^/]+\/options\/([^/]+)$/.exec(path)) && method === 'PATCH') {
       const optionId = m[1] ?? '';
@@ -742,11 +805,15 @@ function optionsCatalog() {
       }
       return json(route, products.get(productId) ?? { groups: [], overrides: [] });
     }
-    if (/^\/admin\/brands\/[^/]+\/legacy-options$/.test(path)) return json(route, legacy);
-    if (/^\/admin\/brands\/[^/]+\/legacy-options\/clear$/.test(path) && method === 'POST') {
-      const deleted = legacy;
-      legacy = { products: 0, variations: 0, modifiers: 0, categoryOptions: 0, ingredients: 0 };
-      return json(route, deleted);
+    if (path === '/admin/products' && method === 'GET') {
+      return json(route, [{ ...PRODUCT, optionsComplete: optionsComplete(PRODUCT.id) }]);
+    }
+    if ((m = /^\/admin\/products\/([^/]+)$/.exec(path)) && method === 'GET') {
+      return json(route, {
+        ...PRODUCT,
+        category: { name: 'Кофе', kind: 'HOT_DRINKS' },
+        optionsComplete: optionsComplete(m[1] ?? ''),
+      });
     }
     return null;
   };
@@ -1205,7 +1272,7 @@ export async function installFakeApi(context: BrowserContext, role: FakeRole = '
       const body = route.request().postDataJSON() as { productId: string; expiresAt?: string };
       return json(route, { id: 'stop-1', storeId: STORE.id, reason: null, expiresAt: null, ...body }, 201);
     }
-    if (/^\/admin\/stores\/[^/]+\/(stop-list|ingredient-stops)\/[^/]+$/.test(path)) {
+    if (/^\/admin\/stores\/[^/]+\/stop-list\/[^/]+$/.test(path)) {
       if (route.request().method() === 'DELETE') return route.fulfill({ status: 204 });
       return json(route, { expiresAt: null });
     }
@@ -1217,12 +1284,7 @@ export async function installFakeApi(context: BrowserContext, role: FakeRole = '
     if (path === '/admin/categories') return json(route, [CATEGORY]);
     if (path === '/admin/products') return json(route, [PRODUCT]);
     if (path === '/admin/products/stores') return json(route, [{ id: STORE.id, name: STORE.name, status: 'OPEN' }]);
-    if (/^\/admin\/products\/[^/]+$/.test(path)) return json(route, { ...PRODUCT, variations: [], modifiers: [] });
-
-    if (path === '/admin/ingredients') return json(route, [OAT_MILK]);
-    if (/^\/admin\/ingredients\/[^/]+$/.test(path) && route.request().method() === 'PATCH') {
-      return json(route, { ...OAT_MILK, ...(route.request().postDataJSON() as object) });
-    }
+    if (/^\/admin\/products\/[^/]+$/.test(path)) return json(route, PRODUCT);
 
     if (path === '/admin/analytics/overview') return json(route, BUSINESS_OVERVIEW);
     if (path === '/admin/analytics/churn') return json(route, CHURN);

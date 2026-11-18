@@ -269,6 +269,14 @@ type StockUntil = 'manual' | 'endOfDay';
                           >{{ 'admin.menu.noPhoto.badge' | translate }}</span
                         >
                       }
+                      @if (p.optionsComplete === false) {
+                        <span
+                          class="hidden-badge"
+                          [title]="'admin.menu.hiddenNoOptions.title' | translate"
+                          data-testid="product-hidden-badge"
+                          >{{ 'admin.menu.hiddenNoOptions.badge' | translate }}</span
+                        >
+                      }
                       <div class="inline-meta">
                         {{ price(p.basePriceCents) }} · {{ minutes(p.prepTimeSeconds) }}
                         {{ 'common.units.min' | translate }}
@@ -343,16 +351,6 @@ type StockUntil = 'manual' | 'endOfDay';
                       </button>
                     </td>
                     <td class="col-actions">
-                      <a
-                        class="act"
-                        [routerLink]="['/menu/products', p.id, 'options']"
-                        [title]="'admin.menu.product.options' | translate"
-                        [attr.aria-label]="'admin.menu.product.options' | translate"
-                        data-testid="product-options-link"
-                      >
-                        <span class="act-text">{{ 'admin.menu.product.options' | translate }}</span>
-                        <span class="act-icon" aria-hidden="true">⚙&#xFE0E;</span>
-                      </a>
                       <a
                         class="act edit"
                         [routerLink]="['/menu/products', p.id]"
@@ -446,6 +444,18 @@ type StockUntil = 'manual' | 'endOfDay';
         border-radius: 9999px;
         background: #e8a33d26;
         color: #8a5a12;
+        font-size: 11px;
+        font-weight: 600;
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      .hidden-badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 9999px;
+        background: #d94b5e1a;
+        color: var(--color-berry);
         font-size: 11px;
         font-weight: 600;
         vertical-align: middle;
