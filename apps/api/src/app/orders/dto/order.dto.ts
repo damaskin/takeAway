@@ -8,9 +8,18 @@ import {
   OrderStatus,
   PaymentProvider,
   PickupMode,
-  VariationType,
 } from '@prisma/client';
-import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation, OptionLine } from '@takeaway/shared-types';
+import type {
+  OrderItemModifier,
+  OrderItemSnapshot,
+  OrderItemVariation,
+  OptionLine,
+  VariationType,
+} from '@takeaway/shared-types';
+
+/** The older per-product variations' types, read from the snapshots of orders placed before 2026-11-18. */
+const VARIATION_TYPES: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
+const HISTORY_NOTE = 'Older options, deleted on 2026-11-18: only orders placed before carry them; empty otherwise.';
 
 import { OptionLineDto } from '../../option-groups/dto/option-groups.dto';
 import { TakeawayPromoLineDto } from '../../takeaway-promos/dto/takeaway-promo.dto';
@@ -19,7 +28,7 @@ export class OrderItemVariationDto implements OrderItemVariation {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty({ enum: VariationType })
+  @ApiProperty({ enum: VARIATION_TYPES })
   type!: VariationType;
 
   @ApiProperty({ example: 'L' })
@@ -62,13 +71,13 @@ export class OrderItemSnapshotDto implements OrderItemSnapshot {
   @ApiProperty({ description: 'Product name at order time.' })
   name!: string;
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ type: [String], description: HISTORY_NOTE })
   variationIds!: string[];
 
   @ApiProperty({
     type: 'object',
     additionalProperties: { type: 'number' },
-    description: 'Map { modifierId: count } — the form the POS push reads.',
+    description: `Map { modifierId: count }. ${HISTORY_NOTE}`,
   })
   modifiers!: Record<string, number>;
 
@@ -80,17 +89,16 @@ export class OrderItemSnapshotDto implements OrderItemSnapshot {
 
   @ApiProperty({
     type: [OrderItemVariationDto],
-    description: 'Chosen (or defaulted) variations, size first, then milk, temperature, cup.',
+    description: `Variations, size first, then milk, temperature, cup. ${HISTORY_NOTE}`,
   })
   variations!: OrderItemVariationDto[];
 
-  @ApiProperty({ type: [OrderItemModifierDto], description: 'Extras with a positive count, in menu order.' })
+  @ApiProperty({ type: [OrderItemModifierDto], description: `Extras with a positive count. ${HISTORY_NOTE}` })
   modifierLines!: OrderItemModifierDto[];
 
   @ApiProperty({
     type: () => [OptionLineDto],
-    description:
-      'Picks from the options catalog, variants first, in page order. Empty for products without catalog groups.',
+    description: 'Picks from the options catalog, variants first, in page order. Empty on orders before 2026-11-09.',
   })
   optionLines!: OptionLine[];
 }

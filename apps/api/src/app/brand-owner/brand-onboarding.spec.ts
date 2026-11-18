@@ -1,5 +1,6 @@
 import { BrandModerationStatus } from '@prisma/client';
 
+import { optionTablesFake } from '../option-groups/testing/option-tables.fake';
 import type { PrismaService } from '../prisma/prisma.service';
 import { onboardingProgressOf, progressOf } from './brand-onboarding';
 
@@ -53,23 +54,24 @@ describe('progressOf', () => {
 });
 
 describe('onboardingProgressOf', () => {
-  it('works out many brands from four grouped queries', async () => {
+  it('works out many brands from a few grouped queries', async () => {
     const groupBy = (rows: Array<{ brandId: string; n: number }>) =>
       jest.fn().mockResolvedValue(rows.map((r) => ({ brandId: r.brandId, _count: { _all: r.n } })));
-    const productGroups = jest.fn(({ where }: { where: Record<string, unknown> }) =>
-      'imageUrls' in where
-        ? groupBy([{ brandId: 'live', n: 2 }])()
-        : groupBy([
-            { brandId: 'live', n: 5 },
-            { brandId: 'half', n: 4 },
-          ])(),
-    );
+    const productGroups = groupBy([{ brandId: 'live', n: 2 }]);
+    // On the menu: two of «live», one of «half» and one of «new»; «new»'s has a variant and no add-on.
+    const listed = jest.fn().mockResolvedValue([
+      { id: 'l1', brandId: 'live' },
+      { id: 'l2', brandId: 'live' },
+      { id: 'h1', brandId: 'half' },
+      { id: 'n1', brandId: 'new' },
+    ]);
     const prisma = {
       store: {
         groupBy: groupBy([{ brandId: 'live', n: 2 }]),
         findMany: jest.fn().mockResolvedValue([{ brandId: 'sold' }]),
       },
-      product: { groupBy: productGroups },
+      product: { groupBy: productGroups, findMany: listed },
+      ...optionTablesFake(['l1', 'l2', 'h1'], ['n1']),
     };
 
     const progress = await onboardingProgressOf(prisma as unknown as PrismaService, [
@@ -81,7 +83,7 @@ describe('onboardingProgressOf', () => {
 
     expect(progress.get('live')).toMatchObject({ done: 4, photos: true, complete: true });
     expect(progress.get('half')).toMatchObject({ store: false, menu: true, photos: false, done: 2 });
-    expect(progress.get('new')).toMatchObject({ done: 1, complete: false });
+    expect(progress.get('new')).toMatchObject({ menu: false, done: 1, complete: false });
     // A test sale is a launch, photos or not.
     expect(progress.get('sold')).toMatchObject({ menu: false, hasOrders: true, complete: true });
     expect(prisma.store.groupBy).toHaveBeenCalledWith(
@@ -93,11 +95,14 @@ describe('onboardingProgressOf', () => {
         }),
       }),
     );
-    expect(productGroups).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ visible: true, category: { visible: true, addOnsOnly: false } }),
-      }),
-    );
+    expect(listed).toHaveBeenCalledWith({
+      where: {
+        brandId: { in: ['live', 'half', 'new', 'sold'] },
+        visible: true,
+        category: { visible: true, addOnsOnly: false },
+      },
+      select: { id: true, brandId: true },
+    });
     expect(prisma.store.findMany).toHaveBeenCalledWith({
       where: {
         brandId: { in: ['live', 'half', 'new', 'sold'] },

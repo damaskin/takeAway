@@ -1,20 +1,29 @@
+import { NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { needsOptionChoice } from '@takeaway/utils';
 
+import { AdminCatalogService } from '../admin/catalog/admin-catalog.service';
 import { AdminBrandOptionsService } from '../admin/options/admin-brand-options.service';
-import { AdminLegacyOptionsService } from '../admin/options/admin-legacy-options.service';
 import { AdminOptionCatalogService } from '../admin/options/admin-option-catalog.service';
 import { AdminProductOptionGroupsService } from '../admin/options/admin-product-option-groups.service';
+import type { PasswordService } from '../auth/services/password.service';
+import { listedProductCounts } from '../brand-owner/brand-onboarding';
 import { CartChangedException } from '../cart/cart-changed.exception';
 import { CartService, storeProductInclude } from '../cart/cart.service';
+import { CatalogService } from '../catalog/catalog.service';
+import type { FeatureFlagsService } from '../config/feature-flags.service';
 import type { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import type { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { StoreAvailabilityNotifier } from '../realtime/store-availability.notifier';
 import { ProductOptionGroupsService } from './product-option-groups.service';
 
 /**
- * The options catalog on a real Postgres: the seed of the migration, the
- * admin writes, the builder and the cart. Opt-in: set OPTIONS_IT_DATABASE_URL
+ * The options catalog on a real Postgres: the seed of the migrations, the
+ * admin writes, the builder and the cart, and the rule that a product is
+ * shown to customers only with a variant and an add-on (owner, 2026-11-18)
+ * across the menu, the product page, the cart, checkout, the onboarding
+ * count and the admin list. Opt-in: set OPTIONS_IT_DATABASE_URL
  * to a throwaway database with the migrations applied (`prisma migrate
  * deploy`). The suite adds one brand, store, user and a few products with
  * ids starting `it-opt-`, and deletes them again; the catalog itself is only
@@ -28,13 +37,15 @@ const STORE = 'it-opt-store';
 const USER = 'it-opt-user';
 const CATEGORY = 'it-opt-coffee';
 const LATTE = 'it-opt-latte';
-const LEGACY = 'it-opt-legacy';
+/** «Раф»: no options to start with, so customers do not see it. */
+const BARE = 'it-opt-raf';
 
 suite('options catalog on Postgres', () => {
   let prisma: PrismaClient;
   let db: PrismaService;
   let builder: ProductOptionGroupsService;
   let cart: CartService;
+  let catalog: CatalogService;
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url } } });
@@ -47,6 +58,13 @@ suite('options catalog on Postgres', () => {
         quote: async () => ({ etaSeconds: 0 }),
       } as unknown as KitchenLoadService,
       { forStore: async () => ({ acceptingOrders: true }) } as unknown as StoreAvailabilityService,
+      builder,
+    );
+    catalog = new CatalogService(
+      db,
+      { deliveryEnabled: true } as FeatureFlagsService,
+      {} as KitchenLoadService,
+      {} as StoreAvailabilityService,
       builder,
     );
     await cleanUp(prisma);
@@ -74,7 +92,7 @@ suite('options catalog on Postgres', () => {
       data: { id: CATEGORY, brandId: BRAND, slug: CATEGORY, name: 'Кофе', kind: 'HOT_DRINKS' },
     });
     await prisma.product.createMany({
-      data: [LATTE, LEGACY].map((id, i) => ({
+      data: [LATTE, BARE].map((id, i) => ({
         id,
         brandId: BRAND,
         categoryId: CATEGORY,
@@ -85,7 +103,7 @@ suite('options catalog on Postgres', () => {
       })),
     });
     await prisma.productStore.createMany({
-      data: [LATTE, LEGACY].map((productId) => ({ productId, storeId: STORE })),
+      data: [LATTE, BARE].map((productId) => ({ productId, storeId: STORE })),
     });
   });
 
@@ -130,7 +148,7 @@ suite('options catalog on Postgres', () => {
     await brand.update([BRAND], BRAND, 'oi_syrups_caramel', { enabled: false });
     await brand.stop([BRAND], STORE, 'oi_milk_coconut', {});
 
-    const groups = (await builder.forProducts([LATTE, LEGACY], { brandId: BRAND, storeId: STORE })).get(LATTE) ?? [];
+    const groups = (await builder.forProducts([LATTE, BARE], { brandId: BRAND, storeId: STORE })).get(LATTE) ?? [];
     expect(groups.map((g) => g.id)).toEqual([
       'og_coffee_size',
       'og_serving',
@@ -197,57 +215,147 @@ suite('options catalog on Postgres', () => {
     });
   });
 
-  it("clears a brand's older options in one go, with the cart lines made of them", async () => {
-    const ingredient = await prisma.ingredient.create({
-      data: { brandId: BRAND, name: 'Овсяное молоко', priceCents: 60 },
+  it('marks the seeded groups drinks or food, and has no older options any more', async () => {
+    const scopes = await prisma.optionGroup.findMany({
+      where: { id: { in: ['og_milk', 'og_ice', 'og_drink_size', 'og_base', 'og_dips'] } },
+      select: { id: true, scope: true },
+      orderBy: { id: 'asc' },
     });
-    const variation = await prisma.variation.create({
-      data: { productId: LEGACY, type: 'MILK', name: 'Овсяное', ingredientId: ingredient.id },
-    });
-    await prisma.modifier.create({
-      data: { productId: LEGACY, slug: 'it-opt-shot', name: 'Шот', ingredientId: ingredient.id },
-    });
-    await prisma.storeIngredientStop.create({ data: { storeId: STORE, ingredientId: ingredient.id } });
-    const { id: cartId } = await prisma.cart.findUniqueOrThrow({
-      where: { userId_storeId: { userId: USER, storeId: STORE } },
-    });
-    await prisma.cartItem.create({
-      data: {
-        cartId,
-        productId: LEGACY,
-        quantity: 1,
-        variationIds: [variation.id],
-        unitPriceCents: 4560,
-        unitPrepSeconds: 0,
-      },
+    expect(scopes).toEqual([
+      { id: 'og_base', scope: 'FOOD' },
+      { id: 'og_dips', scope: 'FOOD' },
+      { id: 'og_drink_size', scope: 'DRINKS' },
+      { id: 'og_ice', scope: 'DRINKS' },
+      { id: 'og_milk', scope: 'DRINKS' },
+    ]);
+    expect(await prisma.optionGroup.count({ where: { id: { startsWith: 'og_' }, scope: 'BOTH' } })).toBe(0);
+
+    // Migration 20261118110000_drop_legacy_options: the tables and the cart columns are gone.
+    const tables = await prisma.$queryRaw<Array<{ name: string | null }>>`
+      SELECT to_regclass(t)::text AS name
+      FROM unnest(ARRAY['"Variation"', '"Modifier"', '"Ingredient"', '"CategoryOption"', '"StoreIngredientStop"']) AS t
+    `;
+    expect(tables.map((t) => t.name)).toEqual([null, null, null, null, null]);
+    const columns = await prisma.$queryRaw<Array<{ column_name: string }>>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'CartItem' AND column_name IN ('variationIds', 'modifiersJson', 'optionsJson')
+    `;
+    expect(columns.map((c) => c.column_name)).toEqual(['optionsJson']);
+  });
+
+  it('shows a product only with a variant and an add-on: menu, page, cart, checkout, onboarding, admin', async () => {
+    const products = new AdminProductOptionGroupsService(db);
+    const brand = new AdminBrandOptionsService(db);
+    const admin = new AdminCatalogService(db, {} as PasswordService, {} as StoreAvailabilityNotifier, builder);
+    const shown = async () => ({
+      menu: (await catalog.getMenu(STORE)).categories.flatMap((c) => c.products.map((p) => p.id)),
+      listed: (await listedProductCounts(db, [BRAND])).get(BRAND) ?? 0,
+      admin: (await admin.listProducts([BRAND], BRAND)).filter((p) => p.optionsComplete).map((p) => p.id),
     });
 
-    const legacy = new AdminLegacyOptionsService(db);
-    expect(await legacy.summary(BRAND)).toEqual({
-      products: 1,
-      variations: 1,
-      modifiers: 1,
-      categoryOptions: 0,
-      ingredients: 1,
+    // The latte (sizes, milk, syrups…) is shown; the bare raf is not, anywhere.
+    expect(await shown()).toEqual({ menu: [LATTE], listed: 1, admin: [LATTE] });
+    await expect(catalog.getProduct(BARE, STORE)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(catalog.getProduct(BARE)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(cart.addItem(USER, { storeId: STORE, productId: BARE, quantity: 1 })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+
+    // A variant alone is not enough.
+    await products.replace(null, BARE, { groups: [{ groupId: 'og_serving', sortOrder: 0 }], overrides: [] });
+    expect((await shown()).menu).toEqual([LATTE]);
+
+    // With an add-on it is shown and sold (hot by default, no sugar: the base price).
+    await products.replace(null, BARE, {
+      groups: [
+        { groupId: 'og_serving', sortOrder: 0 },
+        { groupId: 'og_extra_shot', sortOrder: 1 },
+      ],
+      overrides: [],
     });
-    expect(await legacy.clear(BRAND)).toEqual({
-      products: 1,
-      variations: 1,
-      modifiers: 1,
-      categoryOptions: 0,
-      ingredients: 1,
+    expect(await shown()).toEqual({ menu: [LATTE, BARE], listed: 2, admin: [LATTE, BARE] });
+    expect((await catalog.getProduct(BARE, STORE)).optionGroups.map((g) => g.id)).toEqual([
+      'og_serving',
+      'og_extra_shot',
+    ]);
+    const added = await cart.addItem(USER, { storeId: STORE, productId: BARE, quantity: 1 });
+    expect(added.items.find((i) => i.productId === BARE)).toMatchObject({ unitPriceCents: 4500 });
+
+    // Its only add-on switched off on the product: hidden again, and checkout takes the line out.
+    await products.replace(null, BARE, {
+      groups: [
+        { groupId: 'og_serving', sortOrder: 0 },
+        { groupId: 'og_extra_shot', sortOrder: 1 },
+      ],
+      overrides: [{ optionId: 'oi_extra_shot_extra_shot', priceCents: null, isDefault: null, enabled: false }],
     });
-    expect(await legacy.summary(BRAND)).toEqual({
-      products: 0,
-      variations: 0,
-      modifiers: 0,
-      categoryOptions: 0,
-      ingredients: 0,
+    expect(await shown()).toEqual({ menu: [LATTE], listed: 1, admin: [LATTE] });
+    const row = await prisma.cart.findUniqueOrThrow({
+      where: { userId_storeId: { userId: USER, storeId: STORE } },
+      include: { items: { include: { product: { include: storeProductInclude(STORE) } } } },
     });
-    // The legacy line left; the catalog latte stayed, and the cart was re-totalled.
-    const left = await prisma.cart.findUniqueOrThrow({ where: { id: cartId }, include: { items: true } });
-    expect(left.items.map((i) => i.productId)).toEqual([LATTE]);
-    expect(left.subtotalCents).toBe(2 * 6500);
+    const err = await cart.repriceForCheckout(row).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CartChangedException);
+    expect((err as CartChangedException).items).toEqual([
+      expect.objectContaining({ productId: BARE, reason: 'PRODUCT_UNAVAILABLE' }),
+    ]);
+
+    // Switched on again on the product, but the brand does not have the shot: still hidden.
+    await products.replace(null, BARE, {
+      groups: [
+        { groupId: 'og_serving', sortOrder: 0 },
+        { groupId: 'og_extra_shot', sortOrder: 1 },
+      ],
+      overrides: [],
+    });
+    await brand.update([BRAND], BRAND, 'oi_extra_shot_extra_shot', { enabled: false });
+    expect((await shown()).menu).toEqual([LATTE]);
+    await brand.update([BRAND], BRAND, 'oi_extra_shot_extra_shot', { enabled: true });
+
+    // A store's stop does not hide it: the shot is only greyed out there.
+    await brand.stop([BRAND], STORE, 'oi_extra_shot_extra_shot', {});
+    expect((await shown()).menu).toEqual([LATTE, BARE]);
+    await brand.resume([BRAND], STORE, 'oi_extra_shot_extra_shot');
+  });
+
+  it('prices an add-on per product, switches single options off, and applies one price to a group', async () => {
+    const products = new AdminProductOptionGroupsService(db);
+    const brand = new AdminBrandOptionsService(db);
+    await products.replace(null, BARE, {
+      groups: [
+        { groupId: 'og_serving', sortOrder: 0 },
+        { groupId: 'og_syrups', sortOrder: 1 },
+      ],
+      overrides: [
+        { optionId: 'oi_serving_cold', priceCents: null, isDefault: null, enabled: false },
+        { optionId: 'oi_syrups_vanilla', priceCents: 0, isDefault: null },
+      ],
+    });
+
+    // «Применить ко всем»: +5 on every syrup of the brand.
+    const settings = await brand.applyGroupPrice([BRAND], BRAND, 'og_syrups', { priceCents: 500 });
+    expect(settings).toHaveLength(27);
+    expect(new Set(settings.map((s) => s.priceCents))).toEqual(new Set([500]));
+    await expect(brand.applyGroupPrice([BRAND], BRAND, 'og_serving', { priceCents: 500 })).rejects.toMatchObject({
+      response: { code: 'OPTION_GROUP_INVALID' },
+    });
+
+    const groups = await builder.forProduct(BARE, { brandId: BRAND, storeId: STORE });
+    const option = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id);
+    expect(option('oi_serving_cold')).toBeUndefined();
+    expect(option('oi_syrups_vanilla')?.priceCents).toBe(0);
+    expect(option('oi_syrups_caramel')).toBeUndefined(); // switched off by the brand above
+    expect(option('oi_syrups_hazelnut')?.priceCents).toBe(500);
+
+    // «Добавки» shows what the cards set: the raf's free vanilla, the latte's L.
+    const view = await brand.catalog([BRAND], BRAND);
+    expect(view.productPrices).toEqual(
+      expect.arrayContaining([
+        { optionId: 'oi_syrups_vanilla', productId: BARE, productName: 'Раф', priceCents: 0 },
+        { optionId: 'oi_coffee_size_l', productId: LATTE, productName: 'Латте', priceCents: 1000 },
+        { optionId: 'oi_coffee_size_m', productId: LATTE, productName: 'Латте', priceCents: 0 },
+      ]),
+    );
   });
 });
 
@@ -255,7 +363,6 @@ async function cleanUp(prisma: PrismaClient): Promise<void> {
   await prisma.cart.deleteMany({ where: { userId: USER } });
   await prisma.product.deleteMany({ where: { brandId: BRAND } });
   await prisma.category.deleteMany({ where: { brandId: BRAND } });
-  await prisma.ingredient.deleteMany({ where: { brandId: BRAND } });
   await prisma.store.deleteMany({ where: { id: STORE } });
   await prisma.user.deleteMany({ where: { id: USER } });
   await prisma.brand.deleteMany({ where: { id: BRAND } });

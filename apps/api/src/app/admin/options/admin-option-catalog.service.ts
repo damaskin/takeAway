@@ -44,6 +44,7 @@ export function toCatalogGroup(row: OptionGroup & { options: OptionItem[] }, pro
     minSelect: row.minSelect,
     maxSelect: row.maxSelect,
     showIfOptionId: row.showIfOptionId,
+    scope: row.scope,
     sortOrder: row.sortOrder,
     options: row.options.map(toCatalogOption),
     ...(productCount === undefined ? {} : { productCount }),
@@ -54,7 +55,9 @@ export function toCatalogGroup(row: OptionGroup & { options: OptionItem[] }, pro
  * The platform's options catalog («Добавки и варианты»): groups and their
  * options, kept by the takeAway team (SUPER_ADMIN; the controller holds the
  * role). Every brand sees the same catalog and attaches its groups to its
- * products; prices, switches and stops are the brands' and stores' own.
+ * products; prices, switches and stops are the brands' and stores' own. A
+ * group's scope (drinks, food, both) decides which products' editor offers
+ * it; changing it never detaches the group from a product.
  *
  * A group attached to a product cannot be deleted (409
  * OPTION_GROUP_IN_USE). Deleting an option takes its brand prices, stops
@@ -86,7 +89,7 @@ export class AdminOptionCatalogService {
     const sortOrder = dto.sortOrder ?? (await this.nextGroupSortOrder());
     const row = await this.prisma.optionGroup
       .create({
-        data: { ...shape, name: dto.name, showIfOptionId, sortOrder },
+        data: { ...shape, name: dto.name, showIfOptionId, scope: dto.scope ?? 'BOTH', sortOrder },
         include: WITH_OPTIONS,
       })
       .catch((err: unknown) => rethrowNameTaken(err, dto.name));
@@ -123,6 +126,7 @@ export class AdminOptionCatalogService {
           ...shape,
           ...(dto.name !== undefined ? { name: dto.name } : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+          ...(dto.scope !== undefined ? { scope: dto.scope } : {}),
           showIfOptionId,
         },
         include: { ...WITH_OPTIONS, _count: { select: { products: true } } },

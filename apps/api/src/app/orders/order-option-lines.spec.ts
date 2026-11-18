@@ -50,10 +50,6 @@ const CHECKOUT_LINE: CheckoutLine = {
   notes: 'без крышки',
   unitPriceCents: 7100,
   unitPrepSeconds: 180,
-  variationIds: [],
-  modifiers: {},
-  variations: [],
-  modifierLines: [],
   options: OPTION_LINES.map((l) => ({ optionId: l.optionId, qty: l.qty })),
   optionLines: OPTION_LINES,
 };

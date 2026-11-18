@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
 import type { PasswordService } from '../../auth/services/password.service';
+import { optionGroupsStub } from '../../option-groups/testing/option-groups.stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
@@ -46,6 +47,7 @@ describe('AdminCatalogService — brand boundaries', () => {
       prisma as unknown as PrismaService,
       {} as PasswordService,
       {} as StoreAvailabilityNotifier,
+      optionGroupsStub(),
     );
     return { svc, prisma };
   }
@@ -100,6 +102,7 @@ describe('AdminCatalogService — store listing boundaries', () => {
       prisma as unknown as PrismaService,
       {} as PasswordService,
       {} as StoreAvailabilityNotifier,
+      optionGroupsStub(),
     );
     return { svc, prisma };
   }

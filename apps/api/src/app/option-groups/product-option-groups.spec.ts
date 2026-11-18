@@ -119,16 +119,17 @@ describe('buildProductOptionGroups', () => {
     expect(group).toMatchObject({ minSelect: 1, maxSelect: 1 });
   });
 
-  it('prices variants per product and add-ons per brand; no row is 0', () => {
+  it("prices variants per product and add-ons per brand, unless the product sets the add-on's own; no row is 0", () => {
     const settings = new Map<string, BrandSettingRow>([
       ['oi_oat', { optionId: 'oi_oat', priceCents: 1000, enabled: true }],
+      ['oi_cow', { optionId: 'oi_cow', priceCents: 300, enabled: true }],
       // A brand price on a variant is not read.
       ['oi_m', { optionId: 'oi_m', priceCents: 999, enabled: true }],
     ]);
     const overrides = [
       { productId: 'p-latte', optionId: 'oi_m', priceCents: 700, isDefault: null },
-      // An override's price on an add-on is not read either.
-      { productId: 'p-latte', optionId: 'oi_cow', priceCents: 50, isDefault: null },
+      // The product's own price of an add-on wins over the brand's — 0 too.
+      { productId: 'p-latte', optionId: 'oi_cow', priceCents: 0, isDefault: null },
     ];
     const groups = buildProductOptionGroups([size, milk], overrides, settings, new Set());
     const price = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id)?.priceCents;
@@ -137,6 +138,20 @@ describe('buildProductOptionGroups', () => {
     expect(price('oi_s')).toBe(0);
     expect(price('oi_oat')).toBe(1000);
     expect(price('oi_cow')).toBe(0);
+  });
+
+  // A shawarma's «Основа» without «Булка»: the option is not offered on this product only.
+  it('leaves out what the product switched off, and a group left empty by it', () => {
+    const overrides = [
+      { productId: 'p-latte', optionId: 'oi_s', priceCents: null, isDefault: null, enabled: false },
+      { productId: 'p-latte', optionId: 'oi_cow', priceCents: null, isDefault: null, enabled: false },
+      { productId: 'p-latte', optionId: 'oi_oat', priceCents: null, isDefault: null, enabled: false },
+      { productId: 'p-latte', optionId: 'oi_m', priceCents: null, isDefault: null, enabled: null },
+    ];
+    const groups = buildProductOptionGroups([size, milk], overrides, none, new Set());
+
+    expect(groups.map((g) => g.id)).toEqual(['og_coffee_size']);
+    expect(groups[0]?.options.map((o) => o.id)).toEqual(['oi_m']);
   });
 
   it("leaves out what the brand switched off, and a group left empty; marks the store's stops", () => {
@@ -199,7 +214,11 @@ describe('ProductOptionGroupsService', () => {
       productOptionGroup: { findMany: jest.fn().mockResolvedValue(rows) },
       productOptionOverride: { findMany: jest.fn().mockResolvedValue([]) },
       brandOptionSetting: {
-        findMany: jest.fn().mockResolvedValue([{ optionId: 'oi_oat', priceCents: 1000, enabled: true }]),
+        findMany: jest.fn().mockResolvedValue([
+          { brandId: 'brand-a', optionId: 'oi_oat', priceCents: 1000, enabled: true },
+          // Another brand's settings never leak into this one's products.
+          { brandId: 'brand-b', optionId: 'oi_oat', priceCents: 5000, enabled: false },
+        ]),
       },
       storeOptionStop: { findMany: jest.fn().mockResolvedValue([{ optionId: 'oi_oat' }]) },
     };
@@ -225,7 +244,7 @@ describe('ProductOptionGroupsService', () => {
     expect(prisma.productOptionGroup.findMany.mock.calls[0][0].where).toEqual({
       productId: { in: ['p-latte', 'p-flat', 'p-croissant'] },
     });
-    expect(prisma.brandOptionSetting.findMany.mock.calls[0][0].where).toMatchObject({ brandId: 'brand-a' });
+    expect(prisma.brandOptionSetting.findMany.mock.calls[0][0].where).toMatchObject({ brandId: { in: ['brand-a'] } });
     expect(prisma.storeOptionStop.findMany.mock.calls[0][0].where).toMatchObject({
       storeId: 'store-1',
       OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
@@ -244,5 +263,32 @@ describe('ProductOptionGroupsService', () => {
     const bare = new ProductOptionGroupsService(empty as unknown as PrismaService);
     expect(await bare.forProduct('p-croissant', { brandId: 'brand-a', storeId: 'store-1' })).toEqual([]);
     expect(empty.brandOptionSetting.findMany).not.toHaveBeenCalled();
+  });
+
+  it("tells which products offer a variant and an add-on, each with its own brand's settings, in three queries", async () => {
+    const prisma = prismaWith([
+      row(size.group, 0, 'p-latte'),
+      row(milk.group, 1, 'p-latte'),
+      row(size.group, 0, 'p-flat'),
+      row(size.group, 0, 'p-b'),
+      row(milk.group, 1, 'p-b'),
+    ]);
+    // Brand B does not have oat milk, but has cow's: its product still offers an add-on.
+    const service = new ProductOptionGroupsService(prisma as unknown as PrismaService);
+
+    const shown = await service.offeringVariantAndAddon([
+      { id: 'p-latte', brandId: 'brand-a' },
+      { id: 'p-flat', brandId: 'brand-a' },
+      { id: 'p-b', brandId: 'brand-b' },
+      { id: 'p-croissant', brandId: 'brand-a' },
+    ]);
+
+    expect([...shown].sort()).toEqual(['p-b', 'p-latte']);
+    expect(prisma.productOptionGroup.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.brandOptionSetting.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.brandOptionSetting.findMany.mock.calls[0][0].where).toMatchObject({
+      brandId: { in: ['brand-a', 'brand-b'] },
+    });
+    expect(prisma.storeOptionStop.findMany).not.toHaveBeenCalled();
   });
 });

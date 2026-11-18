@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CategoryKind, StoreFulfillment } from '@prisma/client';
-import { needsOptionChoice, showsNutrition } from '@takeaway/utils';
+import { needsOptionChoice, offersVariantAndAddon, showsNutrition } from '@takeaway/utils';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService, type PickupSlot } from '../kitchen/kitchen-load.service';
@@ -8,7 +8,7 @@ import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
+import { activeStopWhere } from './option-availability';
 import { SOLD_ON_ITS_OWN } from './product-listing';
 import { busyMeterOf } from './store-availability';
 import { storeKinds, storeKindWhere } from './store-kinds';
@@ -310,16 +310,22 @@ export class CatalogService {
     });
 
     // A tile adds in one tap unless the product's catalog groups need a
-    // look first (a size to pick). One batch for the whole menu.
+    // look first (a size to pick). One batch for the whole menu. A product
+    // without a variant and an add-on is not shown at all (owner,
+    // 2026-11-18), and a category left without products goes with it.
     const optionGroups = await this.optionGroups.forProducts(
       categories.flatMap((c) => c.products.map((p) => p.id)),
       { brandId: store.brandId, storeId: store.id },
     );
+    const shown = categories.map((c) => ({
+      ...c,
+      products: c.products.filter((p) => offersVariantAndAddon(optionGroups.get(p.id) ?? [])),
+    }));
 
     return {
       storeId: store.id,
       storeSlug: store.slug,
-      categories: categories
+      categories: shown
         .filter((c) => c.products.length > 0)
         .map((c) => ({
           id: c.id,
@@ -368,8 +374,7 @@ export class CatalogService {
       store = found;
     }
     const now = new Date();
-    // With a store: only a product that store sells, and without the
-    // options made of what that store has run out of. Never one the menu
+    // With a store: only a product that store sells. Never one the menu
     // leaves out with its category (hidden, or add-ons only).
     const product = await this.prisma.product.findFirst({
       where: {
@@ -380,41 +385,19 @@ export class CatalogService {
         ...(store ? { brandId: store.brandId, stores: { some: { storeId: store.id } } } : {}),
       },
       orderBy: { createdAt: 'asc' },
-      include: {
-        variations: {
-          orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }],
-          include: {
-            ingredient: {
-              select: {
-                isAvailable: true,
-                ...(store
-                  ? { storeStops: { where: { storeId: store.id, ...activeStopWhere(now) }, select: { storeId: true } } }
-                  : {}),
-              },
-            },
-          },
-        },
-        modifiers: {
-          where: store ? availableOptionAt(store.id, now) : AVAILABLE_OPTION,
-          orderBy: { sortOrder: 'asc' },
-        },
-        category: { select: { kind: true } },
-      },
+      include: { category: { select: { kind: true } } },
     });
     if (!product) throw new NotFoundException('Product not found');
 
-    // On the options catalog the product is ordered through its groups
-    // alone: the older variations and extras are not offered.
+    // Its catalog groups are its only options; without a variant and an
+    // add-on the product is not shown, and its page answers as one that is
+    // not there — like a hidden product (owner, 2026-11-18).
     const optionGroups = await this.optionGroups.forProduct(product.id, {
       brandId: product.brandId,
       storeId: store?.id ?? null,
       now,
     });
-    const onCatalog = optionGroups.length > 0;
-    const variations = product.variations.filter(
-      (v) => !v.ingredient || (v.ingredient.isAvailable && !(v.ingredient.storeStops?.length ?? 0)),
-    );
-    const defaults = defaultVariationIds(product.variations, variations);
+    if (!offersVariantAndAddon(optionGroups)) throw new NotFoundException('Product not found');
 
     return {
       id: product.id,
@@ -431,26 +414,9 @@ export class CatalogService {
       categoryKind: product.category.kind,
       hasRequiredOptions: needsOptionChoice(optionGroups),
       optionGroups,
-      variations: (onCatalog ? [] : variations).map((v) => ({
-        id: v.id,
-        type: v.type,
-        name: v.name,
-        priceDeltaCents: v.priceDeltaCents,
-        prepTimeDeltaSeconds: v.prepTimeDeltaSeconds,
-        sortOrder: v.sortOrder,
-        isDefault: defaults.has(v.id),
-      })),
-      modifiers: (onCatalog ? [] : product.modifiers).map((m) => ({
-        id: m.id,
-        slug: m.slug,
-        name: m.name,
-        priceDeltaCents: m.priceDeltaCents,
-        prepTimeDeltaSeconds: m.prepTimeDeltaSeconds,
-        minCount: m.minCount,
-        maxCount: m.maxCount,
-        sortOrder: m.sortOrder,
-        group: m.group,
-      })),
+      // For app builds from before 2026-11-18 that read them; nothing fills them.
+      variations: [],
+      modifiers: [],
     };
   }
 }
@@ -475,25 +441,6 @@ function nutritionOf(product: Nutrition, kind: CategoryKind): Nutrition {
     fatsGrams: product.fatsGrams,
     carbsGrams: product.carbsGrams,
   };
-}
-
-/**
- * The pre-selected variation of each type. When the default one is hidden
- * because its ingredient ran out (the house milk), the first remaining
- * choice of that type takes over — the one the cart falls back to — so the
- * screen and the price agree. A type that never had a default keeps none.
- */
-function defaultVariationIds(
-  all: ReadonlyArray<{ type: string; isDefault: boolean }>,
-  shown: ReadonlyArray<{ id: string; type: string; isDefault: boolean }>,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const type of new Set(all.filter((v) => v.isDefault).map((v) => v.type))) {
-    const ofType = shown.filter((v) => v.type === type);
-    const pick = ofType.find((v) => v.isDefault) ?? ofType[0];
-    if (pick) ids.add(pick.id);
-  }
-  return ids;
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {

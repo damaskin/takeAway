@@ -1,6 +1,5 @@
 import { HttpException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import type { Modifier, Variation } from '@prisma/client';
 
 import { CartChangedException } from '../cart/cart-changed.exception';
 import { CartService, type StoreProduct } from '../cart/cart.service';
@@ -23,35 +22,7 @@ import { checkoutError } from '../common/http/checkout-error';
 import { OrdersService } from './orders.service';
 import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
-function variation(v: Partial<Variation> & Pick<Variation, 'id' | 'type' | 'name'>): Variation {
-  return {
-    productId: 'p-latte',
-    priceDeltaCents: 0,
-    prepTimeDeltaSeconds: 0,
-    sortOrder: 0,
-    isDefault: false,
-    ingredientId: null,
-    ...v,
-  };
-}
-
-function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifier {
-  return {
-    productId: 'p-latte',
-    slug: m.id,
-    priceDeltaCents: 0,
-    prepTimeDeltaSeconds: 0,
-    minCount: 0,
-    maxCount: 3,
-    sortOrder: 0,
-    externalProvider: null,
-    externalId: null,
-    ingredientId: null,
-    group: null,
-    ...m,
-  };
-}
-
+/** A latte at 7.50 — its catalog groups are the stub's: size M by default at no surcharge, a free sugar. */
 function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
   return {
     id: 'p-latte',
@@ -60,7 +31,7 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
     slug: 'latte',
     name: 'Латте',
     description: null,
-    basePriceCents: 450,
+    basePriceCents: 750,
     prepTimeSeconds: 180,
     prepParallel: false,
     caffeineLevel: null,
@@ -81,18 +52,11 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
     updatedAt: new Date('2026-09-01T00:00:00Z'),
     stores: [{ storeId: 'store-1' }],
     category: { visible: true, addOnsOnly: false },
-    variations: [
-      variation({ id: 'v-m', type: 'SIZE', name: 'M', sortOrder: 1, isDefault: true }),
-      variation({ id: 'v-l', type: 'SIZE', name: 'L', priceDeltaCents: 140, sortOrder: 2 }),
-      variation({ id: 'v-cow', type: 'MILK', name: 'Коровье', sortOrder: 1 }),
-      variation({ id: 'v-oat', type: 'MILK', name: 'Овсяное', priceDeltaCents: 60, sortOrder: 2 }),
-    ],
-    modifiers: [modifier({ id: 'm-vanilla', name: 'Ваниль', priceDeltaCents: 50 })],
     ...overrides,
   };
 }
 
-/** Two "L, oat, +2 vanilla" lattes, as the customer put them in the cart. */
+/** Two lattes, size M, as the customer put them in the cart. */
 function cartWith(product: StoreProduct) {
   return {
     id: 'cart-1',
@@ -117,10 +81,7 @@ function cartWith(product: StoreProduct) {
         cartId: 'cart-1',
         productId: 'p-latte',
         quantity: 2,
-        variationIds: ['v-l', 'v-oat'],
-        modifiersJson: { 'm-vanilla': 2 },
-        optionsJson: [],
-        // 450 + 140 + 60 + 2 × 50
+        optionsJson: [{ optionId: 'stub-size-m', qty: 1 }],
         unitPriceCents: 750,
         unitPrepSeconds: 180,
         notes: 'поменьше пены',
@@ -132,8 +93,35 @@ function cartWith(product: StoreProduct) {
   };
 }
 
-/** What `productSnapshot` looks like for the latte above since options were snapshotted. */
+/** What `productSnapshot` looks like for the latte above: its catalog picks, the older options' fields empty. */
 const LATTE_SNAPSHOT = {
+  id: 'p-latte',
+  slug: 'latte',
+  name: 'Латте',
+  variationIds: [],
+  modifiers: {},
+  notes: 'поменьше пены',
+  unitPrepSeconds: 180,
+  variations: [],
+  modifierLines: [],
+  optionLines: [
+    {
+      groupId: 'stub-size',
+      groupName: 'Размер',
+      kind: 'VARIANT',
+      type: 'A',
+      optionId: 'stub-size-m',
+      name: 'M',
+      qty: 1,
+      unitPriceCents: 0,
+      freeQty: 0,
+      totalCents: 0,
+    },
+  ],
+};
+
+/** An order placed before 2026-11-18 with the older per-product options: kept as it was bought. */
+const HISTORY_SNAPSHOT = {
   id: 'p-latte',
   slug: 'latte',
   name: 'Латте',
@@ -289,7 +277,7 @@ function harness() {
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
 
 describe('OrdersService.create', () => {
-  it('freezes the chosen size, milk, extras and notes into the order line', async () => {
+  it('freezes the chosen options and notes into the order line', async () => {
     const { service, prisma, tx } = harness();
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
 
@@ -519,8 +507,8 @@ describe('OrdersService.create', () => {
     const { service, prisma, tx } = harness();
     // The admin fixed a wrong base price after the latte went in the cart.
     prisma.cart.findUnique
-      .mockResolvedValueOnce(cartWith(latte({ basePriceCents: 500 })))
-      .mockResolvedValueOnce(cartWith(latte({ basePriceCents: 500 })))
+      .mockResolvedValueOnce(cartWith(latte({ basePriceCents: 800 })))
+      .mockResolvedValueOnce(cartWith(latte({ basePriceCents: 800 })))
       .mockResolvedValue({ ...cartWith(latte()), items: [] });
 
     await expect(service.create('user-1', placeOrder)).rejects.toBeInstanceOf(CartChangedException);
@@ -528,7 +516,7 @@ describe('OrdersService.create', () => {
     expect(tx.order.create).not.toHaveBeenCalled();
     expect(prisma.cartItem.update).toHaveBeenCalledWith({
       where: { id: 'ci-1' },
-      data: expect.objectContaining({ unitPriceCents: 800 }),
+      data: expect.objectContaining({ unitPriceCents: 800 }), // 7.50 in the cart, 8.00 on the menu
     });
   });
 
@@ -565,14 +553,14 @@ describe('OrdersService.create', () => {
     expect(tx.order.create).not.toHaveBeenCalled();
   });
 
-  it('answers 409 with a machine-readable code when a chosen milk was deleted', async () => {
+  it('answers 409 with a machine-readable code when a chosen option is gone', async () => {
     const { service, prisma, tx } = harness();
-    const product = latte();
-    product.variations = product.variations.filter((v) => v.id !== 'v-oat');
+    const cart = cartWith(latte());
+    const gone = { ...cart, items: cart.items.map((i) => ({ ...i, optionsJson: [{ optionId: 'oi-gone', qty: 1 }] })) };
     prisma.cart.findUnique
-      .mockResolvedValueOnce(cartWith(product))
-      .mockResolvedValueOnce(cartWith(product))
-      .mockResolvedValue({ ...cartWith(product), items: [] });
+      .mockResolvedValueOnce(gone)
+      .mockResolvedValueOnce(gone)
+      .mockResolvedValue({ ...gone, items: [] });
 
     const err = await service.create('user-1', placeOrder).then(
       () => null,
@@ -673,9 +661,9 @@ describe('OrdersService order detail and receipt', () => {
     };
   }
 
-  it('shows the admin what each line was made with, and old orders by name alone', async () => {
+  it('shows the admin what each line was made with — the older options of an order from before too — and old orders by name alone', async () => {
     const { service, prisma } = harness();
-    prisma.order.findUnique.mockResolvedValue(storedOrder([LATTE_SNAPSHOT, LEGACY_SNAPSHOT]));
+    prisma.order.findUnique.mockResolvedValue(storedOrder([HISTORY_SNAPSHOT, LEGACY_SNAPSHOT, LATTE_SNAPSHOT]));
 
     const detail = await service.getForAdmin('order-1');
 
@@ -686,6 +674,7 @@ describe('OrdersService order detail and receipt', () => {
       notes: 'поменьше пены',
     });
     expect(detail.items[1]).toMatchObject({ name: 'Латте', variations: [], modifierLines: [], notes: null });
+    expect(detail.items[2]?.optionLines.map((o) => o.name)).toEqual(['M']);
   });
 
   it('shows the admin how far the customer was, never where', async () => {
@@ -763,12 +752,13 @@ describe('OrdersService order detail and receipt', () => {
 
   it('prints the options under each line of the receipt', async () => {
     const { service, prisma, mail } = harness();
-    prisma.order.findUnique.mockResolvedValue(storedOrder([LATTE_SNAPSHOT, LEGACY_SNAPSHOT]));
+    prisma.order.findUnique.mockResolvedValue(storedOrder([LATTE_SNAPSHOT, HISTORY_SNAPSHOT, LEGACY_SNAPSHOT]));
 
     await service.sendPaymentMail('order-1');
 
     const receipt = mail.sendOrderReceipt.mock.calls[0]?.[1] as { items: unknown[] } | undefined;
     expect(receipt?.items).toEqual([
+      { name: 'Латте', options: 'M', quantity: 2, totalCents: 1500 },
       { name: 'Латте', options: 'L · Овсяное · +Ваниль ×2', quantity: 2, totalCents: 1500 },
       { name: 'Латте', options: '', quantity: 2, totalCents: 1500 },
     ]);

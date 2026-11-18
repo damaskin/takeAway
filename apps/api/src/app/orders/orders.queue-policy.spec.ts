@@ -53,8 +53,6 @@ function product(id: string, prepTimeSeconds: number, prepParallel: boolean): St
     updatedAt: at('2026-09-01T00:00:00Z'),
     stores: [{ storeId: 'store-1' }],
     category: { visible: true, addOnsOnly: false },
-    variations: [],
-    modifiers: [],
   };
 }
 
@@ -64,9 +62,7 @@ function line(p: StoreProduct, quantity: number) {
     cartId: 'cart-1',
     productId: p.id,
     quantity,
-    variationIds: [],
-    modifiersJson: {},
-    optionsJson: [],
+    optionsJson: [{ optionId: 'stub-size-m', qty: 1 }],
     unitPriceCents: 300,
     unitPrepSeconds: p.prepTimeSeconds,
     notes: null,

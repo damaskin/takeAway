@@ -16,17 +16,23 @@ export class CartItemDto {
   @ApiProperty()
   quantity!: number;
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({
+    type: [String],
+    deprecated: true,
+    description: 'Always empty since 2026-11-18 (older options deleted); kept for app builds that read it.',
+  })
   variationIds!: string[];
 
-  @ApiProperty({ type: Object, description: 'Map { modifierId: count }' })
+  @ApiProperty({
+    type: Object,
+    deprecated: true,
+    description: 'Always {} since 2026-11-18 (older options deleted); kept for app builds that read it.',
+  })
   modifiers!: Record<string, number>;
 
   @ApiProperty({
     type: [OptionLineDto],
-    description:
-      'Picks from the options catalog with names and prices, in page order (a product with catalog groups; then ' +
-      'variationIds and modifiers are empty). Empty otherwise.',
+    description: 'Picks from the options catalog with names and prices, in page order.',
   })
   options!: OptionLineDto[];
 

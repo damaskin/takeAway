@@ -10,7 +10,6 @@ import { ProductOptionGroupsService } from '../option-groups/product-option-grou
 import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
-import { AVAILABLE_OPTION } from './option-availability';
 
 function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -486,8 +485,6 @@ describe('CatalogService', () => {
     ]);
     prisma.product.findFirst.mockResolvedValue({
       ...row,
-      variations: [],
-      modifiers: [],
       category: { kind: 'HOT_DRINKS' },
     });
 
@@ -542,26 +539,13 @@ describe('CatalogService', () => {
     for (const kind of kinds) {
       prisma.product.findFirst.mockResolvedValueOnce({
         ...row(`p-${kind}`, `c-${kind}`),
-        variations: [],
-        modifiers: [],
         category: { kind },
       });
       expect(await service.getProduct(`p-${kind}`)).toMatchObject(kind === 'FOOD' ? full : none);
     }
   });
 
-  it('sends the category kind and the add-on groups with a product', async () => {
-    const modifier = (id: string, group: string | null) => ({
-      id,
-      slug: id,
-      name: id,
-      priceDeltaCents: 0,
-      prepTimeDeltaSeconds: 0,
-      minCount: 0,
-      maxCount: 1,
-      sortOrder: 0,
-      group,
-    });
+  it('sends the category kind with a product, and reads nothing but the category with it', async () => {
     prisma.product.findFirst.mockResolvedValue({
       id: 'p-shawarma',
       categoryId: 'c-food',
@@ -571,32 +555,22 @@ describe('CatalogService', () => {
       description: null,
       basePriceCents: 100,
       prepTimeSeconds: 900,
-      caffeineLevel: null,
       calories: null,
       proteinsGrams: null,
       fatsGrams: null,
       carbsGrams: null,
-      allergens: ['GLUTEN'],
-      dietTags: [],
       imageUrls: [],
       sortOrder: 0,
-      variations: [],
-      modifiers: [modifier('garlic', 'Соусы'), modifier('no-onion', 'Убрать'), modifier('napkins', null)],
       category: { kind: 'FOOD' },
     });
 
     const product = await service.getProduct('shawarma');
 
     expect(product.categoryKind).toBe('FOOD');
-    expect(product.modifiers.map((m) => [m.id, m.group])).toEqual([
-      ['garlic', 'Соусы'],
-      ['no-onion', 'Убрать'],
-      ['napkins', null],
-    ]);
+    expect(product.variations).toEqual([]);
+    expect(product.modifiers).toEqual([]);
     expect(prisma.product.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({ category: { select: { kind: true } } }),
-      }),
+      expect.objectContaining({ include: { category: { select: { kind: true } } } }),
     );
   });
 
@@ -678,20 +652,9 @@ describe('CatalogService', () => {
     );
   });
 
-  // Opened from a store: a product that store does not sell is not found, and
-  // the options it has run out of (oat milk here, not at the café) are hidden.
+  // Opened from a store: a product that store does not sell is not found.
   it('looks a product up as the browsed store sells it', async () => {
     prisma.store.findFirst.mockResolvedValue({ id: 'pizza', brandId: 'brand-1' });
-    const milk = (id: string, isDefault: boolean, storeStops: Array<{ storeId: string }>) => ({
-      id,
-      type: 'MILK',
-      name: id,
-      priceDeltaCents: 0,
-      prepTimeDeltaSeconds: 0,
-      sortOrder: 0,
-      isDefault,
-      ingredient: { isAvailable: true, storeStops },
-    });
     prisma.product.findFirst.mockResolvedValue({
       id: 'p-latte',
       categoryId: 'c-coffee',
@@ -701,26 +664,19 @@ describe('CatalogService', () => {
       description: null,
       basePriceCents: 100,
       prepTimeSeconds: 60,
-      caffeineLevel: null,
       calories: null,
       proteinsGrams: null,
       fatsGrams: null,
       carbsGrams: null,
-      allergens: [],
-      dietTags: [],
       imageUrls: [],
       sortOrder: 0,
-      variations: [milk('oat', true, [{ storeId: 'pizza' }]), milk('whole', false, [])],
-      modifiers: [],
       category: { kind: 'HOT_DRINKS' },
     });
 
-    const product = await service.getProduct('latte', 'pizzeria');
+    await service.getProduct('latte', 'pizzeria');
 
-    expect(product.variations.map((v) => [v.id, v.isDefault])).toEqual([['whole', true]]);
     const query = prisma.product.findFirst.mock.calls[0]?.[0];
     expect(query.where).toMatchObject({ brandId: 'brand-1', stores: { some: { storeId: 'pizza' } } });
-    expect(JSON.stringify(query.include.modifiers.where)).toContain('"storeStops":{"none":{"storeId":"pizza"');
   });
 
   // A product opened by its own URL carries no store. The cart rejects an
@@ -745,8 +701,6 @@ describe('CatalogService', () => {
       dietTags: [],
       imageUrls: [],
       sortOrder: 0,
-      variations: [],
-      modifiers: [],
       category: { kind: 'OTHER' },
     });
 
@@ -777,55 +731,5 @@ describe('CatalogService', () => {
 
     await expect(service.getProduct('latte', 'nowhere')).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.product.findFirst).not.toHaveBeenCalled();
-  });
-  // Oat milk ran out: the latte stays on the menu, only the option goes —
-  // and the screen pre-selects what the cart would put in the cup instead.
-  it('hides options whose ingredient is out of stock and moves the default on', async () => {
-    const milk = (id: string, sortOrder: number, isDefault: boolean, isAvailable: boolean | null) => ({
-      id,
-      type: 'MILK',
-      name: id,
-      priceDeltaCents: 0,
-      prepTimeDeltaSeconds: 0,
-      sortOrder,
-      isDefault,
-      ingredient: isAvailable === null ? null : { isAvailable },
-    });
-    prisma.product.findFirst.mockResolvedValue({
-      id: 'p-latte',
-      categoryId: 'c-coffee',
-      brandId: 'brand-1',
-      slug: 'latte',
-      name: 'Latte',
-      description: null,
-      basePriceCents: 100,
-      prepTimeSeconds: 60,
-      caffeineLevel: null,
-      calories: null,
-      proteinsGrams: null,
-      fatsGrams: null,
-      carbsGrams: null,
-      allergens: [],
-      dietTags: [],
-      imageUrls: [],
-      sortOrder: 0,
-      variations: [milk('oat', 0, true, false), milk('whole', 1, false, true), milk('almond', 2, false, null)],
-      modifiers: [],
-      category: { kind: 'HOT_DRINKS' },
-    });
-
-    const product = await service.getProduct('latte');
-
-    expect(product.variations.map((v) => [v.id, v.isDefault])).toEqual([
-      ['whole', true],
-      ['almond', false],
-    ]);
-    expect(prisma.product.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({
-          modifiers: expect.objectContaining({ where: AVAILABLE_OPTION }),
-        }),
-      }),
-    );
   });
 });

@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
 import type { PasswordService } from '../../auth/services/password.service';
+import { optionGroupsStub } from '../../option-groups/testing/option-groups.stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
@@ -67,6 +68,7 @@ function build(opts: Options = {}) {
     prisma as unknown as PrismaService,
     {} as PasswordService,
     availability as unknown as StoreAvailabilityNotifier,
+    optionGroupsStub(),
   );
   return { svc, prisma, store, availability };
 }
