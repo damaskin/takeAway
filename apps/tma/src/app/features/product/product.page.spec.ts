@@ -12,7 +12,7 @@ import { CartService } from '../../core/cart/cart.service';
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
-import { COFFEE_GROUPS } from './option-groups.testing';
+import { COFFEE_GROUPS, READY_GROUPS } from './option-groups.testing';
 import { TmaProductPage } from './product.page';
 
 const STORE: StoreListItem = {
@@ -56,8 +56,7 @@ function product(over: Partial<ProductDetail> = {}): ProductDetail {
     carbsGrams: null,
     imageUrls: [],
     sortOrder: 0,
-    variations: [],
-    modifiers: [],
+    optionGroups: READY_GROUPS,
     ...over,
   };
 }
@@ -175,23 +174,11 @@ describe('TmaProductPage', () => {
     });
   });
 
-  it('keeps a product on its older options as it was: the button live at once', async () => {
-    await open(
-      product({
-        variations: [
-          {
-            id: 'm',
-            type: 'SIZE',
-            name: 'M',
-            priceDeltaCents: 0,
-            prepTimeDeltaSeconds: 0,
-            sortOrder: 0,
-            isDefault: true,
-          },
-        ],
-      }),
-    );
+  it('keeps the button live at once when the defaults make a choice, and sends them', async () => {
+    const harness = await open(product());
+    const el = harness.routeNativeElement as HTMLElement;
 
+    expect(el.querySelector('[data-testid="option-hint"]')).toBeNull();
     expect(mainButton().enabled).toBe(true);
     expect(mainButton().label).toMatch(/^Добавить · 30\s?руб\.$/);
     mainButton().tap();
@@ -199,8 +186,7 @@ describe('TmaProductPage', () => {
       storeId: STORE.id,
       productId: 'latte',
       quantity: 1,
-      variationIds: ['m'],
-      modifiers: {},
+      options: [{ optionId: 'regular', qty: 1 }],
       notes: undefined,
     });
   });
