@@ -10,7 +10,7 @@ import type { ProductDetail, StoreListItem, StoreMenu, StoreSuggestions } from '
 
 import { API_CONFIG } from '../../core/api/api.config';
 import { AuthStore } from '../../core/auth/auth.store';
-import { COFFEE_GROUPS } from './option-groups.testing';
+import { catalogGroup, catalogOption, COFFEE_GROUPS, READY_GROUPS } from './option-groups.testing';
 import { ProductPage } from './product.page';
 
 const STORE: StoreListItem = {
@@ -54,18 +54,27 @@ function product(id: string, over: Partial<ProductDetail> = {}): ProductDetail {
     carbsGrams: null,
     imageUrls: [],
     sortOrder: 0,
-    variations: [],
-    modifiers: [],
+    optionGroups: READY_GROUPS,
     ...over,
   };
 }
 
+/** A latte that goes in at once: M by default, syrups optional. */
 const LATTE = product('latte', {
   name: 'Латте',
   calories: 150,
-  variations: [
-    { id: 'm', type: 'SIZE', name: 'M', priceDeltaCents: 0, prepTimeDeltaSeconds: 0, sortOrder: 0, isDefault: true },
-    { id: 'l', type: 'SIZE', name: 'L', priceDeltaCents: 500, prepTimeDeltaSeconds: 0, sortOrder: 1, isDefault: false },
+  optionGroups: [
+    catalogGroup(
+      'size',
+      'VARIANT',
+      'A',
+      'Размер',
+      [catalogOption('m', 'M', { isDefault: true }), catalogOption('l', 'L', { priceCents: 500 })],
+      { minSelect: 1 },
+    ),
+    catalogGroup('syrups', 'ADDON', 'A', 'Сиропы', [catalogOption('vanilla', 'Ваниль', { priceCents: 800 })], {
+      maxSelect: 2,
+    }),
   ],
 });
 
@@ -152,6 +161,18 @@ describe('ProductPage', () => {
 
   const text = (node: Element | null | undefined) => node?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
+  /** Taps the option row named `name` (a variant's radio, an add-on's tick). */
+  const pick = async (harness: RouterTestingHarness, name: string) => {
+    const el = harness.routeNativeElement as HTMLElement;
+    Array.from(el.querySelectorAll('[data-testid="option-row"]'))
+      .find((r) => text(r.querySelector('.name')) === name)
+      ?.querySelector<HTMLInputElement>('input')
+      ?.click();
+    await harness.fixture.whenStable();
+  };
+  const addButton = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('button')).find((b) => text(b).includes('Добавить в корзину'));
+
   // Caffeine and allergens left the product page on 2026-11-05, and calories
   // are a meal's since 2026-11-06 — even when an older API build still sends
   // them for a drink.
@@ -213,18 +234,14 @@ describe('ProductPage', () => {
     const harness = await open('latte', LATTE);
     const el = harness.routeNativeElement as HTMLElement;
     const summary = () => text(el.querySelector('[data-testid="choice-summary"]'));
-    const addButton = () =>
-      Array.from(el.querySelectorAll('button')).find((b) => text(b).includes('Добавить в корзину'));
 
     expect(summary()).toBe('M');
-    expect(text(addButton())).toContain('30');
+    expect(addButton(el)?.disabled).toBe(false);
+    expect(text(addButton(el))).toContain('30');
 
-    Array.from(el.querySelectorAll<HTMLButtonElement>('[role="radio"]'))
-      .find((b) => text(b).startsWith('L'))
-      ?.click();
-    await harness.fixture.whenStable();
+    await pick(harness, 'L');
     expect(summary()).toBe('L');
-    expect(text(addButton())).toContain('35');
+    expect(text(addButton(el))).toContain('35');
   });
 
   it('offers bakery with a drink, and sends the note with the item', async () => {
@@ -242,17 +259,14 @@ describe('ProductPage', () => {
     notes.value = '  погорячее ';
     notes.dispatchEvent(new Event('input'));
     await harness.fixture.whenStable();
-    Array.from(el.querySelectorAll('button'))
-      .find((b) => text(b).includes('Добавить в корзину'))
-      ?.click();
+    addButton(el)?.click();
 
     const add = http.expectOne('/api/cart/items');
     expect(add.request.body).toEqual({
       storeId: STORE.id,
       productId: 'latte',
       quantity: 1,
-      variationIds: ['m'],
-      modifiers: {},
+      options: [{ optionId: 'm', qty: 1 }],
       notes: 'погорячее',
     });
     add.flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 3000 });
@@ -263,9 +277,7 @@ describe('ProductPage', () => {
     const el = harness.routeNativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="product-next"]')).toBeNull();
 
-    Array.from(el.querySelectorAll('button'))
-      .find((b) => text(b).includes('Добавить в корзину'))
-      ?.click();
+    addButton(el)?.click();
     http
       .expectOne('/api/cart/items')
       .flush({ id: 'cart-1', storeId: STORE.id, items: [{ id: 'line-1', quantity: 2 }], subtotalCents: 6000 });
@@ -310,29 +322,17 @@ describe('ProductPage', () => {
     expect(text(el.querySelector('app-food-suggestions h2'))).toBe('К этому напитку');
   });
 
-  describe('a product on the options catalog', () => {
+  describe('a coffee with a size to choose', () => {
     const CATALOG_LATTE = product('catalog-latte', {
       name: 'Латте',
       hasRequiredOptions: true,
       optionGroups: COFFEE_GROUPS,
     });
 
-    const pick = async (harness: RouterTestingHarness, name: string) => {
-      const el = harness.routeNativeElement as HTMLElement;
-      Array.from(el.querySelectorAll('[data-testid="option-row"]'))
-        .find((r) => text(r.querySelector('.name')) === name)
-        ?.querySelector<HTMLInputElement>('input')
-        ?.click();
-      await harness.fixture.whenStable();
-    };
-    const addButton = (el: HTMLElement) =>
-      Array.from(el.querySelectorAll('button')).find((b) => text(b).includes('Добавить в корзину'));
-
     it('keeps the button off, saying what to choose, until a size is picked; then sends the choice', async () => {
       const harness = await open('catalog-latte', CATALOG_LATTE);
       const el = harness.routeNativeElement as HTMLElement;
 
-      expect(el.querySelector('app-product-options')).toBeNull();
       expect(text(el.querySelector('[data-testid="option-hint"]'))).toBe('Выберите: Размер (кофе)');
       expect(addButton(el)?.disabled).toBe(true);
 

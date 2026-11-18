@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { CROISSANT, installFakeApi, PRODUCT, type FakeProduct } from './support/fake-api';
+import { CROISSANT, installFakeApi, PRODUCT } from './support/fake-api';
 import { useEnglish } from './support/locale';
 import { signIn } from './support/session';
 
@@ -401,45 +401,8 @@ test.describe('customer journey', () => {
     await expect(pick).toHaveAttribute('href', '/products/flat-white?store=dubai-marina');
   });
 
-  test('a drink is put together from chips and add-on groups, and the choice goes to the cart', async ({ page }) => {
-    const latte: FakeProduct = {
-      ...PRODUCT,
-      categoryKind: 'HOT_DRINKS',
-      variations: [
-        {
-          id: 'size-m',
-          type: 'SIZE',
-          name: 'M',
-          priceDeltaCents: 0,
-          prepTimeDeltaSeconds: 0,
-          sortOrder: 0,
-          isDefault: true,
-        },
-        {
-          id: 'size-l',
-          type: 'SIZE',
-          name: 'L',
-          priceDeltaCents: 300,
-          prepTimeDeltaSeconds: 0,
-          sortOrder: 1,
-          isDefault: false,
-        },
-      ],
-      modifiers: [
-        {
-          id: 'vanilla',
-          slug: 'vanilla',
-          name: 'Vanilla',
-          group: 'Syrups',
-          priceDeltaCents: 200,
-          prepTimeDeltaSeconds: 0,
-          minCount: 0,
-          maxCount: 3,
-          sortOrder: 0,
-        },
-      ],
-    };
-    const api = await installFakeApi(page, { product: latte });
+  test('a drink is put together from its sizes and add-ons, and the choice goes to the cart', async ({ page }) => {
+    const api = await installFakeApi(page, { product: { ...PRODUCT, categoryKind: 'HOT_DRINKS' } });
     await signIn(page);
 
     await page.goto('/products/flat-white?store=dubai-marina');
@@ -447,19 +410,20 @@ test.describe('customer journey', () => {
     await expect(page.getByTestId('allergens')).toHaveCount(0);
 
     // The default size is picked; a bigger one says what it adds.
-    await expect(page.getByRole('radio', { name: 'M', exact: true })).toHaveAttribute('aria-checked', 'true');
-    await page.getByRole('radio', { name: /^L\s*\+3 AED$/ }).click();
+    await expect(page.getByRole('radio', { name: /^M\b/ })).toBeChecked();
+    await expect(page.getByRole('radiogroup', { name: 'Size' })).toContainText(/\+3\sAED/);
+    await page.getByRole('radio', { name: /^L\b/ }).check();
 
     // Syrups wait behind one row until opened.
-    const syrups = page.getByRole('button', { name: /Syrups/ });
+    const syrups = page.getByRole('button', { name: /^Syrups/ });
     await expect(syrups).toHaveAttribute('aria-expanded', 'false');
     await expect(syrups).toContainText('none');
     await syrups.click();
-    await page.getByRole('button', { name: 'More: Vanilla' }).click();
+    await page.getByRole('checkbox', { name: /^Vanilla/ }).check();
     await expect(syrups).toContainText('Vanilla');
 
     // The choice in a line and the price on the button, live.
-    await expect(page.getByTestId('choice-summary')).toHaveText('L · +Vanilla');
+    await expect(page.getByTestId('choice-summary')).toHaveText('L · Vanilla');
     await expect(page.getByRole('button', { name: /add to cart/i })).toContainText('23 AED');
 
     await page.getByLabel('Note for the barista').fill('Extra hot');
@@ -467,8 +431,10 @@ test.describe('customer journey', () => {
     await expect.poll(() => api.cartAdds.length).toBe(1);
     expect(api.cartAdds[0]).toMatchObject({
       productId: PRODUCT.id,
-      variationIds: ['size-l'],
-      modifiers: { vanilla: 1 },
+      options: [
+        { optionId: 'opt-fw-l', qty: 1 },
+        { optionId: 'opt-fw-vanilla', qty: 1 },
+      ],
       notes: 'Extra hot',
     });
   });
