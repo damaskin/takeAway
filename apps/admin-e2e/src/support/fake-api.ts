@@ -912,7 +912,8 @@ function optionsCatalog() {
     if (path === '/admin/products' && method === 'GET') {
       return json(route, [{ ...PRODUCT, optionsComplete: optionsComplete(PRODUCT.id) }]);
     }
-    if ((m = /^\/admin\/products\/([^/]+)$/.exec(path)) && method === 'GET') {
+    // Not `/admin/products/stores` — the menu's store list, answered further down.
+    if ((m = /^\/admin\/products\/(?!stores$)([^/]+)$/.exec(path)) && method === 'GET') {
       return json(route, {
         ...PRODUCT,
         category: { name: 'Кофе', kind: 'HOT_DRINKS' },
