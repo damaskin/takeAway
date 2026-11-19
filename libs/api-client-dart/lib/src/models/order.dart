@@ -201,6 +201,9 @@ class OrderItem {
 
   String? get notes => productSnapshot['notes'] is String ? productSnapshot['notes'] as String : null;
 
+  /// The older options' ids ([variationIds], [modifiers]) as orders placed
+  /// before 2026-11-18 recorded them; empty on later ones. History only:
+  /// their names are in the snapshot too, see `describeOrderItemOptions`.
   List<String> get variationIds {
     final raw = productSnapshot['variationIds'];
     return raw is List ? raw.whereType<String>().toList() : const [];

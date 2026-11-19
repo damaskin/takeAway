@@ -79,8 +79,6 @@ const CART: CartView = {
       productId: 'latte',
       productName: 'Латте',
       quantity: 1,
-      variationIds: [],
-      modifiers: {},
       unitPriceCents: 4500,
       unitPrepSeconds: 180,
       notes: null,

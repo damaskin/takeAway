@@ -33,7 +33,6 @@ import '../catalog/product_visual.dart';
 import '../checkout/checkout_controller.dart';
 import '../checkout/qr_payment.dart';
 import '../checkout/web_payment.dart';
-import '../product/product_options.dart';
 import 'order_progress.dart';
 import 'order_review_card.dart';
 import 'order_wait.dart';
@@ -207,8 +206,6 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
         await cart.add(
           productId: productId,
           quantity: item.quantity,
-          variationIds: item.variationIds,
-          modifiers: item.modifiers,
           options: item.optionLines.isEmpty
               ? null
               : toOptionSelections({for (final line in item.optionLines) line.optionId: line.qty}),
@@ -1083,7 +1080,7 @@ class _ItemsCard extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(item.name, style: context.text.bodyMedium),
-                        if (item.productId != null) _ItemOptions(productId: item.productId!, item: item),
+                        _ItemOptions(item: item),
                       ],
                     ),
                   ),
@@ -1105,22 +1102,18 @@ class _ItemsCard extends ConsumerWidget {
   }
 }
 
-class _ItemOptions extends ConsumerWidget {
-  const _ItemOptions({required this.productId, required this.item});
+/// The line's options and notes. The snapshot names what was bought: the
+/// catalog's picks, and on orders placed before 2026-11-18 the older options
+/// ("L · Овсяное · +Ваниль ×2"), which the product no longer has.
+class _ItemOptions extends StatelessWidget {
+  const _ItemOptions({required this.item});
 
-  final String productId;
   final OrderItem item;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final optionLines = item.optionLines;
-    final older = item.variationIds.isNotEmpty || item.modifiers.isNotEmpty;
-    if (!older && optionLines.isEmpty && (item.notes ?? '').isEmpty) return const SizedBox.shrink();
-    // Only the older options need the product to name them; catalog lines
-    // carry their names.
-    final detail = older ? ref.watch(productDetailProvider(productId)).valueOrNull : null;
+  Widget build(BuildContext context) {
     final parts = <String>[
-      optionsSummary(detail, item.variationIds, item.modifiers, optionLines: optionLines),
+      describeOrderItemOptions(item.productSnapshot),
       if ((item.notes ?? '').isNotEmpty) '“${item.notes}”',
     ].where((part) => part.isNotEmpty);
     if (parts.isEmpty) return const SizedBox.shrink();

@@ -36,6 +36,7 @@ const SIZE: CatalogGroup = {
   minSelect: 1,
   maxSelect: 1,
   showIfOptionId: null,
+  scope: 'DRINKS',
   sortOrder: 0,
   options: [option('g-size', 'opt-m', 'M', { note: '300–350 мл' })],
 };
@@ -44,6 +45,7 @@ const SYRUPS: CatalogGroup = {
   id: 'g-syrup',
   kind: 'ADDON',
   name: 'Сиропы',
+  scope: 'BOTH',
   minSelect: 0,
   maxSelect: 2,
   sortOrder: 1,
@@ -57,6 +59,7 @@ const MEAT: CatalogGroup = {
   name: 'Мясо (порции)',
   minSelect: null,
   maxSelect: null,
+  scope: 'FOOD',
   sortOrder: 2,
   options: [option('g-meat', 'opt-meat', 'Мясо / котлета', { minQty: 1, maxQty: 2, defaultQty: 1 })],
 };
@@ -65,6 +68,11 @@ const CATALOG: BrandOptionCatalog = {
   settings: [
     { optionId: 'opt-vanilla', priceCents: 800, enabled: true, stoppedStoreIds: [] },
     { optionId: 'opt-caramel', priceCents: 0, enabled: false, stoppedStoreIds: [] },
+  ],
+  productPrices: [
+    { optionId: 'opt-m', productId: 'p-flat', productName: 'Флэт уайт', priceCents: 0 },
+    { optionId: 'opt-m', productId: 'p-latte', productName: 'Латте', priceCents: 1000 },
+    { optionId: 'opt-vanilla', productId: 'p-raf', productName: 'Раф', priceCents: 500 },
   ],
 };
 const STORE: StoreAdminDto = {
@@ -96,6 +104,7 @@ describe('BrandOptionCatalogComponent («Добавки» → «Каталог»
     const options = {
       brandCatalog: jest.fn().mockReturnValue(of(CATALOG)),
       updateBrandOption: jest.fn().mockReturnValue(of({})),
+      applyGroupPrice: jest.fn().mockReturnValue(of([])),
       stopInStore: jest.fn((_store: string, _option: string, expiresAt: string | null) => of({ expiresAt })),
       resumeInStore: jest.fn().mockReturnValue(of(undefined)),
     };
@@ -122,7 +131,7 @@ describe('BrandOptionCatalogComponent («Добавки» → «Каталог»
     return { fixture, cmp: fixture.componentInstance, options, catalog, el, open };
   }
 
-  it('lists variants then add-ons; an add-on has a brand price, a variant points to the product', () => {
+  it('lists variants then add-ons; an add-on has a brand price, a variant shows its product prices read-only', () => {
     const { el, open } = setup();
     open();
     const groups = [...el.querySelectorAll('[data-testid="brand-option-group"]')];
@@ -132,7 +141,13 @@ describe('BrandOptionCatalogComponent («Добавки» → «Каталог»
       'Мясо (порции)',
     ]);
     expect(text(groups[1]?.querySelector('summary'))).toContain('есть 1 из 2');
-    expect(text(groups[0])).toContain('Цена — в карточке товара');
+    expect(text(groups[0]?.querySelector('[data-testid="brand-option-product-prices"]'))).toMatch(
+      /^В товарах: Флэт уайт — без доплаты, Латте \+10.+ · меняется в карточке товара$/,
+    );
+    expect(groups[0]?.querySelector('[data-testid="brand-option-price"]')).toBeNull();
+    expect(text(groups[1]?.querySelector('[data-testid="brand-option-product-prices"]'))).toMatch(
+      /^Своя цена в товарах: Раф 5/,
+    );
     const prices = [...el.querySelectorAll<HTMLInputElement>('[data-testid="brand-option-price"]')];
     expect(prices.map((p) => p.value)).toEqual(['8', '', '']);
     expect(text(groups[2])).toContain('За штуку сверх 1, MDL');
@@ -183,6 +198,27 @@ describe('BrandOptionCatalogComponent («Добавки» → «Каталог»
     expect(el.querySelector('[data-testid="brand-option-stop"]')).toBeNull();
   });
 
+  it('gives every option of an add-on group one price («Ко всем»)', () => {
+    const { cmp, options } = setup();
+    cmp.applyToGroup(SYRUPS, option('g-syrup', 'opt-vanilla', 'Ваниль'));
+    expect(options.applyGroupPrice).toHaveBeenCalledWith('b1', 'g-syrup', 800);
+    expect(cmp.setting('opt-caramel').priceCents).toBe(800);
+    expect(cmp.setting('opt-caramel').enabled).toBe(false);
+    expect(cmp.notice()).toContain('«Сиропы»');
+  });
+
+  // Maxim, 2026-11-18: a business that sells food never wades through the coffee groups.
+  it('filters drinks or food, a group for both under each', () => {
+    const { cmp } = setup();
+    const ids = () => cmp.sections().flatMap((s) => s.groups.map((g) => g.group.id));
+    cmp.scopeFilter.set('FOOD');
+    expect(ids()).toEqual(['g-syrup', 'g-meat']);
+    cmp.scopeFilter.set('DRINKS');
+    expect(ids()).toEqual(['g-size', 'g-syrup']);
+    cmp.scopeFilter.set('ALL');
+    expect(ids()).toEqual(['g-size', 'g-syrup', 'g-meat']);
+  });
+
   it('narrows to what the brand does not have, and finds by name', () => {
     const { cmp } = setup();
     cmp.filter.set('off');
@@ -197,25 +233,15 @@ describe('BrandOptionCatalogComponent («Добавки» → «Каталог»
 describe('BrandOptionsPage («Добавки»)', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
-  function setup(role: string, legacy: number) {
-    const options = {
-      brandCatalog: jest.fn().mockReturnValue(of(CATALOG)),
-      legacySummary: jest
-        .fn()
-        .mockReturnValue(of({ products: 1, variations: 0, modifiers: 0, categoryOptions: 0, ingredients: legacy })),
-    };
-    const catalog = {
-      listStores: jest.fn().mockReturnValue(of([])),
-      listIngredients: jest.fn().mockReturnValue(of(Array.from({ length: legacy }, (_, i) => ({ id: `i${i}` })))),
-    };
+  it('shows the catalog of the active brand, with no tab of older add-ins', () => {
     TestBed.configureTestingModule({
       imports: [BrandOptionsPage],
       providers: [
         provideTranslateService(),
         provideRouter([]),
-        { provide: OptionCatalogApi, useValue: options },
-        { provide: AdminCatalogApi, useValue: catalog },
-        { provide: AuthStore, useValue: { user: signal({ role }) } },
+        { provide: OptionCatalogApi, useValue: { brandCatalog: jest.fn().mockReturnValue(of(CATALOG)) } },
+        { provide: AdminCatalogApi, useValue: { listStores: jest.fn().mockReturnValue(of([])) } },
+        { provide: AuthStore, useValue: { user: signal({ role: 'BRAND_ADMIN' }) } },
         {
           provide: ActiveBrandService,
           useValue: {
@@ -229,21 +255,9 @@ describe('BrandOptionsPage («Добавки»)', () => {
     translations();
     const fixture = TestBed.createComponent(BrandOptionsPage);
     fixture.detectChanges();
-    return { fixture, el: fixture.nativeElement as HTMLElement, options, catalog };
-  }
-
-  it('shows the old library as a second tab while the brand has entries (platform team: legacy summary)', () => {
-    const { el, options, catalog } = setup('SUPER_ADMIN', 2);
-    expect(options.legacySummary).toHaveBeenCalledWith('b1');
-    expect(catalog.listIngredients).not.toHaveBeenCalled();
-    expect(text(el.querySelector('[data-testid="brand-options-tab-legacy"]'))).toBe('Старые добавки · 2');
+    const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('app-brand-option-catalog')).not.toBeNull();
-  });
-
-  it('counts old entries from the library for a brand, and hides the tab when there are none', () => {
-    const { el, catalog, options } = setup('BRAND_ADMIN', 0);
-    expect(catalog.listIngredients).toHaveBeenCalledWith('b1');
-    expect(options.legacySummary).not.toHaveBeenCalled();
-    expect(el.querySelector('[data-testid="brand-options-tab-legacy"]')).toBeNull();
+    expect(el.querySelector('[role="tablist"]')).toBeNull();
+    expect(text(el)).toContain('NoName Coffee');
   });
 });

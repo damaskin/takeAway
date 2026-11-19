@@ -1,4 +1,6 @@
 import type {
+  CategoryKind,
+  OptionGroupScope,
   OptionLine,
   OptionPickError,
   OptionSelection,
@@ -6,6 +8,8 @@ import type {
   ProductOptionItem,
 } from '@takeaway/shared-types';
 import { OPTION_MAX_QTY_LIMIT } from '@takeaway/shared-types';
+
+import { isDrinkKind, isFoodKind } from './product-kind';
 
 /**
  * The rules of the options catalog («Добавки и варианты», item 17), shared
@@ -234,6 +238,39 @@ export function validateOptionPicks(groups: readonly ProductOptionGroup[], picks
  */
 export function needsOptionChoice(groups: readonly ProductOptionGroup[]): boolean {
   return validateOptionPicks(groups, defaultOptionPicks(groups)).length > 0;
+}
+
+/**
+ * Whether customers may see the product at all (owner, 2026-11-18): it offers
+ * at least one variant and at least one add-on. `groups` are the product's
+ * groups as built for customers — the options the brand switched off, and
+ * those the product switched off, are already out, and so is every group
+ * left without options — so a group counts when it is there. A store's
+ * stop («Нет в наличии») and a group's show-if condition do not matter: the
+ * option is still offered, only not right now or not with every choice.
+ *
+ * The API leaves a product that fails it out of every menu, answers its
+ * page as not found and refuses it in the cart; the admin says why.
+ */
+export function offersVariantAndAddon(groups: ReadonlyArray<Pick<ProductOptionGroup, 'kind' | 'options'>>): boolean {
+  const offers = (kind: ProductOptionGroup['kind']) => groups.some((g) => g.kind === kind && g.options.length > 0);
+  return offers('VARIANT') && offers('ADDON');
+}
+
+/**
+ * The catalog group scopes a product of this category kind is offered:
+ * a drink — `DRINKS` and `BOTH`, food or bakery — `FOOD` and `BOTH`,
+ * OTHER — every group.
+ */
+export function optionScopesFor(kind: CategoryKind): readonly OptionGroupScope[] {
+  if (isDrinkKind(kind)) return ['DRINKS', 'BOTH'];
+  if (isFoodKind(kind)) return ['FOOD', 'BOTH'];
+  return ['DRINKS', 'FOOD', 'BOTH'];
+}
+
+/** Whether a group of `scope` (missing: `BOTH`) suits a product of category `kind`. */
+export function scopeFitsKind(scope: OptionGroupScope | null | undefined, kind: CategoryKind): boolean {
+  return optionScopesFor(kind).includes(scope ?? 'BOTH');
 }
 
 /**

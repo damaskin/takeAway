@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { OptionGroupKind, OptionGroupType, Prisma } from '@prisma/client';
 import type { ProductOptionGroup, ProductOptionItem } from '@takeaway/shared-types';
-import { orderOptionGroups } from '@takeaway/utils';
+import { offersVariantAndAddon, orderOptionGroups } from '@takeaway/utils';
 
 import { activeStopWhere } from '../catalog/option-availability';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,6 +46,8 @@ export interface OptionOverrideRow {
   optionId: string;
   priceCents: number | null;
   isDefault: boolean | null;
+  /** False = switched off on this product. Missing reads as null (on). */
+  enabled?: boolean | null;
 }
 
 export interface BrandSettingRow {
@@ -71,9 +73,9 @@ export const ATTACHED_GROUP_INCLUDE = {
  * 1. the attached groups, variants first, then by the product's order, then
  *    the catalog's;
  * 2. each group's options in catalog order, without those the brand switched
- *    off;
+ *    off and those the product switched off (`enabled = false`);
  * 3. a variant priced by the product (`priceCents ?? 0`), an add-on by the
- *    brand (`priceCents ?? 0`);
+ *    product when it set its own price, else by the brand (`?? 0`);
  * 4. the product's default over the catalog's;
  * 5. `available` = not stopped in the store;
  * 6. a group left with no options is left out.
@@ -109,6 +111,7 @@ export function buildProductOptionGroups(
       const setting = settings.get(option.id);
       if (setting && !setting.enabled) continue;
       const override = overrideOf.get(option.id);
+      if (override?.enabled === false) continue;
       const isC = group.type === 'C';
       options.push({
         id: option.id,
@@ -118,7 +121,8 @@ export function buildProductOptionGroups(
         minQty: isC ? option.minQty : null,
         maxQty: isC ? option.maxQty : null,
         defaultQty: isC ? option.defaultQty : null,
-        priceCents: group.kind === 'VARIANT' ? (override?.priceCents ?? 0) : (setting?.priceCents ?? 0),
+        priceCents:
+          group.kind === 'VARIANT' ? (override?.priceCents ?? 0) : (override?.priceCents ?? setting?.priceCents ?? 0),
         available: !stoppedOptionIds.has(option.id),
         sortOrder: option.sortOrder,
       });
@@ -160,7 +164,35 @@ export class ProductOptionGroupsService {
     productIds: readonly string[],
     ctx: OptionGroupsContext,
   ): Promise<Map<string, ProductOptionGroup[]>> {
-    const ids = [...new Set(productIds)];
+    const brandOf = new Map([...new Set(productIds)].map((id) => [id, ctx.brandId]));
+    return this.build(brandOf, ctx.storeId ?? null, ctx.now ?? new Date());
+  }
+
+  /** One product's groups; empty when it has none. */
+  async forProduct(productId: string, ctx: OptionGroupsContext): Promise<ProductOptionGroup[]> {
+    return (await this.forProducts([productId], ctx)).get(productId) ?? [];
+  }
+
+  /**
+   * Which of these products offer at least one variant and one add-on
+   * (`offersVariantAndAddon`) — those customers may see, as far as their
+   * options go. Read without a store (a stop does not hide a product), each
+   * product with its own brand's settings, in three queries for any number
+   * of products and brands: the admin's «Не видно покупателям» and the
+   * «Меню» step of «Запуск бренда».
+   */
+  async offeringVariantAndAddon(products: ReadonlyArray<{ id: string; brandId: string }>): Promise<Set<string>> {
+    const groups = await this.build(new Map(products.map((p) => [p.id, p.brandId])), null, new Date());
+    return new Set(products.filter((p) => offersVariantAndAddon(groups.get(p.id) ?? [])).map((p) => p.id));
+  }
+
+  /** The groups of every product (id → its brand), for one store or none. */
+  private async build(
+    brandOf: ReadonlyMap<string, string>,
+    storeId: string | null,
+    now: Date,
+  ): Promise<Map<string, ProductOptionGroup[]>> {
+    const ids = [...brandOf.keys()];
     const result = new Map<string, ProductOptionGroup[]>();
     if (ids.length === 0) return result;
 
@@ -171,35 +203,37 @@ export class ProductOptionGroupsService {
     if (rows.length === 0) return result;
 
     const optionIds = [...new Set(rows.flatMap((r) => r.group.options.map((o) => o.id)))];
-    const storeId = ctx.storeId ?? null;
+    const brandIds = [...new Set(brandOf.values())];
     const [overrides, settings, stops] = await Promise.all([
       this.prisma.productOptionOverride.findMany({ where: { productId: { in: ids } } }),
       this.prisma.brandOptionSetting.findMany({
-        where: { brandId: ctx.brandId, optionId: { in: optionIds } },
-        select: { optionId: true, priceCents: true, enabled: true },
+        where: { brandId: { in: brandIds }, optionId: { in: optionIds } },
+        select: { brandId: true, optionId: true, priceCents: true, enabled: true },
       }),
       storeId
         ? this.prisma.storeOptionStop.findMany({
-            where: { storeId, optionId: { in: optionIds }, ...activeStopWhere(ctx.now ?? new Date()) },
+            where: { storeId, optionId: { in: optionIds }, ...activeStopWhere(now) },
             select: { optionId: true },
           })
         : Promise.resolve([]),
     ]);
 
-    const settingOf = new Map(settings.map((s) => [s.optionId, s]));
+    const settingsOf = new Map<string, Map<string, BrandSettingRow>>();
+    for (const setting of settings) {
+      const ofBrand = settingsOf.get(setting.brandId) ?? new Map<string, BrandSettingRow>();
+      ofBrand.set(setting.optionId, setting);
+      settingsOf.set(setting.brandId, ofBrand);
+    }
     const stopped = new Set(stops.map((s) => s.optionId));
     const rowsOf = groupBy(rows, (r) => r.productId);
     const overridesOf = groupBy(overrides, (o) => o.productId);
+    const none = new Map<string, BrandSettingRow>();
     for (const [productId, productRows] of rowsOf) {
-      const groups = buildProductOptionGroups(productRows, overridesOf.get(productId) ?? [], settingOf, stopped);
+      const brandSettings = settingsOf.get(brandOf.get(productId) ?? '') ?? none;
+      const groups = buildProductOptionGroups(productRows, overridesOf.get(productId) ?? [], brandSettings, stopped);
       if (groups.length > 0) result.set(productId, groups);
     }
     return result;
-  }
-
-  /** One product's groups; empty when it has none. */
-  async forProduct(productId: string, ctx: OptionGroupsContext): Promise<ProductOptionGroup[]> {
-    return (await this.forProducts([productId], ctx)).get(productId) ?? [];
   }
 }
 

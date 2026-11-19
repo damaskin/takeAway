@@ -31,8 +31,15 @@ export class BrandOnboardingDto {
   @ApiProperty({ description: 'Recommended, not required: at least one product has a photo.' })
   photos!: boolean;
 
-  @ApiProperty({ description: 'Card payments are switched on; otherwise customers pay on site.' })
+  @ApiProperty({ description: 'Card payments are switched on platform-wide. Superseded by `payments`.' })
   cardPayments!: boolean;
+
+  @ApiProperty({
+    description:
+      "The brand's own payment terminal is connected for at least one flow — the «Оплата» step " +
+      '(docs/agroprombank-payments.md §13). Until then the step says how to get one from Agroprombank.',
+  })
+  payments!: boolean;
 
   @ApiProperty({ description: 'The brand has an order that was not cancelled or expired.' })
   hasOrders!: boolean;

@@ -12,7 +12,6 @@ import {
   AdminStoreOptionStopsController,
 } from './admin-brand-options.controller';
 import { AdminBrandOptionsService } from './admin-brand-options.service';
-import { AdminLegacyOptionsService } from './admin-legacy-options.service';
 import { AdminOptionGroupsController, AdminOptionItemsController } from './admin-option-catalog.controller';
 import { AdminOptionCatalogService } from './admin-option-catalog.service';
 import { AdminProductOptionGroupsService } from './admin-product-option-groups.service';
@@ -39,6 +38,7 @@ const groupRow = (patch: Record<string, unknown> = {}) => ({
   minSelect: 0,
   maxSelect: 2,
   showIfOptionId: null,
+  scope: 'DRINKS',
   sortOrder: 60,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -118,7 +118,20 @@ describe('AdminOptionCatalogService', () => {
 
   it('lists the catalog with how many products use each group', async () => {
     const { service } = build();
-    expect(await service.list()).toEqual([expect.objectContaining({ id: 'og_syrups', productCount: 4, options: [] })]);
+    expect(await service.list()).toEqual([
+      expect.objectContaining({ id: 'og_syrups', scope: 'DRINKS', productCount: 4, options: [] }),
+    ]);
+  });
+
+  it('creates a group for both drinks and food unless told, and changes the scope alone', async () => {
+    const { prisma, service } = build();
+    await service.createGroup({ kind: 'ADDON', type: 'B', name: 'Соусы', scope: 'FOOD' });
+    expect(prisma.optionGroup.create.mock.calls[0]?.[0].data).toMatchObject({ scope: 'FOOD' });
+
+    prisma.optionGroup.findUnique.mockResolvedValue(groupRow());
+    await service.updateGroup('og_syrups', { scope: 'BOTH' });
+    expect(prisma.optionGroup.update.mock.calls[0]?.[0].data).toMatchObject({ scope: 'BOTH' });
+    expect(prisma.optionGroup.update.mock.calls[0]?.[0].data).not.toHaveProperty('name');
   });
 
   it('creates a group after the last one, and refuses a reserved type or a variant counter', async () => {
@@ -131,6 +144,7 @@ describe('AdminOptionCatalogService', () => {
       maxSelect: null,
       name: 'Топпинги',
       showIfOptionId: null,
+      scope: 'BOTH',
       sortOrder: 300,
     });
 
@@ -291,7 +305,7 @@ describe('AdminProductOptionGroupsService', () => {
       overrides: [
         { optionId: 'oi_l', priceCents: 1000, isDefault: null },
         { optionId: 'oi_oat', priceCents: null, isDefault: true },
-        { optionId: 'oi_m', priceCents: null, isDefault: null },
+        { optionId: 'oi_m', priceCents: null, isDefault: null, enabled: true },
       ],
     });
 
@@ -309,8 +323,26 @@ describe('AdminProductOptionGroupsService', () => {
     });
     expect(prisma.productOptionOverride.createMany).toHaveBeenCalledWith({
       data: [
-        { productId: 'p-latte', optionId: 'oi_l', priceCents: 1000, isDefault: null },
-        { productId: 'p-latte', optionId: 'oi_oat', priceCents: null, isDefault: true },
+        { productId: 'p-latte', optionId: 'oi_l', priceCents: 1000, isDefault: null, enabled: null },
+        { productId: 'p-latte', optionId: 'oi_oat', priceCents: null, isDefault: true, enabled: null },
+      ],
+    });
+  });
+
+  // A shawarma without «Булка»; oat milk at 0 on this product while the brand charges for it.
+  it("keeps an option switched off on the product and an add-on's own price", async () => {
+    const { prisma, service } = build();
+    await service.replace(['brand-a'], 'p-latte', {
+      groups,
+      overrides: [
+        { optionId: 'oi_m', priceCents: null, isDefault: null, enabled: false },
+        { optionId: 'oi_oat', priceCents: 0, isDefault: null },
+      ],
+    });
+    expect(prisma.productOptionOverride.createMany).toHaveBeenCalledWith({
+      data: [
+        { productId: 'p-latte', optionId: 'oi_m', priceCents: null, isDefault: null, enabled: false },
+        { productId: 'p-latte', optionId: 'oi_oat', priceCents: 0, isDefault: null, enabled: null },
       ],
     });
   });
@@ -322,8 +354,8 @@ describe('AdminProductOptionGroupsService', () => {
       'OPTION_NOT_ON_PRODUCT',
     ],
     [
-      'a price on an add-on',
-      { groups, overrides: [{ optionId: 'oi_oat', priceCents: 500, isDefault: null }] },
+      'a negative price on an add-on',
+      { groups, overrides: [{ optionId: 'oi_oat', priceCents: -500, isDefault: null }] },
       'OPTION_GROUP_INVALID',
     ],
     [
@@ -374,6 +406,23 @@ describe('AdminBrandOptionsService', () => {
         findMany: jest.fn().mockResolvedValue([{ optionId: 'oi_vanilla', priceCents: 800, enabled: false }]),
         upsert: jest.fn().mockResolvedValue({ optionId: 'oi_vanilla', priceCents: 900, enabled: true }),
       },
+      productOptionGroup: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            product: { id: 'p-latte', name: 'Латте' },
+            group: { kind: 'VARIANT', options: [{ id: 'oi_m' }, { id: 'oi_l' }] },
+          },
+          { product: { id: 'p-latte', name: 'Латте' }, group: { kind: 'ADDON', options: [{ id: 'oi_vanilla' }] } },
+          { product: { id: 'p-flat', name: 'Флэт уайт' }, group: { kind: 'ADDON', options: [{ id: 'oi_vanilla' }] } },
+        ]),
+      },
+      productOptionOverride: {
+        findMany: jest.fn().mockResolvedValue([
+          { productId: 'p-latte', optionId: 'oi_l', priceCents: 1500 },
+          { productId: 'p-flat', optionId: 'oi_vanilla', priceCents: 0 },
+        ]),
+      },
+      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
       storeOptionStop: {
         findMany: jest.fn().mockResolvedValue([
           { storeId: 'store-2', optionId: 'oi_caramel' },
@@ -395,6 +444,45 @@ describe('AdminBrandOptionsService', () => {
       { optionId: 'oi_vanilla', priceCents: 800, enabled: false, stoppedStoreIds: [] },
       { optionId: 'oi_caramel', priceCents: 0, enabled: true, stoppedStoreIds: ['store-1', 'store-2'] },
     ]);
+    // What the product cards set, read-only in «Добавки»: every variant, the add-ons a product prices itself.
+    expect(catalog.productPrices).toEqual([
+      { optionId: 'oi_l', productId: 'p-latte', productName: 'Латте', priceCents: 1500 },
+      { optionId: 'oi_m', productId: 'p-latte', productName: 'Латте', priceCents: 0 },
+      { optionId: 'oi_vanilla', productId: 'p-flat', productName: 'Флэт уайт', priceCents: 0 },
+    ]);
+  });
+
+  it('applies one price to every option of an add-on group, never to a variant group', async () => {
+    const { prisma, service } = build();
+    Object.assign(prisma.optionGroup, {
+      findUnique: jest
+        .fn()
+        .mockResolvedValueOnce({ kind: 'ADDON', options: [{ id: 'oi_vanilla' }, { id: 'oi_caramel' }] })
+        .mockResolvedValueOnce({ kind: 'VARIANT', options: [{ id: 'oi_m' }] }),
+    });
+    prisma.brandOptionSetting.findMany.mockResolvedValueOnce([
+      { optionId: 'oi_vanilla', priceCents: 500, enabled: false },
+      { optionId: 'oi_caramel', priceCents: 500, enabled: true },
+    ]);
+
+    const settings = await service.applyGroupPrice(['brand-a'], 'brand-a', 'og_syrups', { priceCents: 500 });
+
+    expect(prisma.brandOptionSetting.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.brandOptionSetting.upsert).toHaveBeenCalledWith({
+      where: { brandId_optionId: { brandId: 'brand-a', optionId: 'oi_caramel' } },
+      create: { brandId: 'brand-a', optionId: 'oi_caramel', priceCents: 500, enabled: true },
+      update: { priceCents: 500 },
+    });
+    expect(settings.map((s) => [s.optionId, s.priceCents, s.enabled])).toEqual([
+      ['oi_vanilla', 500, false],
+      ['oi_caramel', 500, true],
+    ]);
+    expect(
+      await rejection(service.applyGroupPrice(['brand-a'], 'brand-a', 'og_size', { priceCents: 500 })),
+    ).toMatchObject({ status: 400, body: { code: 'OPTION_GROUP_INVALID' } });
+    await expect(
+      service.applyGroupPrice(['brand-b'], 'brand-a', 'og_syrups', { priceCents: 1 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("sets a brand's price, and keeps out of another brand", async () => {
@@ -430,66 +518,6 @@ describe('AdminBrandOptionsService', () => {
   });
 });
 
-describe('AdminLegacyOptionsService', () => {
-  function build() {
-    const tx = {
-      product: { count: jest.fn().mockResolvedValue(2) },
-      cartItem: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: 'ci-size', cartId: 'cart-1', variationIds: ['v-l'], modifiersJson: {} },
-          { id: 'ci-extra', cartId: 'cart-2', variationIds: [], modifiersJson: { 'm-shot': 1 } },
-          { id: 'ci-catalog', cartId: 'cart-1', variationIds: [], modifiersJson: {} },
-        ]),
-        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
-      },
-      cart: { update: jest.fn().mockResolvedValue({}) },
-      categoryOption: { deleteMany: jest.fn().mockResolvedValue({ count: 4 }) },
-      modifier: { deleteMany: jest.fn().mockResolvedValue({ count: 3 }) },
-      variation: { deleteMany: jest.fn().mockResolvedValue({ count: 5 }) },
-      storeIngredientStop: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      ingredient: { deleteMany: jest.fn().mockResolvedValue({ count: 6 }) },
-    };
-    const prisma = {
-      brand: { findUnique: jest.fn().mockResolvedValue({ id: 'brand-a' }) },
-      $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-    };
-    return { tx, prisma, service: new AdminLegacyOptionsService(prisma as unknown as PrismaService) };
-  }
-
-  it("clears the brand's older options in one transaction and answers what went", async () => {
-    const { tx, prisma, service } = build();
-    // Re-totalling reads what is left in each cart.
-    tx.cartItem.findMany
-      .mockResolvedValueOnce([
-        { id: 'ci-size', cartId: 'cart-1', variationIds: ['v-l'], modifiersJson: {} },
-        { id: 'ci-extra', cartId: 'cart-2', variationIds: [], modifiersJson: { 'm-shot': 1 } },
-        { id: 'ci-catalog', cartId: 'cart-1', variationIds: [], modifiersJson: {} },
-      ])
-      .mockResolvedValue([{ unitPriceCents: 7100, quantity: 1 }]);
-
-    expect(await service.clear('brand-a')).toEqual({
-      products: 2,
-      variations: 5,
-      modifiers: 3,
-      categoryOptions: 4,
-      ingredients: 6,
-    });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    // Only the lines made with older options leave the carts.
-    expect(tx.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-size', 'ci-extra'] } } });
-    expect(tx.variation.deleteMany).toHaveBeenCalledWith({ where: { product: { brandId: 'brand-a' } } });
-    expect(tx.ingredient.deleteMany).toHaveBeenCalledWith({ where: { brandId: 'brand-a' } });
-    expect(tx.storeIngredientStop.deleteMany).toHaveBeenCalledWith({ where: { ingredient: { brandId: 'brand-a' } } });
-  });
-
-  it('answers 404 for a brand that is not there', async () => {
-    const { prisma, service } = build();
-    prisma.brand.findUnique.mockResolvedValue(null);
-    await expect(service.clear('ghost')).rejects.toBeInstanceOf(NotFoundException);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-});
-
 describe('options catalog roles', () => {
   function rolesOf(controller: abstract new (...args: never[]) => unknown, method: string): Role[] {
     const handler = (controller.prototype as Record<string, unknown>)[method] as object;
@@ -499,15 +527,13 @@ describe('options catalog roles', () => {
     );
   }
 
-  it('keeps the catalog and the legacy clear to the takeAway team', () => {
+  it('keeps the catalog to the takeAway team', () => {
     for (const method of ['list', 'create', 'update', 'delete', 'createOption']) {
       expect(rolesOf(AdminOptionGroupsController, method)).toEqual([Role.SUPER_ADMIN]);
     }
     for (const method of ['update', 'delete']) {
       expect(rolesOf(AdminOptionItemsController, method)).toEqual([Role.SUPER_ADMIN]);
     }
-    expect(rolesOf(AdminBrandOptionsController, 'legacySummary')).toEqual([Role.SUPER_ADMIN]);
-    expect(rolesOf(AdminBrandOptionsController, 'clearLegacy')).toEqual([Role.SUPER_ADMIN]);
   });
 
   it('gives brand settings to the roles of the add-ons library', () => {
@@ -518,12 +544,15 @@ describe('options catalog roles', () => {
       Role.MENU_EDITOR,
     ]);
     expect(rolesOf(AdminBrandOptionsController, 'update')).toEqual(rolesOf(AdminBrandOptionsController, 'catalog'));
+    expect(rolesOf(AdminBrandOptionsController, 'applyGroupPrice')).toEqual(
+      rolesOf(AdminBrandOptionsController, 'catalog'),
+    );
   });
 
-  it('mirrors the store ingredient stops and the product editor', () => {
+  it('mirrors the store stop-list and the product editor', () => {
     for (const method of ['stop', 'resume']) {
       expect(rolesOf(AdminStoreOptionStopsController, method)).toEqual(
-        rolesOf(AdminStoresController, 'stopIngredient'),
+        rolesOf(AdminStoresController, 'addStopListEntry'),
       );
       const handler = (AdminStoreOptionStopsController.prototype as unknown as Record<string, object>)[
         method

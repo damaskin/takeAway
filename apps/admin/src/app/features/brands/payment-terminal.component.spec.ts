@@ -123,6 +123,7 @@ describe('PaymentTerminalComponent («Платёжный терминал»)', (
       qrLogin: null,
       qrPassword: null,
       qrExternalToken: null,
+      qrDeviceId: null,
     });
   });
 

@@ -1,11 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { DEFAULT_INACTIVE_DAYS, MAX_INACTIVE_DAYS, MIN_INACTIVE_DAYS } from '@takeaway/shared-types';
 
 import { ISO_DAY } from '../analytics-range';
 
 export const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
-import { CHURN_WINDOWS, type ChurnWindow } from '../retention';
 
 /**
  * The period and the slice of the business an analytics request covers.
@@ -61,19 +61,69 @@ export class TopProductsQueryDto extends AnalyticsQueryDto {
 
 export class RetentionQueryDto extends AnalyticsQueryDto {
   @ApiPropertyOptional({
-    enum: CHURN_WINDOWS,
+    minimum: MIN_INACTIVE_DAYS,
+    maximum: MAX_INACTIVE_DAYS,
+    default: DEFAULT_INACTIVE_DAYS,
     description: 'Days without an order after which a regular (3+ orders) is inactive.',
   })
   @IsOptional()
   @Type(() => Number)
-  @IsIn([...CHURN_WINDOWS])
-  window?: ChurnWindow;
+  @IsInt()
+  @Min(MIN_INACTIVE_DAYS)
+  @Max(MAX_INACTIVE_DAYS)
+  window?: number;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 100, description: 'How many customers to list.' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
+  take?: number;
+}
+
+/**
+ * The inactive customers right now — no period: the brand or one store, the
+ * currency their money is shown in, and the threshold.
+ */
+export class InactiveNowQueryDto {
+  @ApiPropertyOptional({ description: 'One of your brands; SUPER_ADMIN: any brand, all when omitted.' })
+  @IsOptional()
+  @IsString()
+  brandId?: string;
+
+  @ApiPropertyOptional({ description: 'Only orders at this store count.' })
+  @IsOptional()
+  @IsString()
+  storeId?: string;
+
+  @ApiPropertyOptional({
+    enum: CURRENCIES,
+    description:
+      'The currency the lost revenue is shown in when the stores price in several. People are counted over every store either way.',
+  })
+  @IsOptional()
+  @IsIn([...CURRENCIES])
+  currency?: string;
+
+  @ApiPropertyOptional({
+    minimum: MIN_INACTIVE_DAYS,
+    maximum: MAX_INACTIVE_DAYS,
+    default: DEFAULT_INACTIVE_DAYS,
+    description: 'Days without an order after which a regular (3+ orders) is inactive.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(MIN_INACTIVE_DAYS)
+  @Max(MAX_INACTIVE_DAYS)
+  inactiveDays?: number;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 100, default: 3, description: 'How many customers to name (PRO).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   @Max(100)
   take?: number;
 }

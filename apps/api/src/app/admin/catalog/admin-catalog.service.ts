@@ -13,7 +13,6 @@ import {
   StoreStatus,
   type Store,
   type StoreWorkingHour,
-  type VariationType,
 } from '@prisma/client';
 import { DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
 import { inferCategoryKind, showsNutrition } from '@takeaway/utils';
@@ -23,17 +22,13 @@ import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } fr
 import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, newStoreTimeZone } from '../../common/time/time-zone';
 import { typicalPrepCache } from '../../kitchen/typical-prep';
+import { ProductOptionGroupsService } from '../../option-groups/product-option-groups.service';
 import { recordCommissionRate, rateSourceFor } from '../../plans/commission-history';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
-import { copyCategoryOptions } from './category-option-copy';
-import { linkedIngredient, linkId, mayEditLibrary, notInLibrary, optionDefaults, optionGroup } from './ingredient-link';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
-
-/** What the menu editor shows of an option's ingredient: its name and whether it is in stock. */
-const INGREDIENT_SUMMARY = { select: { id: true, name: true, isAvailable: true } } as const;
 
 /** `null` = no brand restriction (super-admin). */
 export type BrandScope = string[] | null;
@@ -49,14 +44,10 @@ import type { SetBrandPlanDto } from './dto/admin-brand-plan.dto';
 import { PasswordService } from '../../auth/services/password.service';
 import type { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dto/admin-category.dto';
 import type {
-  CreateModifierDto,
   CreateProductDto,
-  CreateVariationDto,
   ReorderProductsDto,
   ToggleVisibilityDto,
-  UpdateModifierDto,
   UpdateProductDto,
-  UpdateVariationDto,
 } from './dto/admin-product.dto';
 import type { AddStopListEntryDto } from './dto/admin-stop-list.dto';
 import {
@@ -102,6 +93,7 @@ export class AdminCatalogService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly availability: StoreAvailabilityNotifier,
+    private readonly optionGroups: ProductOptionGroupsService,
   ) {}
 
   // ── Brands ────────────────────────────────────────────────────────────────
@@ -590,8 +582,8 @@ export class AdminCatalogService {
       where,
       orderBy: [{ brandId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
       // The editor shows how full each category is, and knows before a delete
-      // that the products need somewhere to go; and whether it has an option set.
-      include: { _count: { select: { products: true, options: true } } },
+      // that the products need somewhere to go.
+      include: { _count: { select: { products: true } } },
     });
     if (categories.length === 0) return [];
     const withoutPhoto = await this.prisma.product.groupBy({
@@ -689,6 +681,21 @@ export class AdminCatalogService {
       });
   }
 
+  /**
+   * Every product of the category takes the category's default preparation
+   * time («Применить ко всем товарам»). Nothing to do without a default.
+   */
+  async applyCategoryPrepTime(categoryId: string, scope: BrandScope = null): Promise<{ products: number }> {
+    const category = await this.getCategory(categoryId, scope);
+    if (category.defaultPrepTimeSeconds === null) return { products: 0 };
+    const { count } = await this.prisma.product.updateMany({
+      where: { categoryId, prepTimeSeconds: { not: category.defaultPrepTimeSeconds } },
+      data: { prepTimeSeconds: category.defaultPrepTimeSeconds },
+    });
+    if (count > 0) typicalPrepCache.forget();
+    return { products: count };
+  }
+
   async reorderCategories(dto: ReorderCategoriesDto, scope: BrandScope = null) {
     const cats = await this.prisma.category.findMany({
       where: { id: { in: dto.orderedIds } },
@@ -705,7 +712,12 @@ export class AdminCatalogService {
   }
 
   // ── Products ──────────────────────────────────────────────────────────────
-  /** `storeId` narrows the list to what that store sells. */
+  /**
+   * `storeId` narrows the list to what that store sells. Each product says
+   * whether its options let customers see it (`optionsComplete`: at least one
+   * variant and one add-on — owner, 2026-11-18); the menu list badges the
+   * rest.
+   */
   async listProducts(scope: BrandScope, brandId?: string, categoryId?: string, storeId?: string) {
     if (brandId && scope !== null && !scope.includes(brandId)) return [];
     const rows = await this.prisma.product.findMany({
@@ -717,7 +729,8 @@ export class AdminCatalogService {
       orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: LISTING_INCLUDE,
     });
-    return rows.map(withStoreIds);
+    const complete = await this.optionGroups.offeringVariantAndAddon(rows);
+    return rows.map((row) => ({ ...withStoreIds(row), optionsComplete: complete.has(row.id) }));
   }
 
   /** The stores a product can be listed in: every store of the brand, for the product form. */
@@ -730,13 +743,21 @@ export class AdminCatalogService {
     });
   }
 
+  /**
+   * One product for its card, with `optionsComplete` (see
+   * {@link listProducts}): false puts «Не видно покупателям» on the card.
+   */
   async getProduct(id: string, scope: BrandScope = null) {
+    const product = await this.findProduct(id, scope);
+    const complete = await this.optionGroups.offeringVariantAndAddon([product]);
+    return { ...product, optionsComplete: complete.has(product.id) };
+  }
+
+  private async findProduct(id: string, scope: BrandScope) {
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
-        variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }], include: { ingredient: INGREDIENT_SUMMARY } },
-        modifiers: { orderBy: { sortOrder: 'asc' }, include: { ingredient: INGREDIENT_SUMMARY } },
-        // The options editor offers the choice groups that fit the kind.
+        // The options editor offers the catalog groups that fit the kind.
         category: { select: { name: true, kind: true } },
         ...LISTING_INCLUDE,
       },
@@ -752,9 +773,10 @@ export class AdminCatalogService {
    * per-store menus keep their behaviour. An empty list is allowed: the
    * product exists but is sold nowhere yet.
    *
-   * The new product starts from its category: the category's option set is
-   * copied onto it and, without a time of its own, it takes the category's
-   * default preparation time — unless `applyCategoryOptions` is false.
+   * The new product starts from its category: without a time of its own it
+   * takes the category's default preparation time — unless
+   * `applyCategoryOptions` is false. It has no options yet, so customers do
+   * not see it until a variant and an add-on group are attached.
    *
    * Calories and nutrition are kept for a meal (FOOD) only; see
    * {@link withoutNutritionUnlessFood}.
@@ -777,25 +799,21 @@ export class AdminCatalogService {
         'product',
       ));
     const sortOrder = dto.sortOrder ?? (await nextProductSortOrder(this.prisma, dto.categoryId));
-    const created = await this.prisma
-      .$transaction(async (tx) => {
-        const product = await tx.product.create({
-          data: {
-            ...fields,
-            prepTimeSeconds,
-            slug,
-            sortOrder,
-            stores: { create: storeIds.map((storeId) => ({ storeId })) },
-          },
-          include: LISTING_INCLUDE,
-        });
-        if (fromCategory) await copyCategoryOptions(tx, dto.categoryId, [product.id]);
-        return product;
+    const created = await this.prisma.product
+      .create({
+        data: {
+          ...fields,
+          prepTimeSeconds,
+          slug,
+          sortOrder,
+          stores: { create: storeIds.map((storeId) => ({ storeId })) },
+        },
+        include: LISTING_INCLUDE,
       })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
     // A new product can change the stores' typical preparation time.
     typicalPrepCache.forget();
-    return withStoreIds(created);
+    return { ...withStoreIds(created), optionsComplete: false };
   }
 
   /**
@@ -805,7 +823,7 @@ export class AdminCatalogService {
    * whatever they have stored.
    */
   async updateProduct(id: string, dto: UpdateProductDto, scope: BrandScope = null) {
-    const product = await this.getProduct(id, scope);
+    const product = await this.findProduct(id, scope);
     const { storeIds: requested, ...given } = dto;
     let kind: CategoryKind = product.category?.kind ?? 'OTHER';
     if (dto.categoryId) kind = (await this.assertCategoryOfBrand(dto.categoryId, product.brandId)).kind;
@@ -875,7 +893,7 @@ export class AdminCatalogService {
    * delete was a 500. Those cart lines go in the same transaction now.
    */
   async deleteProduct(id: string, scope: BrandScope = null) {
-    await this.getProduct(id, scope);
+    await this.findProduct(id, scope);
     for (let attempt = 1; ; attempt++) {
       try {
         await this.prisma.$transaction(async (tx) => {
@@ -893,7 +911,7 @@ export class AdminCatalogService {
   }
 
   async toggleProductVisibility(id: string, dto: ToggleVisibilityDto, scope: BrandScope = null) {
-    await this.getProduct(id, scope);
+    await this.findProduct(id, scope);
     const updated = await this.prisma.product.update({
       where: { id },
       data: { visible: dto.visible },
@@ -917,197 +935,6 @@ export class AdminCatalogService {
       dto.orderedIds.map((id, index) => this.prisma.product.update({ where: { id }, data: { sortOrder: index } })),
     );
   }
-
-  // ── Variations ────────────────────────────────────────────────────────────
-  /**
-   * A milk is an add-in of the brand library: a brand picks one its library
-   * has (by id, or by its name); only the platform team adds a new one by
-   * typing it here. Sizes, temperatures and cups are the brand's own.
-   */
-  async createVariation(productId: string, dto: CreateVariationDto, scope: BrandScope = null) {
-    const product = await this.getProduct(productId, scope);
-    return this.prisma.$transaction(async (tx) => {
-      // Milk is an add-on that runs out; sizes and cups are not.
-      const linked = await linkedIngredient(tx, product.brandId, dto.ingredientId, dto.name, {
-        autoLink: dto.type === 'MILK',
-        mayAdd: mayEditLibrary(scope),
-        priceForNew: dto.priceDeltaCents,
-      });
-      const { name, priceDeltaCents } = optionDefaults(dto, linked);
-      // One default per type, so the size a customer finds pre-selected is
-      // never a coin toss between two "default" sizes.
-      if (dto.isDefault) {
-        await tx.variation.updateMany({
-          where: { productId, type: dto.type, isDefault: true },
-          data: { isDefault: false },
-        });
-      }
-      const sortOrder = dto.sortOrder ?? (await nextVariationSortOrder(tx, productId, dto.type));
-      return tx.variation.create({
-        data: { productId, ...dto, name, priceDeltaCents, sortOrder, ingredientId: linkId(linked) },
-      });
-    });
-  }
-
-  /** A brand cannot take a choice made of a library add-in out of the library's reach (see {@link assertKeepsLink}). */
-  async updateVariation(id: string, dto: UpdateVariationDto, scope: BrandScope = null) {
-    const existing = await this.findVariation(id, scope);
-    assertKeepsLink(scope, existing.ingredientId, dto.ingredientId);
-    return this.prisma
-      .$transaction(async (tx) => {
-        if (dto.isDefault) {
-          await tx.variation.updateMany({
-            where: { productId: existing.productId, type: dto.type ?? existing.type, isDefault: true, id: { not: id } },
-            data: { isDefault: false },
-          });
-        }
-        const linked = await linkedIngredient(tx, existing.product.brandId, dto.ingredientId, undefined, KEEP_LINK);
-        return tx.variation.update({ where: { id }, data: { ...dto, ingredientId: linkId(linked) } });
-      })
-      .catch((err: unknown) => {
-        if (prismaCode(err) === 'P2025') throw new NotFoundException('Variation not found');
-        throw err;
-      });
-  }
-
-  /** Cart lines priced with this variation go with it; see {@link deleteProduct}. */
-  async deleteVariation(id: string, scope: BrandScope = null) {
-    const existing = await this.findVariation(id, scope);
-    await this.prisma
-      .$transaction(async (tx) => {
-        const lines = await tx.cartItem.findMany({
-          where: { productId: existing.productId, variationIds: { has: id } },
-          select: { id: true, cartId: true },
-        });
-        await dropCartLines(tx, lines);
-        await tx.variation.delete({ where: { id } });
-      })
-      .catch((err: unknown) => {
-        if (prismaCode(err) === 'P2025') throw new NotFoundException('Variation not found');
-        throw err;
-      });
-  }
-
-  private async findVariation(id: string, scope: BrandScope) {
-    const variation = await this.prisma.variation.findUnique({
-      where: { id },
-      select: { productId: true, type: true, ingredientId: true, product: { select: { brandId: true } } },
-    });
-    if (!variation) throw new NotFoundException('Variation not found');
-    assertInScope(scope, variation.product.brandId);
-    return variation;
-  }
-
-  // ── Modifiers ─────────────────────────────────────────────────────────────
-  /**
-   * The slug is built from the name when omitted. The admin used to derive
-   * it in the browser keeping only [a-z0-9], so «Ванильный сироп» produced
-   * an empty slug and the modifier could not be created at all.
-   *
-   * Every extra is an add-on of the brand library: picked from it by
-   * `ingredientId` (name, price and group default to the library's), or
-   * typed by name and filed under the entry of that name. Only the platform
-   * team's editor makes a missing entry (or an untracked extra); a brand's
-   * is refused with INGREDIENT_NOT_IN_LIBRARY (2026-11-06).
-   */
-  async createModifier(productId: string, dto: CreateModifierDto, scope: BrandScope = null) {
-    const product = await this.getProduct(productId, scope);
-    assertCountRange(dto.minCount ?? 0, dto.maxCount ?? 1);
-    const linked = await linkedIngredient(this.prisma, product.brandId, dto.ingredientId, dto.name, {
-      autoLink: true,
-      mayAdd: mayEditLibrary(scope),
-      priceForNew: dto.priceDeltaCents,
-      groupForNew: dto.group ?? null,
-    });
-    const { name, priceDeltaCents } = optionDefaults(dto, linked);
-    const group = optionGroup(dto.group, linked);
-    const slug =
-      dto.slug ??
-      (await uniqueSlug(
-        name,
-        async (candidate) => (await this.prisma.modifier.count({ where: { productId, slug: candidate } })) > 0,
-        'option',
-      ));
-    const sortOrder = dto.sortOrder ?? (await nextModifierSortOrder(this.prisma, productId));
-    return this.prisma.modifier
-      .create({
-        data: { productId, ...dto, name, priceDeltaCents, slug, sortOrder, ingredientId: linkId(linked), group },
-      })
-      .catch((err: unknown) => rethrowSlugTaken(err, slug));
-  }
-
-  /** A brand cannot take an extra out of the library's reach (see {@link assertKeepsLink}). */
-  async updateModifier(id: string, dto: UpdateModifierDto, scope: BrandScope = null) {
-    const existing = await this.findModifier(id, scope);
-    assertCountRange(dto.minCount ?? existing.minCount, dto.maxCount ?? existing.maxCount);
-    assertKeepsLink(scope, existing.ingredientId, dto.ingredientId);
-    const linked = await linkedIngredient(
-      this.prisma,
-      existing.product.brandId,
-      dto.ingredientId,
-      undefined,
-      KEEP_LINK,
-    );
-    const ingredientId = linkId(linked);
-    return this.prisma.modifier.update({ where: { id }, data: { ...dto, ingredientId } }).catch((err: unknown) => {
-      if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
-      return rethrowSlugTaken(err, dto.slug);
-    });
-  }
-
-  /**
-   * Takes the extra off this product only: its add-on stays in the library
-   * for the other products and the next one. Cart lines priced with this
-   * modifier go with it; see {@link deleteProduct}.
-   */
-  async deleteModifier(id: string, scope: BrandScope = null) {
-    const existing = await this.findModifier(id, scope);
-    await this.prisma
-      .$transaction(async (tx) => {
-        const lines = await tx.cartItem.findMany({
-          where: { productId: existing.productId },
-          select: { id: true, cartId: true, modifiersJson: true },
-        });
-        await dropCartLines(
-          tx,
-          lines.filter((line) => modifierCount(line.modifiersJson, id) > 0),
-        );
-        await tx.modifier.delete({ where: { id } });
-      })
-      .catch((err: unknown) => {
-        if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
-        throw err;
-      });
-  }
-
-  private async findModifier(id: string, scope: BrandScope) {
-    const modifier = await this.prisma.modifier.findUnique({
-      where: { id },
-      select: {
-        productId: true,
-        minCount: true,
-        maxCount: true,
-        ingredientId: true,
-        product: { select: { brandId: true } },
-      },
-    });
-    if (!modifier) throw new NotFoundException('Modifier not found');
-    assertInScope(scope, modifier.product.brandId);
-    return modifier;
-  }
-}
-
-/** An edit names the link outright or leaves it: it never files an option by name. */
-const KEEP_LINK = { autoLink: false, mayAdd: false } as const;
-
-/**
- * Unlinking an option from its library add-in would leave an add-in the
- * library does not control — the platform team's call, like a new one. A
- * brand may move the option to another add-in of its library; an option
- * that was never linked (from before the library) stays as it is.
- */
-function assertKeepsLink(scope: BrandScope, current: string | null, requested: string | null | undefined): void {
-  if (requested === null && current !== null && !mayEditLibrary(scope)) notInLibrary();
 }
 
 function categoryNotEmpty(productCount?: number) {
@@ -1130,18 +957,6 @@ function withoutNutritionUnlessFood<T extends object>(
   kind: CategoryKind,
 ): T | (Omit<T, keyof typeof NO_NUTRITION> & typeof NO_NUTRITION) {
   return showsNutrition(kind) ? fields : { ...fields, ...NO_NUTRITION };
-}
-
-function assertCountRange(minCount: number, maxCount: number): void {
-  if (minCount > maxCount) {
-    throw menuBadRequest('MODIFIER_RANGE', 'minCount cannot be greater than maxCount');
-  }
-}
-
-/** How many of this modifier a cart line carries (`modifiersJson` is `{ [modifierId]: count }`). */
-export function modifierCount(json: Prisma.JsonValue, modifierId: string): number {
-  if (!json || typeof json !== 'object' || Array.isArray(json)) return 0;
-  return Number(json[modifierId] ?? 0);
 }
 
 /**
@@ -1172,19 +987,5 @@ async function nextCategorySortOrder(db: Prisma.TransactionClient, brandId: stri
 
 async function nextProductSortOrder(db: Prisma.TransactionClient, categoryId: string): Promise<number> {
   const { _max } = await db.product.aggregate({ where: { categoryId }, _max: { sortOrder: true } });
-  return (_max.sortOrder ?? -1) + 1;
-}
-
-async function nextVariationSortOrder(
-  db: Prisma.TransactionClient,
-  productId: string,
-  type: VariationType,
-): Promise<number> {
-  const { _max } = await db.variation.aggregate({ where: { productId, type }, _max: { sortOrder: true } });
-  return (_max.sortOrder ?? -1) + 1;
-}
-
-async function nextModifierSortOrder(db: Prisma.TransactionClient, productId: string): Promise<number> {
-  const { _max } = await db.modifier.aggregate({ where: { productId }, _max: { sortOrder: true } });
   return (_max.sortOrder ?? -1) + 1;
 }

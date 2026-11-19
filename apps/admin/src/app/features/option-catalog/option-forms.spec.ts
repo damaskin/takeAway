@@ -57,8 +57,26 @@ describe('OptionGroupFormComponent', () => {
     form.form.patchValue({ name: ' Пенка-топ ', minSelect: '0', maxSelect: '1', showIfOptionId: 'opt-cold' });
     form.submit();
     expect(sent).toEqual([
-      { kind: 'ADDON', type: 'A', name: 'Пенка-топ', minSelect: 0, maxSelect: 1, showIfOptionId: 'opt-cold' },
+      {
+        kind: 'ADDON',
+        type: 'A',
+        name: 'Пенка-топ',
+        minSelect: 0,
+        maxSelect: 1,
+        showIfOptionId: 'opt-cold',
+        scope: 'BOTH',
+      },
     ]);
+  });
+
+  it('sends whom the group is for, and shows it back on an existing group', () => {
+    const { form, sent } = render();
+    form.form.patchValue({ name: 'Соусы', scope: 'FOOD' });
+    form.submit();
+    expect(sent[0]).toMatchObject({ name: 'Соусы', scope: 'FOOD' });
+
+    TestBed.resetTestingModule();
+    expect(render({ ...SERVE, scope: 'DRINKS' }).form.form.controls.scope.value).toBe('DRINKS');
   });
 
   it('starts a variant list at one pick and never lets a variant be a counter', () => {

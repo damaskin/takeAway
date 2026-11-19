@@ -16,12 +16,16 @@ export interface QrCredentials {
   login: string;
   password: string;
   externalToken: string;
+  /** The device id the bank issued for payment notifications; empty — `-1`. */
+  deviceId?: string;
 }
 
 /**
  * The `QRMCredentials` header as the documentation asks of a non-mobile
- * client: `DeviceId` and `PushId` `-1`; with an `ExternalToken` the login and
- * password go out empty, without one the token does.
+ * client: `DeviceId` and `PushId` `-1` — unless the bank issued the merchant a
+ * device id for payment notifications, which then goes in `DeviceId`; with an
+ * `ExternalToken` the login and password go out empty, without one the token
+ * does.
  */
 export function credentialsHeader(credentials: QrCredentials, namespace: string): XmlElement {
   const token = credentials.externalToken;
@@ -30,7 +34,7 @@ export function credentialsHeader(credentials: QrCredentials, namespace: string)
     [
       leaf('Login', token ? '' : credentials.login),
       leaf('Password', token ? '' : credentials.password),
-      leaf('DeviceId', QR_NO_DEVICE),
+      leaf('DeviceId', credentials.deviceId?.trim() || QR_NO_DEVICE),
       leaf('PushId', QR_NO_DEVICE),
       leaf('ExternalToken', token),
     ],

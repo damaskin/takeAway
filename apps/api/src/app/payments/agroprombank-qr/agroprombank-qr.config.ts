@@ -55,6 +55,11 @@ export class AgroprombankQrConfig {
     return this.secret('AGROPROMBANK_QR_EXTERNAL_TOKEN');
   }
 
+  /** The device id the bank issued for payment notifications, if any; otherwise `-1` goes out. */
+  get deviceId(): string | null {
+    return this.str('AGROPROMBANK_QR_DEVICE_ID');
+  }
+
   /** The QR terminal, `QRT` and fifteen digits. */
   get terminalId(): string | null {
     return this.str('AGROPROMBANK_QR_TERMINAL_ID');
@@ -126,6 +131,7 @@ export class AgroprombankQrConfig {
       login: this.login,
       password: this.password,
       externalToken: this.externalToken,
+      deviceId: this.deviceId,
     };
   }
 

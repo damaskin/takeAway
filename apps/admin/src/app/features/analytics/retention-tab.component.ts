@@ -1,16 +1,26 @@
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  input,
+  model,
+  output,
+  signal,
+  untracked,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import type { Subscription } from 'rxjs';
 
 import {
   AnalyticsApi,
   type AnalyticsPeriod,
   type ChurnStats,
-  type ChurnWindow,
   type WinBackStats,
 } from '../../core/analytics/analytics.service';
-import { CustomersApi } from '../../core/customers/customers.service';
 import {
   DEFAULT_INACTIVE_DAYS,
   INACTIVE_MIN_ORDERS,
@@ -21,9 +31,13 @@ import {
 } from '../../core/customers/inactive-segment';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
+import { InactiveDaysComponent } from '../../shared/inactive-days.component';
 
 /**
- * The «Возврат» (win-back) tab, PRO. Says who counts as inactive, then:
+ * The «Возврат» (win-back) tab, PRO. Says who counts as inactive — with the
+ * threshold picker right there (7 / 14 / 30 / 90 / «Свой…», the same as on
+ * the dashboard card and in «Клиенты»), while the period on top says when
+ * they became inactive — then:
  *
  *   the money first — revenue missed on the customers who became inactive
  *   in the period (days away ÷ usual interval × average check, per
@@ -37,12 +51,15 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 @Component({
   selector: 'app-retention-tab',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, InactiveDaysComponent],
   template: `
-    <p class="rt-definition">
-      <strong>{{ 'admin.churn.definition' | translate: { min: minOrders, days: window() } }}</strong>
-      {{ 'admin.analytics.retention.periodNote' | translate }}
-    </p>
+    <div class="rt-definition">
+      <p>
+        <strong>{{ 'admin.churn.definition' | translate: { min: minOrders, days: inactiveDays() } }}</strong>
+        {{ 'admin.analytics.retention.periodNote' | translate }}
+      </p>
+      <app-inactive-days [(days)]="inactiveDays" />
+    </div>
 
     <article class="dash-card">
       <header class="dash-card-head">
@@ -96,7 +113,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
       @if (inactiveNow() !== null) {
         <p class="rt-now">
           <strong>{{ 'admin.analytics.retention.now' | translate: { count: inactiveNow() } }}</strong>
-          — {{ 'admin.analytics.retention.nowHint' | translate: { days: window() } }}
+          — {{ 'admin.analytics.retention.nowHint' | translate: { days: inactiveDays() } }}
         </p>
       }
       <div class="rt-buttons">
@@ -129,7 +146,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
       <header class="dash-card-head">
         <h2>{{ 'admin.analytics.winback.title' | translate }}</h2>
       </header>
-      <p class="dash-hint">{{ 'admin.analytics.winback.hint' | translate: { days: window() } }}</p>
+      <p class="dash-hint">{{ 'admin.analytics.winback.hint' | translate: { days: inactiveDays() } }}</p>
       @if (winBack(); as w) {
         <div class="an-tiles an-tiles-4">
           <div class="an-tile">
@@ -191,7 +208,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
           }}</span>
         }
       </header>
-      <p class="dash-hint">{{ 'admin.churn.hint' | translate: { days: window() } }}</p>
+      <p class="dash-hint">{{ 'admin.churn.hint' | translate: { days: inactiveDays() } }}</p>
       @if (churn()?.customers; as lost) {
         @if (lost.length === 0) {
           <p class="dash-muted">{{ 'admin.churn.none' | translate }}</p>
@@ -248,6 +265,9 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         font-family: var(--font-sans);
       }
       .rt-definition {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
         margin: 0;
         padding: 12px 16px;
         border-radius: 14px;
@@ -255,6 +275,9 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         font-size: 13px;
         line-height: 1.5;
         color: var(--color-text-secondary);
+      }
+      .rt-definition p {
+        margin: 0;
       }
       .rt-definition strong {
         color: var(--color-text-primary);
@@ -407,7 +430,6 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 })
 export class RetentionTabComponent {
   private readonly api = inject(AnalyticsApi);
-  private readonly customers = inject(CustomersApi);
   private readonly translate = inject(TranslateService);
   readonly plans = inject(PlanAccess);
   protected readonly fmt = inject(LocaleFormatService);
@@ -416,24 +438,26 @@ export class RetentionTabComponent {
   readonly period = input.required<AnalyticsPeriod>();
   readonly currency = input<string | null | undefined>(null);
   /**
-   * Days without an order that make a regular inactive. Not picked on this
-   * tab since 2026-11-14 (Maxim's list 6.0, item 5: the period on top already
-   * says over which days to look): 14, or the window of the dashboard's
-   * «Неактивные клиенты» card the tab was opened from (`?window=`), so the
-   * two show the same people. The definition above the tab states it.
+   * Days without an order that make a regular inactive, picked under the
+   * definition (back since 2026-11-18, now with 7 / 14 / 30 / 90 / «Свой…»):
+   * 14, or the threshold of the dashboard card the tab was opened from, so
+   * the two show the same people.
    */
-  readonly window = input<ChurnWindow>(DEFAULT_INACTIVE_DAYS);
+  readonly inactiveDays = model<number>(DEFAULT_INACTIVE_DAYS);
   /** A store from «ещё N чел. перестали ходить в одну из точек» — the page narrows to it. */
   readonly storePicked = output<string>();
 
   readonly minOrders = INACTIVE_MIN_ORDERS;
   readonly winBack = signal<WinBackStats | null>(null);
   readonly churn = signal<ChurnStats | null>(null);
-  /** The size of the segment the action buttons reach — the same people as «Клиенты → Неактивные». */
+  /**
+   * The size of the segment the action buttons reach — the dashboard card's
+   * count, from the same request: the same people as «Клиенты → Неактивные».
+   */
   readonly inactiveNow = signal<number | null>(null);
 
   readonly segment = computed<InactiveSegment>(() => ({
-    days: this.window(),
+    days: this.inactiveDays(),
     storeId: this.period().storeId ?? null,
   }));
   readonly links = computed(() => {
@@ -460,21 +484,28 @@ export class RetentionTabComponent {
     return { text, tone };
   });
 
+  private requests: Subscription[] = [];
+
   constructor() {
     effect(() => {
       const brandId = this.brandId();
       const period = this.period();
-      const window = this.window();
+      const days = this.inactiveDays();
       untracked(() => {
-        this.api.winBack(brandId, period, window, 20).subscribe({ next: (w) => this.winBack.set(w) });
-        this.api.churn(brandId, period, window, 50).subscribe({ next: (c) => this.churn.set(c) });
-        if (this.plans.has('customers')) {
-          this.customers
-            .list({ brandId, storeId: period.storeId, segment: 'inactive', inactiveDays: window, pageSize: 1 })
-            .subscribe({ next: (page) => this.inactiveNow.set(page.total), error: () => this.inactiveNow.set(null) });
-        }
+        // Answers for a threshold or period no longer on screen are dropped.
+        this.requests.forEach((r) => r.unsubscribe());
+        this.requests = [
+          this.api.winBack(brandId, period, days, 20).subscribe({ next: (w) => this.winBack.set(w) }),
+          this.api.churn(brandId, period, days, 50).subscribe({ next: (c) => this.churn.set(c) }),
+          // Only the count: the people are listed under «Все неактивные клиенты».
+          this.api.inactive(brandId, period, days, 0).subscribe({
+            next: (now) => this.inactiveNow.set(now.count),
+            error: () => this.inactiveNow.set(null),
+          }),
+        ];
       });
     });
+    inject(DestroyRef).onDestroy(() => this.requests.forEach((r) => r.unsubscribe()));
   }
 
   price(cents: number): string {

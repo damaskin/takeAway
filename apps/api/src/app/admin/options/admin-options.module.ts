@@ -7,7 +7,6 @@ import {
   AdminStoreOptionStopsController,
 } from './admin-brand-options.controller';
 import { AdminBrandOptionsService } from './admin-brand-options.service';
-import { AdminLegacyOptionsService } from './admin-legacy-options.service';
 import { AdminOptionGroupsController, AdminOptionItemsController } from './admin-option-catalog.controller';
 import { AdminOptionCatalogService } from './admin-option-catalog.service';
 import { AdminProductOptionGroupsService } from './admin-product-option-groups.service';
@@ -22,11 +21,6 @@ import { AdminProductOptionGroupsService } from './admin-product-option-groups.s
     AdminStoreOptionStopsController,
     AdminProductOptionGroupsController,
   ],
-  providers: [
-    AdminOptionCatalogService,
-    AdminBrandOptionsService,
-    AdminProductOptionGroupsService,
-    AdminLegacyOptionsService,
-  ],
+  providers: [AdminOptionCatalogService, AdminBrandOptionsService, AdminProductOptionGroupsService],
 })
 export class AdminOptionsModule {}

@@ -340,6 +340,102 @@ describe('AnalyticsService.churn', () => {
   });
 });
 
+describe('AnalyticsService.inactiveNow', () => {
+  const NOW = new Date('2026-11-18T10:00:00Z');
+  const OPTIONS = { timeZone: 'Europe/Chisinau', currency: 'RUP', currencies: ['RUP'], withList: false, take: 3 };
+  /** Four visits from 5 September to 1 October — every 26/3 days — 5 000 a check, away since. */
+  const quiet = {
+    userId: 'u1',
+    lastOrderAt: new Date('2026-10-01T08:00:00Z'),
+    orders: 4,
+    totalCents: 20_000n,
+    moneyOrders: 4,
+    visits: 4,
+    firstVisitDay: '2026-09-05',
+    lastVisitDay: '2026-10-01',
+  };
+
+  function service(rows: unknown[], elsewhere: unknown[] = []) {
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValueOnce(rows).mockResolvedValueOnce(elsewhere),
+      user: { findMany: jest.fn().mockResolvedValue([{ id: 'u1', name: 'Ира', phone: null }]) },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+    return { svc: new AnalyticsService(prisma), prisma };
+  }
+
+  it('reads the people from the segment query and the money up to today, nobody named on BASIC', async () => {
+    const { svc, prisma } = service([quiet]);
+    const result = await svc.inactiveNow({ brandIds: ['b1'], storeIds: null }, 30, OPTIONS, NOW);
+
+    // 48 days away (01.10 → 18.11) ÷ 26/3 × 5 000 = 27 692.3… → 27 692
+    expect(result).toMatchObject({
+      inactiveDays: 30,
+      asOf: '2026-11-18',
+      timeZone: 'Europe/Chisinau',
+      count: 1,
+      lostRevenueCents: 27_692,
+      currency: 'RUP',
+      customers: null,
+      activeElsewhere: { count: 0, stores: [] },
+    });
+    const sql = sqlOf((prisma.$queryRaw as jest.Mock).mock.calls[0]);
+    expect(sql.sql).toContain('WITH inactive AS (');
+    expect(sql.sql).toContain('WHERE p."orders" >= ? AND p."lastOrderAt" < ?::timestamp');
+    // The cut-off is N days before now, as in «Клиенты → Неактивные».
+    expect(sql.values).toEqual(expect.arrayContaining([3, '2026-10-19T10:00:00.000Z']));
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('adds up spend in the shown currency when the stores price in several', async () => {
+    const { svc, prisma } = service([{ ...quiet, orders: 6, moneyOrders: 4 }]);
+    const result = await svc.inactiveNow(
+      { brandIds: ['b1'], storeIds: null },
+      14,
+      { ...OPTIONS, currency: 'MDL', currencies: ['MDL', 'RUP'] },
+      NOW,
+    );
+    // A divides by the four orders in MDL, not all six.
+    expect(result.lostRevenueCents).toBe(27_692);
+    const sql = sqlOf((prisma.$queryRaw as jest.Mock).mock.calls[0]);
+    expect(sql.values.slice(0, 2)).toEqual(['MDL', 'MDL']);
+  });
+
+  it('names the biggest estimates first on PRO, as many as asked', async () => {
+    const small = { ...quiet, userId: 'u2', totalCents: 4_000n };
+    const { svc } = service([small, quiet]);
+    const result = await svc.inactiveNow(
+      { brandIds: ['b1'], storeIds: null },
+      14,
+      { ...OPTIONS, withList: true, take: 1 },
+      NOW,
+    );
+    expect(result.count).toBe(2);
+    expect(result.customers).toEqual([
+      expect.objectContaining({ userId: 'u1', name: 'Ира', daysSinceLastOrder: 48, lostRevenueCents: 27_692 }),
+    ]);
+  });
+
+  it('names nobody with take=0 — only the count is wanted', async () => {
+    const { svc, prisma } = service([quiet]);
+    const result = await svc.inactiveNow(
+      { brandIds: ['b1'], storeIds: null },
+      14,
+      { ...OPTIONS, withList: true, take: 0 },
+      NOW,
+    );
+    expect(result).toMatchObject({ count: 1, customers: null });
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('has nothing to say about other stores when one store is picked', async () => {
+    const { svc, prisma } = service([]);
+    const result = await svc.inactiveNow({ brandIds: ['b1'], storeIds: ['s1'] }, 14, OPTIONS, NOW);
+    expect(result).toMatchObject({ count: 0, lostRevenueCents: 0, activeElsewhere: null });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+});
+
 /** The SQL and the bound values of one `$queryRaw` tagged-template call. */
 function sqlOf(call: unknown[]): Prisma.Sql {
   const [strings, ...values] = call as [TemplateStringsArray, ...unknown[]];

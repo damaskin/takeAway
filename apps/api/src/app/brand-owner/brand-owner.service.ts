@@ -116,6 +116,7 @@ export class BrandOwnerService {
       menu: progress.menu,
       photos: progress.photos,
       cardPayments: this.flags.cardPaymentFlow !== 'none',
+      payments: progress.payments,
       hasOrders: progress.hasOrders,
       complete: progress.complete,
     };

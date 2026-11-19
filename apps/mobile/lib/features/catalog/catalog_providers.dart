@@ -185,8 +185,9 @@ final storeSuggestionsProvider = FutureProvider.autoDispose.family<StoreSuggesti
   }
 });
 
-/// Product details (variations and modifiers). Kept for the session: the
-/// cart uses them to name the chosen options.
+/// Product details, brand-wide. Kept for the session: a cart or order line
+/// takes its photo from them when the store's menu no longer lists the
+/// product.
 final productDetailProvider = FutureProvider.family<ProductDetail, String>((ref, idOrSlug) async {
   try {
     return await ref.watch(apiProvider).product(idOrSlug);

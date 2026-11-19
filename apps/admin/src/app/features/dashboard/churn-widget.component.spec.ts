@@ -6,20 +6,18 @@ import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { PlanFeature } from '@takeaway/shared-types';
 import { of } from 'rxjs';
 
-import { AnalyticsApi, type AnalyticsPeriod, type ChurnStats } from '../../core/analytics/analytics.service';
+import { AnalyticsApi, type AnalyticsPeriod, type InactiveNow } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { ChurnWidgetComponent } from './churn-widget.component';
 
-const STATS: ChurnStats = {
-  from: '2026-09-11',
-  to: '2026-10-10',
+const STATS: InactiveNow = {
+  inactiveDays: 14,
+  asOf: '2026-11-18',
   timeZone: 'Europe/Chisinau',
-  window: 14,
   count: 4,
   lostRevenueCents: 52_000,
-  previous: { count: 2, lostRevenueCents: 20_000 },
-  countDeltaPercent: 100,
+  currency: 'MDL',
   customers: [
     {
       userId: 'u1',
@@ -28,35 +26,38 @@ const STATS: ChurnStats = {
       orders: 9,
       totalCents: 117_000,
       avgCheckCents: 13_000,
-      lastOrderAt: '2026-09-20T09:00:00.000Z',
+      lastOrderAt: '2026-10-29T09:00:00.000Z',
       daysSinceLastOrder: 20,
       visits: 9,
       visitIntervalDays: 5,
       lostRevenueCents: 52_000,
     },
   ],
+  activeElsewhere: null,
 };
 
 /** Text with every run of whitespace (NBSP included) as one space. */
 const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
 describe('ChurnWidgetComponent', () => {
-  let churn: jest.Mock;
+  let inactive: jest.Mock;
 
   async function render(
-    opts: { role?: string; features?: PlanFeature[]; stats?: ChurnStats; period?: AnalyticsPeriod } = {},
+    opts: { role?: string; features?: PlanFeature[]; stats?: InactiveNow; period?: AnalyticsPeriod } = {},
   ) {
-    churn = jest.fn().mockReturnValue(of(opts.stats ?? STATS));
+    inactive = jest.fn().mockReturnValue(of(opts.stats ?? STATS));
     TestBed.configureTestingModule({
       imports: [ChurnWidgetComponent],
       providers: [
         provideRouter([]),
         provideTranslateService(),
-        { provide: AnalyticsApi, useValue: { churn } },
+        { provide: AnalyticsApi, useValue: { inactive } },
         { provide: AuthStore, useValue: { user: signal({ role: opts.role ?? 'BRAND_ADMIN' }) } },
         {
           provide: PlanAccess,
-          useValue: { has: (f: PlanFeature) => (opts.features ?? ['churnList', 'winBack']).includes(f) },
+          useValue: {
+            has: (f: PlanFeature) => (opts.features ?? ['churnList', 'winBack', 'customers']).includes(f),
+          },
         },
       ],
     });
@@ -73,9 +74,18 @@ describe('ChurnWidgetComponent', () => {
     return fixture;
   }
 
+  async function settle(fixture: Awaited<ReturnType<typeof render>>) {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  const pill = (el: HTMLElement, label: string) =>
+    [...el.querySelectorAll<HTMLButtonElement>('app-inactive-days button')].find((b) => text(b) === label);
+
   beforeEach(() => TestBed.resetTestingModule());
 
-  it('is called «Неактивные клиенты» and puts the missed revenue first, highlighted', async () => {
+  it('is called «Неактивные клиенты» and puts the missed revenue first, then who is inactive now', async () => {
     const fixture = await render();
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el.querySelector('h2'))).toBe('Неактивные клиенты');
@@ -83,7 +93,8 @@ describe('ChurnWidgetComponent', () => {
     expect(tiles[0]?.classList).toContain('churn-money');
     expect(text(tiles[0])).toContain('упущенная выручка');
     expect(text(tiles[0])).toContain('520 MDL');
-    expect(text(tiles[1])).toContain('4');
+    expect(text(tiles[1])).toContain('сейчас неактивны');
+    expect(text(el.querySelector('[data-testid="churn-count"]'))).toBe('4');
   });
 
   it('explains the estimate: days away ÷ usual interval × average check, a forecast', async () => {
@@ -103,28 +114,77 @@ describe('ChurnWidgetComponent', () => {
     expect(item).not.toContain('130 MDL');
   });
 
-  it('has no threshold picker: always 14 days, like «Возврат клиентов»', async () => {
+  it('asks for the inactive right now on 14 days and the dashboard’s store, not its period', async () => {
     const fixture = await render();
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.churn-window')).toBeNull();
     expect(text(el.querySelector('.dash-muted'))).toContain('14 дн.');
-    expect(churn).toHaveBeenLastCalledWith('b1', { days: 30, storeId: 's1' }, 14, 3);
+    expect(pill(el, '14 дн.')?.getAttribute('aria-pressed')).toBe('true');
+    expect(inactive).toHaveBeenLastCalledWith('b1', { storeId: 's1', currency: null }, 14, 3);
+
+    // Another period alone does not ask again: who is inactive now does not depend on it.
+    fixture.componentRef.setInput('period', { days: 7, storeId: 's1' });
+    await settle(fixture);
+    expect(inactive).toHaveBeenCalledTimes(1);
   });
 
-  it('opens «Возврат» on the same period and store', async () => {
+  it('offers 7 / 14 / 30 / 90 days and a custom number, and asks again with the one picked', async () => {
     const fixture = await render();
-    const link = (fixture.nativeElement as HTMLElement).querySelector('a.churn-cta') as HTMLAnchorElement;
+    const el = fixture.nativeElement as HTMLElement;
+    const labels = [...el.querySelectorAll('app-inactive-days button')].map(text);
+    expect(labels).toEqual(['7 дн.', '14 дн.', '30 дн.', '90 дн.', 'Свой…']);
+
+    pill(el, '30 дн.')?.click();
+    await settle(fixture);
+    expect(inactive).toHaveBeenLastCalledWith('b1', { storeId: 's1', currency: null }, 30, 3);
+    expect(text(el.querySelector('.dash-muted'))).toContain('30 дн.');
+
+    pill(el, 'Свой…')?.click();
+    await settle(fixture);
+    const field = el.querySelector('app-inactive-days input') as HTMLInputElement;
+    field.value = '45';
+    field.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    (el.querySelector('.idays-apply') as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(inactive).toHaveBeenLastCalledWith('b1', { storeId: 's1', currency: null }, 45, 3);
+    expect(pill(el, '45 дн.')?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('opens «Возврат клиентов» on the same threshold, period and store', async () => {
+    const fixture = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    pill(el, '30 дн.')?.click();
+    await settle(fixture);
+    const link = el.querySelector('a.churn-cta') as HTMLAnchorElement;
     expect(text(link)).toBe('Возврат клиентов');
     const url = new URL(link.href);
     expect(url.pathname).toBe('/analytics');
-    expect(Object.fromEntries(url.searchParams)).toEqual({ tab: 'retention', days: '30', storeId: 's1' });
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      tab: 'retention',
+      inactiveDays: '30',
+      days: '30',
+      storeId: 's1',
+    });
   });
 
-  it('keeps a custom range in the link', async () => {
+  it('opens «Клиенты → Неактивные» on the same threshold and store — the same people', async () => {
+    const fixture = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    pill(el, '90 дн.')?.click();
+    await settle(fixture);
+    const link = el.querySelector('a.churn-all') as HTMLAnchorElement;
+    expect(text(link)).toBe('Все неактивные →');
+    const url = new URL(link.href);
+    expect(url.pathname).toBe('/customers');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ segment: 'inactive', inactiveDays: '90', storeId: 's1' });
+  });
+
+  it('keeps a custom range in the «Возврат клиентов» link', async () => {
     const fixture = await render({ period: { from: '2026-09-01', to: '2026-09-30', storeId: null } });
     const link = (fixture.nativeElement as HTMLElement).querySelector('a.churn-cta') as HTMLAnchorElement;
     expect(Object.fromEntries(new URL(link.href).searchParams)).toEqual({
       tab: 'retention',
+      inactiveDays: '14',
       from: '2026-09-01',
       to: '2026-09-30',
     });
@@ -134,6 +194,7 @@ describe('ChurnWidgetComponent', () => {
     const fixture = await render({ role: 'STORE_MANAGER' });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('a.churn-cta')).toBeNull();
+    expect(el.querySelector('a.churn-all')).toBeNull();
     expect(el.querySelector('.churn-list a')).toBeNull();
     expect(text(el.querySelector('.churn-list'))).toContain('Ира');
   });
@@ -157,7 +218,9 @@ describe('ChurnWidgetComponent', () => {
     expect(text(note)).toContain('Ещё 2 чел. перестали ходить в одну из точек, но заказывают в другой');
     const links = [...(note?.querySelectorAll('a') ?? [])];
     expect(links.map(text)).toEqual(['Центр — 2', 'Балка — 1']);
-    expect(new URL((links[1] as HTMLAnchorElement).href).searchParams.get('storeId')).toBe('s2');
+    const url = new URL((links[1] as HTMLAnchorElement).href);
+    expect(url.searchParams.get('storeId')).toBe('s2');
+    expect(url.searchParams.get('inactiveDays')).toBe('14');
   });
 
   it('names the stores without links on BASIC, where the win-back tab is locked', async () => {
@@ -176,10 +239,12 @@ describe('ChurnWidgetComponent', () => {
     expect(note?.querySelector('a')).toBeNull();
   });
 
-  it('shows the PRO lock instead of the names on BASIC', async () => {
+  it('shows the PRO lock instead of the names on BASIC, the count and the picker stay', async () => {
     const fixture = await render({ features: [], stats: { ...STATS, customers: null } });
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('app-plan-lock')).not.toBeNull();
     expect(el.querySelector('a.churn-cta')).toBeNull();
+    expect(text(el.querySelector('[data-testid="churn-count"]'))).toBe('4');
+    expect(el.querySelector('app-inactive-days')).not.toBeNull();
   });
 });

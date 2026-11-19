@@ -213,10 +213,9 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/menu/product-form.page').then((m) => m.ProductFormPage),
       },
       {
+        // The older per-product options editor is gone (2026-11-18): an old link opens the product card.
         path: 'menu/products/:productId/options',
-        canActivate: [adminPermissionGuard],
-        data: { navKey: 'menu' satisfies NavKey },
-        loadComponent: () => import('./features/menu/product-options.page').then((m) => m.ProductOptionsPage),
+        redirectTo: 'menu/products/:productId',
       },
       {
         path: 'menu/products/:productId',

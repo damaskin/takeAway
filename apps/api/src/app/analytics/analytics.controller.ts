@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { DEFAULT_INACTIVE_DAYS } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -8,12 +9,18 @@ import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { AnalyticsScopeResolver } from './analytics-scope';
 import { AnalyticsService } from './analytics.service';
 import { OverviewService } from './overview.service';
-import { AnalyticsQueryDto, RetentionQueryDto, TopProductsQueryDto } from './dto/analytics-query.dto';
+import {
+  AnalyticsQueryDto,
+  InactiveNowQueryDto,
+  RetentionQueryDto,
+  TopProductsQueryDto,
+} from './dto/analytics-query.dto';
 import {
   BrandPerformanceDto,
   ChurnDto,
   CohortStatsDto,
   DashboardSummaryDto,
+  InactiveNowDto,
   OrderStatusStatsDto,
   RevenueSeriesDto,
   StaffPerformanceDto,
@@ -146,15 +153,41 @@ export class AnalyticsController {
   }
 
   /**
+   * The dashboard card «Неактивные клиенты»: regulars inactive right now (3+
+   * orders, none for `inactiveDays` days) — the same people as «Клиенты →
+   * Неактивные» with the same days and store, counted over every store
+   * whatever it prices in — and what they would have brought by today, on
+   * every plan; who they are with `churnList` (PRO). No period.
+   */
+  @Get('inactive')
+  @ApiOkResponse({ type: InactiveNowDto })
+  async inactive(@CurrentUser() user: AuthenticatedUser, @Query() query: InactiveNowQueryDto): Promise<InactiveNowDto> {
+    const ctx = await this.scopes.peopleContext(user, query);
+    return this.analytics.inactiveNow(ctx.scope, query.inactiveDays ?? DEFAULT_INACTIVE_DAYS, {
+      timeZone: ctx.timeZone,
+      currency: ctx.currency,
+      currencies: ctx.currencies,
+      withList: ctx.features.has('churnList'),
+      take: query.take ?? 3,
+    });
+  }
+
+  /**
    * Regulars who became inactive in the period (3+ orders, then `window`
-   * days without one): how many and what their average checks add up to on
-   * every plan; who they are with `churnList` (PRO).
+   * days without one): how many and what they would have brought on every
+   * plan; who they are with `churnList` (PRO).
    */
   @Get('churn')
   @ApiOkResponse({ type: ChurnDto })
   async churn(@CurrentUser() user: AuthenticatedUser, @Query() query: RetentionQueryDto): Promise<ChurnDto> {
     const { scope, range, features } = await this.scopes.context(user, query, 30);
-    return this.analytics.churn(scope, range, query.window ?? 14, features.has('churnList'), query.take ?? 20);
+    return this.analytics.churn(
+      scope,
+      range,
+      query.window ?? DEFAULT_INACTIVE_DAYS,
+      features.has('churnList'),
+      query.take ?? 20,
+    );
   }
 
   @Get('winback')
@@ -162,7 +195,7 @@ export class AnalyticsController {
   @ApiOkResponse({ type: WinBackDto })
   async winBack(@CurrentUser() user: AuthenticatedUser, @Query() query: RetentionQueryDto): Promise<WinBackDto> {
     const { scope, range } = await this.scopes.context(user, query, 30);
-    return this.analytics.winBack(scope, range, query.window ?? 14, query.take ?? 20);
+    return this.analytics.winBack(scope, range, query.window ?? DEFAULT_INACTIVE_DAYS, query.take ?? 20);
   }
 }
 

@@ -316,12 +316,6 @@
   },
   "viewCart": "View",
   "offlineMenu": "Offline — showing the last saved menu",
-  "variationSize": "Size",
-  "variationTemperature": "Temperature",
-  "variationMilk": "Milk",
-  "variationCup": "Cup",
-  "variationOther": "Options",
-  "productAddons": "Add-ons",
   "productAddonLimit": "up to {max}",
   "@productAddonLimit": {
     "placeholders": {
@@ -364,6 +358,7 @@
   },
   "productNoStore": "Choose a store to order this.",
   "productLoadFailed": "Could not load this item.",
+  "productGone": "This item is not on the menu right now.",
   "cartTitle": "Your order",
   "cartEmptyTitle": "Your cart is empty",
   "cartEmptyBody": "Add something tasty from the menu.",
@@ -1229,7 +1224,6 @@
   "locationUnavailable": "Couldn't tell where you are. Try again in a moment.",
   "productNoteFood": "Order comment",
   "productNoteFoodHint": "E.g. warm it up, no sauce…",
-  "productAddonsNone": "none",
   "productRequired": "required",
   "productPairsWith": "Goes well with it",
   "cartUpsellTitle": "Something to go with it?",

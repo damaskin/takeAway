@@ -8,10 +8,7 @@ import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
   defaultOptionPicks,
-  defaultVariationSelection,
-  describeChoice,
   describeOptionLines,
-  initialModifierCounts,
   isDrinkKind,
   isStoreInactive,
   normalizeOptionPicks,
@@ -19,12 +16,10 @@ import {
   optionLinesFor,
   orderOptionGroups,
   priceWithOptionPicks,
-  priceWithOptions,
   productKind,
   suggestionRow,
   toOptionSelections,
   type SuggestionRow,
-  type VariationSelection,
 } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -33,7 +28,6 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 import { optionChoiceProblem, ProductOptionGroupsComponent } from './product-option-groups.component';
-import { ProductOptionsComponent } from './product-options.component';
 
 /**
  * Web Product Detail — pencil A3 (9ISer).
@@ -46,10 +40,8 @@ import { ProductOptionsComponent } from './product-options.component';
  *       breadcrumb
  *       title (Fraunces 36/700) + description (Inter 16, 1.6 line-height)
  *       meta: calories and macros (a meal only)
- *       options: the options catalog's groups when the product has them
- *         (see ProductOptionGroupsComponent), else choice chips per size /
- *         temperature / milk / cup and add-on groups opening in place (see
- *         ProductOptionsComponent)
+ *       options: the product's groups from the options catalog, variants
+ *         first (see ProductOptionGroupsComponent)
  *       note: «Пожелание бариста» for a drink, «Комментарий к заказу» else
  *       add bar: the choice in one line — or what is still to choose, the
  *         button off until it is chosen — qty stepper + caramel pill button
@@ -64,7 +56,6 @@ import { ProductOptionsComponent } from './product-options.component';
     RouterLink,
     TranslatePipe,
     ProductImageComponent,
-    ProductOptionsComponent,
     ProductOptionGroupsComponent,
     FoodSuggestionsComponent,
   ],
@@ -144,14 +135,6 @@ import { ProductOptionsComponent } from './product-options.component';
               [groups]="optionGroups()"
               [currency]="resolvedStore()?.currency"
               [(picks)]="optionPicks"
-            />
-          } @else {
-            <app-product-options
-              [variations]="p.variations"
-              [modifiers]="p.modifiers"
-              [currency]="resolvedStore()?.currency"
-              [(selection)]="selectedVariations"
-              [(counts)]="modifierCounts"
             />
           }
 
@@ -436,9 +419,7 @@ export class ProductPage implements OnInit {
 
   readonly product = signal<ProductDetail | null>(null);
   readonly error = signal<string | null>(null);
-  readonly selectedVariations = signal<VariationSelection>({});
-  readonly modifierCounts = signal<Record<string, number>>({});
-  /** The choice from the options catalog, for a product with catalog groups. */
+  /** The choice from the options catalog. */
   readonly optionPicks = signal<Record<string, number>>({});
   readonly quantity = signal(1);
   notes = '';
@@ -447,37 +428,25 @@ export class ProductPage implements OnInit {
   readonly menu = signal<StoreMenu | null>(null);
 
   /**
-   * The product's groups from the options catalog, variants first. When there
-   * are any the product is ordered through them alone; empty for a product
-   * on its older options, or from an API that predates the catalog.
+   * The product's groups from the options catalog, variants first — the only
+   * options a product has. Missing (an API that predates the catalog) reads
+   * as none.
    */
   readonly optionGroups = computed(() => orderOptionGroups(this.product()?.optionGroups ?? []));
 
   /** What keeps the choice out of the cart — «Выберите: Размер (кофе)» — or null. */
-  readonly optionProblem = computed(() =>
-    this.optionGroups().length > 0 ? optionChoiceProblem(this.optionGroups(), this.optionPicks()) : null,
-  );
+  readonly optionProblem = computed(() => optionChoiceProblem(this.optionGroups(), this.optionPicks()));
 
   readonly totalCents = computed(() => {
     const p = this.product();
     if (!p) return 0;
-    const groups = this.optionGroups();
-    const unit =
-      groups.length > 0
-        ? priceWithOptionPicks(p.basePriceCents, groups, this.optionPicks())
-        : priceWithOptions(p, this.selectedVariations(), this.modifierCounts());
-    return unit * this.quantity();
+    return priceWithOptionPicks(p.basePriceCents, this.optionGroups(), this.optionPicks()) * this.quantity();
   });
 
-  /** The choice in one line next to the button: "L · Oat · +Vanilla ×2", "M, Горячий · Овсяное · Ваниль". */
-  readonly choice = computed(() => {
-    const p = this.product();
-    if (!p) return '';
-    const groups = this.optionGroups();
-    return groups.length > 0
-      ? describeOptionLines(optionLinesFor(groups, this.optionPicks()))
-      : describeChoice(p, this.selectedVariations(), this.modifierCounts());
-  });
+  /** The choice in one line next to the button: "M, Горячий · Овсяное · Ваниль". */
+  readonly choice = computed(() =>
+    this.product() ? describeOptionLines(optionLinesFor(this.optionGroups(), this.optionPicks())) : '',
+  );
 
   /**
    * The store this item will be added to. A cart rejects a product whose
@@ -603,8 +572,6 @@ export class ProductPage implements OnInit {
     this.fetchProduct(slug).subscribe({
       next: (p) => {
         this.product.set(p);
-        this.selectedVariations.set(defaultVariationSelection(p.variations));
-        this.modifierCounts.set(initialModifierCounts(p.modifiers));
         this.optionPicks.set(defaultOptionPicks(orderOptionGroups(p.optionGroups ?? [])));
       },
       error: () => this.error.set(this.translate.instant('web.product.notFound')),
@@ -633,28 +600,16 @@ export class ProductPage implements OnInit {
     if (!p || !store || this.optionProblem()) return;
     const storeId = store.id;
     const notes = this.notes.trim() || undefined;
-    const catalog = this.optionGroups().length > 0;
     this.adding.set(true);
     this.addError.set(null);
     this.cart
-      .add(
-        catalog
-          ? {
-              storeId,
-              productId: p.id,
-              quantity: this.quantity(),
-              options: toOptionSelections(this.optionPicks()),
-              notes,
-            }
-          : {
-              storeId,
-              productId: p.id,
-              quantity: this.quantity(),
-              variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
-              modifiers: this.modifierCounts(),
-              notes,
-            },
-      )
+      .add({
+        storeId,
+        productId: p.id,
+        quantity: this.quantity(),
+        options: toOptionSelections(this.optionPicks()),
+        notes,
+      })
       .subscribe({
         next: () => this.adding.set(false),
         error: (err) => {

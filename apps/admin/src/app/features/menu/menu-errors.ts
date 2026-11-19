@@ -8,15 +8,9 @@ const MENU_CODES = [
   'CATEGORY_NOT_EMPTY',
   'CATEGORY_MOVE_TARGET',
   'MIXED_CATEGORIES',
-  'MODIFIER_RANGE',
   'TOO_MANY_IMAGES',
   'IMAGE_NOT_ON_PRODUCT',
   'IMAGES_CHANGED',
-  'INGREDIENT_UNKNOWN',
-  'INGREDIENT_NAME_TAKEN',
-  'INGREDIENT_LIBRARY_LOCKED',
-  'INGREDIENT_NOT_IN_LIBRARY',
-  'OPTION_NAME_REQUIRED',
   'STORE_UNKNOWN',
 ] as const;
 
@@ -33,18 +27,10 @@ const MENU_FIELDS = [
   'carbsGrams',
   'visible',
   'addOnsOnly',
-  'priceDeltaCents',
-  'minCount',
-  'maxCount',
   'sortOrder',
-  'ingredientId',
-  'isAvailable',
   'priceCents',
   'kind',
   'defaultPrepTimeSeconds',
-  'group',
-  'options',
-  'variationType',
 ] as const;
 
 const MENU_WORDING: ApiErrorWording = {

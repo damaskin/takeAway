@@ -130,6 +130,13 @@ suite('store suggestions on Postgres', () => {
       ],
     });
     await prisma.stopListEntry.create({ data: { storeId: CENTRE, productId: p('cookie') } });
+    // A variant and an add-on from the seeded catalog: without them customers do not see a product (2026-11-18).
+    await prisma.productOptionGroup.createMany({
+      data: all.flatMap((product) => [
+        { productId: p(product), groupId: 'og_serving', sortOrder: 0 },
+        { productId: p(product), groupId: 'og_sugar', sortOrder: 1 },
+      ]),
+    });
 
     let n = 0;
     for (const seed of SEEDS) {

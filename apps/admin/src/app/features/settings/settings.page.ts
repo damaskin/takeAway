@@ -9,6 +9,7 @@ import { formatPhone, normalizePhone } from '@takeaway/utils';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { PaymentTerminalService } from '../../core/brands/payment-terminal.service';
+import { PAYMENT_SETUP_STEPS } from '../dashboard/onboarding-checklist.component';
 import { BRAND_CURRENCIES, type BrandLocale } from '../../core/business/business.service';
 import { apiErrorCode } from '../../core/http/api-error';
 import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
@@ -48,6 +49,24 @@ import { PlanCardComponent } from './plan-card.component';
       }
       .terminal-own strong {
         color: var(--color-mint);
+      }
+      .terminal-howto {
+        margin-top: 8px;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--color-text-primary);
+      }
+      .terminal-howto ol {
+        margin: 0 0 6px;
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .terminal-howto p {
+        margin: 0;
+        font-size: 12px;
+        color: var(--color-text-tertiary);
       }
       .status-pill[data-status='PENDING'] {
         background: var(--color-amber);
@@ -270,6 +289,16 @@ import { PlanCardComponent } from './plan-card.component';
             <strong>{{ 'admin.settings.terminal.label' | translate }}:</strong>
             {{ (t.connected ? 'admin.settings.terminal.connected' : 'admin.settings.terminal.default') | translate }}
           </p>
+          @if (!t.connected) {
+            <div class="terminal-howto" data-testid="settings-payment-howto">
+              <ol>
+                @for (line of paymentSetup; track line) {
+                  <li>{{ line | translate }}</li>
+                }
+              </ol>
+              <p>{{ 'admin.paymentSetup.note' | translate }}</p>
+            </div>
+          }
         }
       } @else if (error()) {
         <p style="color: var(--color-berry)">{{ error() }}</p>
@@ -289,6 +318,8 @@ export class AdminSettingsPage {
   private readonly terminals = inject(PaymentTerminalService);
   /** Whether the guests' card money lands on the brand's own terminal — nothing more is shown to the brand. */
   readonly terminal = signal<PaymentTerminalStatus | null>(null);
+  /** How to get the mobile payment connected, shown while the brand has no terminal of its own. */
+  readonly paymentSetup = PAYMENT_SETUP_STEPS;
 
   readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
   /** «Написать в поддержку», from the plan card. */

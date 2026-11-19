@@ -14,19 +14,14 @@ import {
 
 import { OptionSelectionDto } from '../../option-groups/dto/option-groups.dto';
 
-const VARIATION_IDS_DOC =
-  'At most one per variation type (SIZE, MILK, ...). A type left out gets its default — the one ' +
-  'marked default, else the first on the menu. An id the product does not have is a 400.';
-
-const MODIFIERS_DOC =
-  "Map { modifierId: count }. Omitted modifiers count as 0; counts are clamped to the modifier's " +
-  'min/max. An id the product does not have, with a positive count, is a 400.';
+const LEGACY_DOC =
+  'Ignored: the older per-product options were deleted on 2026-11-18. Still accepted from app builds that send it.';
 
 const ADD_OPTIONS_DOC =
-  'Picks from the options catalog, for a product with catalog groups (then variationIds and modifiers are ' +
-  'ignored). Omitted (a client that predates the catalog): every default, and 400 OPTIONS_REQUIRED when that ' +
-  'is not a valid choice. A choice that breaks a rule is 400 OPTIONS_INVALID with `errors`. The same product ' +
-  'with the same picks and note goes on the existing line.';
+  'Picks from the options catalog. Omitted (a client that predates the catalog): every default, and 400 ' +
+  'OPTIONS_REQUIRED when that is not a valid choice. A choice that breaks a rule is 400 OPTIONS_INVALID with ' +
+  '`errors`. The same product with the same picks and note goes on the existing line. A product without a ' +
+  'variant and an add-on is not sold (404, as on its page).';
 
 const UPDATE_OPTIONS_DOC =
   'A new choice from the options catalog, checked and priced as on add (400 OPTIONS_INVALID); the line is not ' +
@@ -49,13 +44,13 @@ export class AddCartItemDto {
   @Max(99)
   quantity!: number;
 
-  @ApiPropertyOptional({ type: [String], description: VARIATION_IDS_DOC })
+  @ApiPropertyOptional({ type: [String], description: LEGACY_DOC, deprecated: true })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   variationIds?: string[];
 
-  @ApiPropertyOptional({ description: MODIFIERS_DOC, type: Object })
+  @ApiPropertyOptional({ description: LEGACY_DOC, type: Object, deprecated: true })
   @IsOptional()
   @IsObject()
   modifiers?: Record<string, number>;
@@ -83,13 +78,13 @@ export class UpdateCartItemDto {
   @Max(99)
   quantity?: number;
 
-  @ApiPropertyOptional({ type: [String], description: VARIATION_IDS_DOC })
+  @ApiPropertyOptional({ type: [String], description: LEGACY_DOC, deprecated: true })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   variationIds?: string[];
 
-  @ApiPropertyOptional({ description: MODIFIERS_DOC, type: Object })
+  @ApiPropertyOptional({ description: LEGACY_DOC, type: Object, deprecated: true })
   @IsOptional()
   @IsObject()
   modifiers?: Record<string, number>;

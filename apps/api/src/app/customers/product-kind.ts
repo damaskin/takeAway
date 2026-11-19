@@ -11,7 +11,7 @@ export interface ProductKindSignals {
   categoryName: string | null;
   /** That category's kind, set by the business; OTHER or null says nothing. */
   categoryKind?: CategoryKind | null;
-  /** Has a temperature, milk or cup option — drink options, unlike size. */
+  /** Has a catalog option group meant for drinks only (`OptionGroup.scope` DRINKS: milk, syrups…). */
   drinkOptions: boolean;
 }
 
@@ -119,7 +119,7 @@ function mentions(text: string | null, stems: readonly string[]): boolean {
 /**
  * Drink or food, for splitting a customer's favourites. The category's kind
  * decides when the business set one; otherwise the signals the menu does
- * have: drink options (temperature, milk, cup) only ever sit on drinks; then
+ * have: drink options (a catalog group meant for drinks) sit on drinks; then
  * the category name; then the product's own name. Null when nothing points
  * either way — the admin shows those under a plain «Любимое». (The caffeine
  * level used to count too; it is no longer edited since 2026-11-05.)

@@ -3,11 +3,12 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
 import type { PasswordService } from '../../auth/services/password.service';
+import { optionGroupsStub } from '../../option-groups/testing/option-groups.stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/admin-category.dto';
-import { CreateModifierDto, CreateProductDto, CreateVariationDto, UpdateProductDto } from './dto/admin-product.dto';
+import { CreateProductDto, UpdateProductDto } from './dto/admin-product.dto';
 
 /** The HTTP body a Nest exception renders — where the admin reads `code` from. */
 function body(err: unknown): Record<string, unknown> {
@@ -48,38 +49,11 @@ function build() {
       groupBy: jest.fn().mockResolvedValue([]),
     },
     store: { findMany: jest.fn().mockResolvedValue([{ id: 'store-1' }]) },
-    variation: {
-      findUnique: jest.fn(),
-      aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: 'new-variation', ...data }),
-      ),
-      update: jest.fn(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 'v1', ...data })),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      delete: jest.fn().mockResolvedValue({}),
-    },
-    modifier: {
-      findUnique: jest.fn(),
-      count: jest.fn().mockResolvedValue(0),
-      aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
-        Promise.resolve({ id: 'new-modifier', ...data }),
-      ),
-      update: jest.fn(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 'm1', ...data })),
-      delete: jest.fn().mockResolvedValue({}),
-    },
-    ingredient: {
-      findFirst: jest.fn(),
-      upsert: jest.fn(({ create }: { create: { name: string; priceCents?: number } }) =>
-        Promise.resolve({ id: `ing-${create.name}`, name: create.name, priceCents: create.priceCents ?? 0 }),
-      ),
-    },
     cartItem: {
       findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     cart: { update: jest.fn().mockResolvedValue({}) },
-    categoryOption: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation((arg: unknown) =>
@@ -91,6 +65,7 @@ function build() {
     prisma as unknown as PrismaService,
     {} as PasswordService,
     {} as StoreAvailabilityNotifier,
+    optionGroupsStub({ p1: [], 'new-product': [] }),
   );
   return { svc, prisma };
 }
@@ -101,7 +76,7 @@ describe('menu DTOs', () => {
     return found.map((e) => e.property);
   }
 
-  it('takes a category kind and default prep time, and an add-on group of at most 40 characters', async () => {
+  it('takes a category kind and default prep time', async () => {
     const base = { brandId: 'b1', name: 'Шаурма' };
     expect(await errors(CreateCategoryDto, { ...base, kind: 'FOOD', defaultPrepTimeSeconds: 900 })).toEqual([]);
     expect(await errors(UpdateCategoryDto, { defaultPrepTimeSeconds: null })).toEqual([]);
@@ -109,9 +84,6 @@ describe('menu DTOs', () => {
     expect(await errors(CreateCategoryDto, { ...base, defaultPrepTimeSeconds: -1 })).toEqual([
       'defaultPrepTimeSeconds',
     ]);
-    expect(await errors(CreateModifierDto, { name: 'Ваниль', group: 'Сиропы' })).toEqual([]);
-    expect(await errors(CreateModifierDto, { name: 'Ваниль', group: null })).toEqual([]);
-    expect(await errors(CreateModifierDto, { name: 'Ваниль', group: 'x'.repeat(41) })).toEqual(['group']);
   });
 
   it('lets the slug be left out of every create', async () => {
@@ -119,7 +91,6 @@ describe('menu DTOs', () => {
     expect(
       await errors(CreateProductDto, { brandId: 'b1', categoryId: 'c1', name: 'Латте', basePriceCents: 3500 }),
     ).toEqual([]);
-    expect(await errors(CreateModifierDto, { name: 'Ванильный сироп' })).toEqual([]);
   });
 
   // Retired on 2026-11-05: the columns stay, but nobody may write them any more.
@@ -129,14 +100,6 @@ describe('menu DTOs', () => {
     expect(await errors(CreateProductDto, { ...base, caffeineLevel: 2 })).toEqual(['caffeineLevel']);
     expect(await errors(UpdateProductDto, { allergens: ['MILK'] })).toEqual(['allergens']);
     expect(await errors(UpdateProductDto, { dietTags: ['VEGAN'] })).toEqual(['dietTags']);
-  });
-
-  it('lets an option picked from the add-ons library leave its name out, and nothing else', async () => {
-    expect(await errors(CreateModifierDto, { ingredientId: 'ing-1' })).toEqual([]);
-    expect(await errors(CreateVariationDto, { type: 'MILK', ingredientId: 'ing-1' })).toEqual([]);
-    expect(await errors(CreateModifierDto, {})).toEqual(['name']);
-    expect(await errors(CreateModifierDto, { ingredientId: null })).toEqual(['name']);
-    expect(await errors(CreateModifierDto, { ingredientId: 'ing-1', name: '' })).toEqual(['name']);
   });
 
   it('holds a typed slug to lowercase latin, digits and hyphens, 2 to 60 long', async () => {
@@ -352,8 +315,6 @@ describe('AdminCatalogService — products', () => {
     brandId: 'b1',
     categoryId: 'cat-a',
     category: { name: 'Шаурма', kind: 'FOOD' },
-    variations: [],
-    modifiers: [],
     stores: [],
   };
 
@@ -388,51 +349,46 @@ describe('AdminCatalogService — products', () => {
     );
   });
 
-  // A shawarma added to «Шаурма» starts at 15 minutes with the sauces of the category.
-  it("starts a new product from its category's prep time and option set", async () => {
+  // A shawarma added to «Шаурма» starts at 15 minutes; it has no options yet, so customers do not see it.
+  it("starts a new product from its category's prep time, not yet shown to customers", async () => {
     const { svc, prisma } = withProduct();
     prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900, kind: 'FOOD' });
-    prisma.categoryOption.findMany.mockResolvedValue([
-      {
-        kind: 'MODIFIER',
-        variationType: null,
-        name: 'Чесночный соус',
-        priceDeltaCents: 300,
-        group: 'Соусы',
-        isDefault: false,
-        maxCount: 1,
-        ingredientId: 'ing-garlic',
-      },
-    ]);
-    prisma.product.findMany.mockResolvedValue([{ id: 'new-product', variations: [], modifiers: [] }]);
-    const modifierCreateMany = jest.fn().mockResolvedValue({ count: 1 });
-    Object.assign(prisma.modifier, { createMany: modifierCreateMany });
 
-    await svc.createProduct({ brandId: 'b1', categoryId: 'cat-a', name: 'Шаурма', basePriceCents: 9000 }, ['b1']);
+    const created = await svc.createProduct(
+      { brandId: 'b1', categoryId: 'cat-a', name: 'Шаурма', basePriceCents: 9000 },
+      ['b1'],
+    );
 
     expect(prisma.product.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ prepTimeSeconds: 900 }) }),
     );
-    expect(prisma.product.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: { in: ['new-product'] }, categoryId: 'cat-a' } }),
-    );
-    expect(modifierCreateMany).toHaveBeenCalledWith({
-      data: [
-        {
-          productId: 'new-product',
-          slug: 'chesnochnyy-sous',
-          name: 'Чесночный соус',
-          priceDeltaCents: 300,
-          group: 'Соусы',
-          maxCount: 1,
-          ingredientId: 'ing-garlic',
-          sortOrder: 0,
-        },
-      ],
-    });
+    expect(created.optionsComplete).toBe(false);
   });
 
-  it('keeps a typed prep time, and can leave the category set off', async () => {
+  it('says whether the options of each product let customers see it', async () => {
+    const built = build();
+    const svc = new AdminCatalogService(
+      built.prisma as unknown as PrismaService,
+      {} as PasswordService,
+      {} as StoreAvailabilityNotifier,
+      optionGroupsStub({ bare: [] }),
+    );
+    built.prisma.product.findMany.mockResolvedValue([
+      { id: 'latte', brandId: 'b1', stores: [] },
+      { id: 'bare', brandId: 'b1', stores: [] },
+    ]);
+    built.prisma.product.findUnique.mockResolvedValue({ id: 'bare', brandId: 'b1', stores: [] });
+
+    const list = await svc.listProducts(['b1'], 'b1');
+
+    expect(list.map((p) => [p.id, p.optionsComplete])).toEqual([
+      ['latte', true],
+      ['bare', false],
+    ]);
+    expect((await svc.getProduct('bare', ['b1'])).optionsComplete).toBe(false);
+  });
+
+  it("keeps a typed prep time, and can leave the category's off", async () => {
     const { svc, prisma } = withProduct();
     prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900, kind: 'FOOD' });
 
@@ -449,8 +405,6 @@ describe('AdminCatalogService — products', () => {
     expect(data[0]?.['prepTimeSeconds']).toBe(600);
     expect(data[1]?.['prepTimeSeconds']).toBeUndefined();
     expect(data[1]).not.toHaveProperty('applyCategoryOptions');
-    // Only the first create looked at the category's set.
-    expect(prisma.categoryOption.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('answers a taken product slug with 409', async () => {
@@ -598,405 +552,5 @@ describe('AdminCatalogService — products', () => {
       { brandId: 'b2', categoryId: 'cat-z' },
     ]);
     await expect(svc.reorderProducts({ orderedIds: ['r1', 'r2'] }, ['b1'])).rejects.toBeInstanceOf(ForbiddenException);
-  });
-});
-
-describe('AdminCatalogService — options', () => {
-  /** The platform team: may add to a brand library by typing a new add-in. */
-  const PLATFORM = null;
-
-  function withOptions() {
-    const built = build();
-    built.prisma.product.findUnique.mockResolvedValue({
-      id: 'p1',
-      brandId: 'b1',
-      categoryId: 'c1',
-      variations: [],
-      modifiers: [],
-      stores: [],
-    });
-    built.prisma.variation.findUnique.mockResolvedValue({ productId: 'p1', type: 'SIZE', product: { brandId: 'b1' } });
-    built.prisma.modifier.findUnique.mockResolvedValue({
-      productId: 'p1',
-      minCount: 0,
-      maxCount: 3,
-      product: { brandId: 'b1' },
-    });
-    return built;
-  }
-
-  it('keeps one default variation per type', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createVariation('p1', { type: 'SIZE', name: 'Большой', isDefault: true }, ['b1']);
-    expect(prisma.variation.updateMany).toHaveBeenCalledWith({
-      where: { productId: 'p1', type: 'SIZE', isDefault: true },
-      data: { isDefault: false },
-    });
-
-    prisma.variation.updateMany.mockClear();
-    await svc.updateVariation('v1', { isDefault: true }, ['b1']);
-    expect(prisma.variation.updateMany).toHaveBeenCalledWith({
-      where: { productId: 'p1', type: 'SIZE', isDefault: true, id: { not: 'v1' } },
-      data: { isDefault: false },
-    });
-  });
-
-  it('does not touch other defaults for an ordinary variation', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное', priceDeltaCents: 500 }, PLATFORM);
-
-    expect(prisma.variation.updateMany).not.toHaveBeenCalled();
-    expect(prisma.variation.create).toHaveBeenCalledWith({
-      data: {
-        productId: 'p1',
-        type: 'MILK',
-        name: 'Овсяное',
-        priceDeltaCents: 500,
-        sortOrder: 0,
-        ingredientId: 'ing-Овсяное',
-      },
-    });
-  });
-
-  it('puts a new milk in the ingredient library, but not a new size', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createVariation('p1', { type: 'MILK', name: ' Овсяное ' }, PLATFORM);
-    await svc.createVariation('p1', { type: 'SIZE', name: 'Большой' }, PLATFORM);
-
-    expect(prisma.ingredient.upsert).toHaveBeenCalledTimes(1);
-    expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { brandId_name: { brandId: 'b1', name: 'Овсяное' } },
-        create: { brandId: 'b1', name: 'Овсяное', priceCents: 0, group: null },
-      }),
-    );
-    expect(prisma.variation.create).toHaveBeenLastCalledWith({
-      data: expect.objectContaining({ name: 'Большой', ingredientId: undefined }),
-    });
-  });
-
-  it('links a new extra to the library entry of the same name', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createModifier('p1', { name: 'Ванильный сироп' }, PLATFORM);
-
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ name: 'Ванильный сироп', ingredientId: 'ing-Ванильный сироп' }),
-    });
-  });
-
-  // «Добавки» is the one place an add-on is defined: picking it is enough.
-  it('puts an add-on picked from the library on a product at its name and usual price', async () => {
-    const { svc, prisma } = withOptions();
-    prisma.ingredient.findFirst.mockResolvedValue({ id: 'ing-vanilla', name: 'Ванильный сироп', priceCents: 500 });
-
-    await svc.createModifier('p1', { ingredientId: 'ing-vanilla', maxCount: 2 }, ['b1']);
-
-    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        name: 'Ванильный сироп',
-        slug: 'vanilnyy-sirop',
-        priceDeltaCents: 500,
-        maxCount: 2,
-        ingredientId: 'ing-vanilla',
-      }),
-    });
-  });
-
-  it('keeps a price typed for this product over the usual one', async () => {
-    const { svc, prisma } = withOptions();
-    prisma.ingredient.findFirst.mockResolvedValue({ id: 'ing-shot', name: 'Шот', priceCents: 1000 });
-
-    await svc.createModifier('p1', { ingredientId: 'ing-shot', priceDeltaCents: 1500 }, ['b1']);
-
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ name: 'Шот', priceDeltaCents: 1500 }),
-    });
-  });
-
-  it('files a new typed extra in the library at the price it was given', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createModifier('p1', { name: 'Карамельный сироп', priceDeltaCents: 700 }, PLATFORM);
-
-    expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ create: { brandId: 'b1', name: 'Карамельный сироп', priceCents: 700, group: null } }),
-    );
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ priceDeltaCents: 700, ingredientId: 'ing-Карамельный сироп' }),
-    });
-  });
-
-  it('charges the usual price when a typed extra matches a library entry and no price was given', async () => {
-    const { svc, prisma } = withOptions();
-    prisma.ingredient.upsert.mockResolvedValueOnce({ id: 'ing-oat', name: 'Овсяное', priceCents: 600 });
-
-    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное' }, PLATFORM);
-
-    expect(prisma.variation.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ name: 'Овсяное', priceDeltaCents: 600, ingredientId: 'ing-oat' }),
-    });
-  });
-
-  // «Ваниль» from the library lands under «Сиропы» without anyone typing it.
-  it("puts an extra picked from the library in the library entry's group, unless another is asked for", async () => {
-    const { svc, prisma } = withOptions();
-    prisma.ingredient.findFirst.mockResolvedValue({
-      id: 'ing-vanilla',
-      name: 'Ваниль',
-      priceCents: 500,
-      group: 'Сиропы',
-    });
-
-    await svc.createModifier('p1', { ingredientId: 'ing-vanilla' }, ['b1']);
-    await svc.createModifier('p1', { ingredientId: 'ing-vanilla', group: 'Топпинги' }, ['b1']);
-    await svc.createModifier('p1', { ingredientId: 'ing-vanilla', group: null }, ['b1']);
-
-    expect(
-      prisma.modifier.create.mock.calls.map(([args]) => (args as { data: { group: unknown } }).data.group),
-    ).toEqual(['Сиропы', 'Топпинги', null]);
-  });
-
-  it('files a new typed extra in the library together with its group', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createModifier('p1', { name: 'Без лука', group: 'Убрать' }, PLATFORM);
-
-    expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ create: { brandId: 'b1', name: 'Без лука', priceCents: 0, group: 'Убрать' } }),
-    );
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ name: 'Без лука', group: 'Убрать' }),
-    });
-  });
-
-  it('leaves an extra untracked when asked to', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createModifier('p1', { name: 'Корица', ingredientId: null }, PLATFORM);
-
-    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ ingredientId: null }),
-    });
-  });
-
-  // Maxim, 2026-11-06: a brand does not add add-ins; it puts the ones its
-  // library has on its products. Sizes, temperatures and cups stay its own.
-  describe('a brand editing its options', () => {
-    const BRAND = ['b1'];
-    const notInLibrary = { code: 'INGREDIENT_NOT_IN_LIBRARY', statusCode: 403 };
-
-    it('files a typed extra or milk under the library entry of that name, whatever the case', async () => {
-      const { svc, prisma } = withOptions();
-      prisma.ingredient.findFirst.mockResolvedValue({ id: 'ing-oat', name: 'Овсяное', priceCents: 600, group: null });
-
-      await svc.createModifier('p1', { name: 'овсяное' }, BRAND);
-      await svc.createVariation('p1', { type: 'MILK', name: ' ОВСЯНОЕ ' }, BRAND);
-
-      expect(prisma.ingredient.findFirst).toHaveBeenCalledWith({
-        where: { brandId: 'b1', name: { equals: 'овсяное', mode: 'insensitive' } },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true, name: true, priceCents: true, group: true },
-      });
-      expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
-      expect(prisma.modifier.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ ingredientId: 'ing-oat', priceDeltaCents: 600 }),
-      });
-      expect(prisma.variation.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ ingredientId: 'ing-oat', priceDeltaCents: 600 }),
-      });
-    });
-
-    it('refuses an extra or a milk the library does not have, and adds nothing to it', async () => {
-      const { svc, prisma } = withOptions();
-      prisma.ingredient.findFirst.mockResolvedValue(null);
-
-      for (const attempt of [
-        svc.createModifier('p1', { name: 'Кокосовый сироп', priceDeltaCents: 500 }, BRAND),
-        svc.createVariation('p1', { type: 'MILK', name: 'Кокосовое' }, BRAND),
-      ]) {
-        const err = await rejection(attempt);
-        expect(err).toBeInstanceOf(ForbiddenException);
-        expect(body(err)).toMatchObject(notInLibrary);
-      }
-      expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
-      expect(prisma.modifier.create).not.toHaveBeenCalled();
-      expect(prisma.variation.create).not.toHaveBeenCalled();
-    });
-
-    it('refuses an untracked extra or milk, the add-in outside the library', async () => {
-      const { svc, prisma } = withOptions();
-
-      expect(
-        body(await rejection(svc.createModifier('p1', { name: 'Корица', ingredientId: null }, BRAND))),
-      ).toMatchObject(notInLibrary);
-      expect(
-        body(await rejection(svc.createVariation('p1', { type: 'MILK', name: 'Своё', ingredientId: null }, BRAND))),
-      ).toMatchObject(notInLibrary);
-      expect(prisma.modifier.create).not.toHaveBeenCalled();
-    });
-
-    it('still adds sizes, temperatures and cups of its own', async () => {
-      const { svc, prisma } = withOptions();
-
-      await svc.createVariation('p1', { type: 'SIZE', name: 'Большой', priceDeltaCents: 500 }, BRAND);
-      await svc.createVariation('p1', { type: 'CUP', name: 'Своя кружка' }, BRAND);
-
-      expect(prisma.ingredient.findFirst).not.toHaveBeenCalled();
-      expect(prisma.variation.create).toHaveBeenCalledTimes(2);
-    });
-
-    it('cannot unlink an option from its add-in, but may move it to another one of the library', async () => {
-      const { svc, prisma } = withOptions();
-      prisma.modifier.findUnique.mockResolvedValue({
-        productId: 'p1',
-        minCount: 0,
-        maxCount: 3,
-        ingredientId: 'ing-vanilla',
-        product: { brandId: 'b1' },
-      });
-      prisma.variation.findUnique.mockResolvedValue({
-        productId: 'p1',
-        type: 'MILK',
-        ingredientId: 'ing-oat',
-        product: { brandId: 'b1' },
-      });
-
-      expect(body(await rejection(svc.updateModifier('m1', { ingredientId: null }, BRAND)))).toMatchObject(
-        notInLibrary,
-      );
-      expect(body(await rejection(svc.updateVariation('v1', { ingredientId: null }, BRAND)))).toMatchObject(
-        notInLibrary,
-      );
-      expect(prisma.modifier.update).not.toHaveBeenCalled();
-
-      prisma.ingredient.findFirst.mockResolvedValue({
-        id: 'ing-caramel',
-        name: 'Карамель',
-        priceCents: 500,
-        group: null,
-      });
-      await svc.updateModifier('m1', { ingredientId: 'ing-caramel', priceDeltaCents: 700 }, BRAND);
-      expect(prisma.modifier.update).toHaveBeenCalledWith({
-        where: { id: 'm1' },
-        data: { ingredientId: 'ing-caramel', priceDeltaCents: 700 },
-      });
-
-      // The platform team may.
-      await svc.updateModifier('m1', { ingredientId: null }, PLATFORM);
-      expect(prisma.modifier.update).toHaveBeenLastCalledWith({ where: { id: 'm1' }, data: { ingredientId: null } });
-    });
-
-    it('edits an option that was never linked as before', async () => {
-      const { svc, prisma } = withOptions();
-      prisma.modifier.findUnique.mockResolvedValue({
-        productId: 'p1',
-        minCount: 0,
-        maxCount: 3,
-        ingredientId: null,
-        product: { brandId: 'b1' },
-      });
-
-      await svc.updateModifier('m1', { name: 'Корица', priceDeltaCents: 300, ingredientId: null }, BRAND);
-
-      expect(prisma.modifier.update).toHaveBeenCalledWith({
-        where: { id: 'm1' },
-        data: { name: 'Корица', priceDeltaCents: 300, ingredientId: null },
-      });
-    });
-  });
-
-  it("refuses to link an option to another brand's ingredient", async () => {
-    const { svc, prisma } = withOptions();
-    prisma.ingredient.findFirst.mockResolvedValue(null);
-
-    const err = await rejection(svc.updateModifier('m1', { ingredientId: 'ing-foreign' }, ['b1']));
-
-    expect(err).toBeInstanceOf(BadRequestException);
-    expect(body(err)['code']).toBe('INGREDIENT_UNKNOWN');
-    expect(prisma.ingredient.findFirst).toHaveBeenCalledWith({
-      where: { id: 'ing-foreign', brandId: 'b1' },
-      select: { id: true, name: true, priceCents: true, group: true },
-    });
-    expect(prisma.modifier.update).not.toHaveBeenCalled();
-  });
-
-  it('keeps the link of an extra that is only renamed', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.updateModifier('m1', { name: 'Сироп ваниль' }, ['b1']);
-
-    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
-    expect(prisma.modifier.update).toHaveBeenCalledWith({
-      where: { id: 'm1' },
-      data: { name: 'Сироп ваниль', ingredientId: undefined },
-    });
-  });
-
-  it("refuses to edit another brand's variation", async () => {
-    const { svc, prisma } = withOptions();
-
-    await expect(svc.updateVariation('v1', { name: 'x' }, ['b2'])).rejects.toBeInstanceOf(ForbiddenException);
-    expect(prisma.variation.update).not.toHaveBeenCalled();
-  });
-
-  it('drops the cart lines priced with a deleted variation', async () => {
-    const { svc, prisma } = withOptions();
-    prisma.cartItem.findMany.mockResolvedValueOnce([{ id: 'line-1', cartId: 'cart-1' }]).mockResolvedValueOnce([]);
-
-    await svc.deleteVariation('v1', ['b1']);
-
-    expect(prisma.cartItem.findMany).toHaveBeenNthCalledWith(1, {
-      where: { productId: 'p1', variationIds: { has: 'v1' } },
-      select: { id: true, cartId: true },
-    });
-    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['line-1'] } } });
-    expect(prisma.variation.delete).toHaveBeenCalledWith({ where: { id: 'v1' } });
-  });
-
-  it('creates «Ванильный сироп» — a name the old Latin-only slug could not', async () => {
-    const { svc, prisma } = withOptions();
-
-    await svc.createModifier('p1', { name: 'Ванильный сироп', priceDeltaCents: 500, maxCount: 3 }, PLATFORM);
-
-    expect(prisma.modifier.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ productId: 'p1', slug: 'vanilnyy-sirop', maxCount: 3, sortOrder: 0 }),
-    });
-  });
-
-  it('refuses a minimum above the maximum, also against the stored values', async () => {
-    const { svc, prisma } = withOptions();
-
-    const created = await rejection(svc.createModifier('p1', { name: 'Шот', minCount: 2, maxCount: 1 }, ['b1']));
-    expect(body(created)).toMatchObject({ code: 'MODIFIER_RANGE' });
-
-    const updated = await rejection(svc.updateModifier('m1', { minCount: 4 }, ['b1']));
-    expect(body(updated)).toMatchObject({ code: 'MODIFIER_RANGE' });
-    expect(prisma.modifier.update).not.toHaveBeenCalled();
-
-    await svc.updateModifier('m1', { minCount: 1, maxCount: 5 }, ['b1']);
-    expect(prisma.modifier.update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { minCount: 1, maxCount: 5 } });
-  });
-
-  it('drops only the cart lines that carry a deleted modifier', async () => {
-    const { svc, prisma } = withOptions();
-    prisma.cartItem.findMany
-      .mockResolvedValueOnce([
-        { id: 'with', cartId: 'cart-1', modifiersJson: { m1: 2 } },
-        { id: 'without', cartId: 'cart-1', modifiersJson: { m2: 1 } },
-        { id: 'zero', cartId: 'cart-2', modifiersJson: { m1: 0 } },
-      ])
-      .mockResolvedValueOnce([{ unitPriceCents: 3000, quantity: 1 }]);
-
-    await svc.deleteModifier('m1', ['b1']);
-
-    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['with'] } } });
-    expect(prisma.cart.update).toHaveBeenCalledTimes(1);
-    expect(prisma.modifier.delete).toHaveBeenCalledWith({ where: { id: 'm1' } });
   });
 });

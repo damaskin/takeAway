@@ -4,8 +4,8 @@ import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/money_text.dart';
 import '../../shared/widgets/quantity_stepper.dart';
-import 'option_widgets.dart';
 
 /// One group of the options catalog («Добавки и варианты») on the product
 /// screen: its name, what it allows, and one row per option — a round mark
@@ -281,3 +281,56 @@ Set<String> missingOptionGroups(List<OptionPickError> errors) => {
   for (final error in errors)
     if (error.code == OptionPickErrorCode.tooFew) ?error.groupId,
 };
+
+/// The catalog picks to keep when a fresher copy of the product arrives
+/// while the customer is choosing: what is still offered stays as they left
+/// it (a count within its bounds); a group whose every pick ran out starts
+/// over from its defaults; then the picks of hidden groups are dropped.
+OptionPicks keepOfferedPicks(List<ProductOptionGroup> groups, OptionPicks picks) {
+  final defaults = defaultOptionPicks(groups);
+  final next = <String, int>{};
+  for (final group in groups) {
+    final had = [
+      for (final option in group.options)
+        if ((picks[option.id] ?? 0) > 0) option,
+    ];
+    final kept = had.where((option) => option.available).toList();
+    if (had.isNotEmpty && kept.isEmpty) {
+      for (final option in group.options) {
+        if (defaults[option.id] case final qty?) next[option.id] = qty;
+      }
+      continue;
+    }
+    for (final option in kept) {
+      final bounds = qtyBounds(option);
+      next[option.id] = group.type == OptionGroupType.c ? picks[option.id]!.clamp(bounds.min, bounds.max) : 1;
+    }
+  }
+  return normalizeOptionPicks(groups, next);
+}
+
+/// "+3 руб." / "−3 руб." for a price change; empty for none.
+String priceDelta(BuildContext context, int cents, String currency) {
+  if (cents == 0) return '';
+  return '${cents > 0 ? '+' : '−'}${context.money(cents.abs(), currency)}';
+}
+
+/// «обязательно» beside something that has to be chosen.
+class RequiredBadge extends StatelessWidget {
+  const RequiredBadge({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: brand.caramelSoft, borderRadius: BorderRadius.circular(Radii.pill)),
+      child: Text(
+        label,
+        style: context.text.labelSmall?.copyWith(color: brand.caramel, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}

@@ -5,8 +5,12 @@ import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { PlanFeature } from '@takeaway/shared-types';
 import { of } from 'rxjs';
 
-import { AnalyticsApi, type ChurnStats, type WinBackStats } from '../../core/analytics/analytics.service';
-import { CustomersApi } from '../../core/customers/customers.service';
+import {
+  AnalyticsApi,
+  type ChurnStats,
+  type InactiveNow,
+  type WinBackStats,
+} from '../../core/analytics/analytics.service';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { RetentionTabComponent } from './retention-tab.component';
 
@@ -61,26 +65,38 @@ const WIN_BACK: WinBackStats = {
   customers: [],
 };
 
+const NOW: InactiveNow = {
+  inactiveDays: 7,
+  asOf: '2026-10-10',
+  timeZone: 'Europe/Chisinau',
+  count: 17,
+  lostRevenueCents: 120_000,
+  currency: 'MDL',
+  customers: null,
+  activeElsewhere: null,
+};
+
 const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
 describe('RetentionTabComponent', () => {
-  let list: jest.Mock;
+  let inactive: jest.Mock;
   let churn: jest.Mock;
+  let winBack: jest.Mock;
 
   async function render(
     features: PlanFeature[] = ['winBack', 'customers', 'campaigns', 'promo'],
     stats: ChurnStats = CHURN,
-    window: 3 | 7 | 14 | null = 7,
+    days: number | null = 7,
   ) {
-    list = jest.fn().mockReturnValue(of({ items: [], total: 17, page: 1, pageSize: 1 }));
+    inactive = jest.fn().mockReturnValue(of(NOW));
     churn = jest.fn().mockReturnValue(of(stats));
+    winBack = jest.fn().mockReturnValue(of(WIN_BACK));
     TestBed.configureTestingModule({
       imports: [RetentionTabComponent],
       providers: [
         provideRouter([]),
         provideTranslateService(),
-        { provide: AnalyticsApi, useValue: { churn, winBack: jest.fn().mockReturnValue(of(WIN_BACK)) } },
-        { provide: CustomersApi, useValue: { list } },
+        { provide: AnalyticsApi, useValue: { churn, winBack, inactive } },
         { provide: PlanAccess, useValue: { has: (f: PlanFeature) => features.includes(f) } },
       ],
     });
@@ -91,7 +107,7 @@ describe('RetentionTabComponent', () => {
     fixture.componentRef.setInput('brandId', 'b1');
     fixture.componentRef.setInput('period', { days: 14, storeId: 's1' });
     fixture.componentRef.setInput('currency', 'MDL');
-    if (window !== null) fixture.componentRef.setInput('window', window);
+    if (days !== null) fixture.componentRef.setInput('inactiveDays', days);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -184,21 +200,16 @@ describe('RetentionTabComponent', () => {
     ]);
   });
 
-  it('counts the segment those buttons reach — the same list as «Клиенты → Неактивные»', async () => {
+  it('counts the segment those buttons reach with the dashboard card’s request — the people of «Клиенты → Неактивные»', async () => {
     const fixture = await render();
-    expect(list).toHaveBeenCalledWith({
-      brandId: 'b1',
-      storeId: 's1',
-      segment: 'inactive',
-      inactiveDays: 7,
-      pageSize: 1,
-    });
+    // The card's own endpoint, the count alone.
+    expect(inactive).toHaveBeenCalledWith('b1', { days: 14, storeId: 's1' }, 7, 0);
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el.querySelector('.rt-now'))).toContain('Сейчас неактивны: 17');
     const all = [...el.querySelectorAll('a.dash-link')].find((a) => text(a).startsWith('Все неактивные'));
     const url = new URL((all as HTMLAnchorElement).href);
     expect(url.pathname).toBe('/customers');
-    expect(Object.fromEntries(url.searchParams)).toEqual({ segment: 'inactive', days: '7', storeId: 's1' });
+    expect(Object.fromEntries(url.searchParams)).toEqual({ segment: 'inactive', inactiveDays: '7', storeId: 's1' });
   });
 
   it('opens each inactive customer on the customers page', async () => {
@@ -207,13 +218,49 @@ describe('RetentionTabComponent', () => {
     expect(new URL(row.href).pathname).toBe('/customers/u1');
   });
 
-  it('has no threshold picker of its own and states the threshold it counts by', async () => {
+  it('has the threshold picker next to the definition, on the threshold it counts by', async () => {
     const fixture = await render();
     const el = fixture.nativeElement as HTMLElement;
-    // The period on top of the page is the only picker (Maxim's list 6.0, item 5).
-    expect(el.querySelectorAll('button[aria-pressed]')).toHaveLength(0);
+    const picker = el.querySelector('.rt-definition app-inactive-days');
+    expect(picker).not.toBeNull();
+    expect([...(picker?.querySelectorAll('button') ?? [])].map(text)).toEqual([
+      '7 дн.',
+      '14 дн.',
+      '30 дн.',
+      '90 дн.',
+      'Свой…',
+    ]);
+    expect(text(picker?.querySelector('button[aria-pressed="true"]'))).toBe('7 дн.');
     expect(text(el.querySelector('.rt-definition strong'))).toContain('последние 7 дн.');
     expect(churn).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 7, 50);
+  });
+
+  it('counts everything again by the threshold picked, and tells the page', async () => {
+    const fixture = await render();
+    const picked: number[] = [];
+    fixture.componentInstance.inactiveDays.subscribe((d) => picked.push(d));
+    const el = fixture.nativeElement as HTMLElement;
+    const thirty = [...el.querySelectorAll<HTMLButtonElement>('app-inactive-days button')].find(
+      (b) => text(b) === '30 дн.',
+    );
+    thirty?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(picked).toEqual([30]);
+    expect(churn).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 30, 50);
+    expect(winBack).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 30, 20);
+    expect(inactive).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 30, 0);
+    expect(text(el.querySelector('.rt-definition strong'))).toContain('последние 30 дн.');
+    expect(links(el)[0]?.query).toEqual({ audience: 'INACTIVE', inactiveDays: '30', storeId: 's1' });
+  });
+
+  it('shows a custom threshold from a link as its own pill', async () => {
+    const fixture = await render(undefined, undefined, 3);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el.querySelector('app-inactive-days button[aria-pressed="true"]'))).toBe('3 дн.');
+    expect(churn).toHaveBeenLastCalledWith('b1', { days: 14, storeId: 's1' }, 3, 50);
   });
 
   it('counts by 14 days when the page does not pass a threshold', async () => {
@@ -227,6 +274,6 @@ describe('RetentionTabComponent', () => {
   it('leaves out what the plan does not include', async () => {
     const fixture = await render(['winBack']);
     expect(links(fixture.nativeElement as HTMLElement)).toEqual([]);
-    expect(list).not.toHaveBeenCalled();
+    expect(text((fixture.nativeElement as HTMLElement).querySelector('.rt-now'))).toContain('Сейчас неактивны: 17');
   });
 });

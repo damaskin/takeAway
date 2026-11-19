@@ -1,8 +1,18 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-
-import { INACTIVE_DAYS } from '../../customers/customer-segment';
+import {
+  IsEnum,
+  IsInt,
+  IsISO8601,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+import { DEFAULT_INACTIVE_DAYS, MAX_INACTIVE_DAYS, MIN_INACTIVE_DAYS } from '@takeaway/shared-types';
 
 const CHANNELS = ['PUSH', 'TELEGRAM', 'EMAIL'] as const;
 const AUDIENCES = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D', 'INACTIVE'] as const;
@@ -33,10 +43,17 @@ export class CreateCampaignDto {
   @IsEnum(AUDIENCES)
   audience?: (typeof AUDIENCES)[number];
 
-  @ApiPropertyOptional({ enum: INACTIVE_DAYS, default: 14, description: 'INACTIVE: days without an order' })
+  @ApiPropertyOptional({
+    minimum: MIN_INACTIVE_DAYS,
+    maximum: MAX_INACTIVE_DAYS,
+    default: DEFAULT_INACTIVE_DAYS,
+    description: 'INACTIVE: days without an order — 7, 14, 30, 90 or any whole number in the bounds',
+  })
   @IsOptional()
   @Type(() => Number)
-  @IsIn([...INACTIVE_DAYS])
+  @IsInt()
+  @Min(MIN_INACTIVE_DAYS)
+  @Max(MAX_INACTIVE_DAYS)
   inactiveDays?: number;
 
   @ApiPropertyOptional({

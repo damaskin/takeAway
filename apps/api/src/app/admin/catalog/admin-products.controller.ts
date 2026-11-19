@@ -11,16 +11,12 @@ import { ImageUpload, UploadedImage, type UploadedImageFile } from '../../common
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminProductImagesService, type ProductImagesDto } from './admin-product-images.service';
 import {
-  CreateModifierDto,
   CreateProductDto,
-  CreateVariationDto,
   ProductImageQueryDto,
   ReorderProductImagesDto,
   ReorderProductsDto,
   ToggleVisibilityDto,
-  UpdateModifierDto,
   UpdateProductDto,
-  UpdateVariationDto,
 } from './dto/admin-product.dto';
 
 @ApiTags('admin: products')
@@ -134,61 +130,5 @@ export class AdminProductsController {
   ): Promise<ProductImagesDto> {
     const scope = await this.scope.resolveBrandIds(user);
     return this.images.reorder(id, dto.urls, scope);
-  }
-
-  @Post(':id/variations')
-  @HttpCode(HttpStatus.CREATED)
-  async createVariation(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Body() dto: CreateVariationDto,
-  ) {
-    const scope = await this.scope.resolveBrandIds(user);
-    return this.admin.createVariation(id, dto, scope);
-  }
-
-  @Patch('variations/:variationId')
-  async updateVariation(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('variationId') id: string,
-    @Body() dto: UpdateVariationDto,
-  ) {
-    const scope = await this.scope.resolveBrandIds(user);
-    return this.admin.updateVariation(id, dto, scope);
-  }
-
-  @Delete('variations/:variationId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteVariation(@CurrentUser() user: AuthenticatedUser, @Param('variationId') id: string): Promise<void> {
-    const scope = await this.scope.resolveBrandIds(user);
-    await this.admin.deleteVariation(id, scope);
-  }
-
-  @Post(':id/modifiers')
-  @HttpCode(HttpStatus.CREATED)
-  async createModifier(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Body() dto: CreateModifierDto,
-  ) {
-    const scope = await this.scope.resolveBrandIds(user);
-    return this.admin.createModifier(id, dto, scope);
-  }
-
-  @Patch('modifiers/:modifierId')
-  async updateModifier(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('modifierId') id: string,
-    @Body() dto: UpdateModifierDto,
-  ) {
-    const scope = await this.scope.resolveBrandIds(user);
-    return this.admin.updateModifier(id, dto, scope);
-  }
-
-  @Delete('modifiers/:modifierId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteModifier(@CurrentUser() user: AuthenticatedUser, @Param('modifierId') id: string): Promise<void> {
-    const scope = await this.scope.resolveBrandIds(user);
-    await this.admin.deleteModifier(id, scope);
   }
 }

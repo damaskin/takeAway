@@ -7,10 +7,10 @@
  * the whole brand, switches off what it does not have, and a store stops
  * what has run out. See `docs/option-groups.md`.
  *
- * Lives next to the older per-product options (`Variation`, `Modifier`): a
- * product with catalog groups attached is ordered through them only, a
- * product without them keeps its older options until the brand's are
- * cleared.
+ * The only options there are since 2026-11-18: the older per-product
+ * variations and extras were deleted. A product is shown to customers only
+ * when it offers at least one variant and one add-on
+ * (`offersVariantAndAddon` in `@takeaway/utils`).
  */
 
 /**
@@ -32,6 +32,17 @@ export type OptionGroupType = 'A' | 'B' | 'C' | 'D';
 
 /** Every kind, in the order a product page asks: variants first, then add-ons. */
 export const OPTION_GROUP_KINDS: readonly OptionGroupKind[] = ['VARIANT', 'ADDON'];
+
+/**
+ * Which products a catalog group is meant for: drinks (hot and cold drinks),
+ * food (food and bakery) or both. The product editor offers a product only
+ * the groups of its category's kind and `BOTH` (OTHER: every group); a group
+ * attached before stays where it is.
+ */
+export type OptionGroupScope = 'DRINKS' | 'FOOD' | 'BOTH';
+
+/** Every scope, in the order the admin filters list them. */
+export const OPTION_GROUP_SCOPES: readonly OptionGroupScope[] = ['DRINKS', 'FOOD', 'BOTH'];
 
 /** The types a group can be created with (D is reserved). */
 export const OPTION_GROUP_TYPES: readonly OptionGroupType[] = ['A', 'B', 'C'];
@@ -67,15 +78,17 @@ export interface ProductOptionItem {
    * - VARIANT: what picking it adds to the product's base price, set per
    *   product (the base price is the price of the default variant, so it
    *   usually adds 0 there);
-   * - ADDON A/B: its price, one for the whole brand;
+   * - ADDON A/B: its price — the product's own when it has one, else the
+   *   brand's (one for the whole brand);
    * - ADDON C: the price of one unit above `defaultQty` (the meat portion
-   *   included in a shawarma is free, the second one costs this).
+   *   included in a shawarma is free, the second one costs this), chosen
+   *   the same way.
    */
   priceCents: number;
   /**
    * False while the store has run out of it: shown greyed out with «Нет в
-   * наличии», cannot be picked. Options the brand switched off are not sent
-   * at all.
+   * наличии», cannot be picked. Options the brand switched off, or the
+   * product did, are not sent at all.
    */
   available: boolean;
   sortOrder: number;
@@ -194,6 +207,8 @@ export interface CatalogGroup {
   minSelect: number | null;
   maxSelect: number | null;
   showIfOptionId: string | null;
+  /** Drinks, food or both. Missing from API builds before 2026-11-18: read as `BOTH`. */
+  scope?: OptionGroupScope;
   sortOrder: number;
   options: CatalogOption[];
   /** How many products (all brands) have it attached. Admin lists only. */
@@ -208,6 +223,8 @@ export interface UpsertCatalogGroupRequest {
   minSelect?: number | null;
   maxSelect?: number | null;
   showIfOptionId?: string | null;
+  /** Omitted on create: `BOTH`. */
+  scope?: OptionGroupScope;
   sortOrder?: number;
 }
 
@@ -225,7 +242,11 @@ export interface UpsertCatalogOptionRequest {
 /** A catalog option as one brand has it: its price and whether it offers it. */
 export interface BrandOptionSetting {
   optionId: string;
-  /** See {@link ProductOptionItem.priceCents}; ignored for VARIANT options (priced per product). */
+  /**
+   * An add-on's price for the whole brand (a product may set its own); see
+   * {@link ProductOptionItem.priceCents}. Ignored for VARIANT options — those
+   * are priced per product.
+   */
   priceCents: number;
   /** False = the brand does not have it: hidden from its customers and its product editor. */
   enabled: boolean;
@@ -233,10 +254,39 @@ export interface BrandOptionSetting {
   stoppedStoreIds: string[];
 }
 
+/**
+ * A price one product of the brand sets for a catalog option, shown
+ * read-only in «Добавки»: what a variant adds to that product's base price
+ * (variants are priced per product, «меняется в карточке товара»), or an
+ * add-on's own price on that product instead of the brand's.
+ */
+export interface BrandProductOptionPrice {
+  optionId: string;
+  productId: string;
+  productName: string;
+  /** VARIANT: added to the base price (0 = the base price). ADDON: the product's price. */
+  priceCents: number;
+}
+
 /** `GET /admin/brands/:brandId/options`: the catalog with the brand's settings. */
 export interface BrandOptionCatalog {
   groups: CatalogGroup[];
   settings: BrandOptionSetting[];
+  /**
+   * Per product of the brand: what each variant option of an attached group
+   * adds (every one, 0 included), and each add-on the product prices on its
+   * own. By product name. Missing from API builds before 2026-11-18.
+   */
+  productPrices?: BrandProductOptionPrice[];
+}
+
+/**
+ * `PUT /admin/brands/:brandId/option-groups/:groupId/price` («Применить ко
+ * всем»): one add-on price for every option of the group. Answers the
+ * group's settings.
+ */
+export interface ApplyGroupPriceRequest {
+  priceCents: number;
 }
 
 /** One attached group on a product, as the product editor sends and reads it. */
@@ -245,13 +295,26 @@ export interface ProductOptionGroupLink {
   sortOrder: number;
 }
 
-/** A product's own value for one option: a variant's price, a different default. */
+/**
+ * A product's own value for one option: a variant's surcharge, an add-on's
+ * own price, a different default, or the option switched off on it.
+ */
 export interface ProductOptionOverride {
   optionId: string;
-  /** VARIANT options only: what picking it adds to the base price. Null = 0. */
+  /**
+   * VARIANT: what picking it adds to the base price (null = nothing, the base
+   * price). ADDON: its price on this product instead of the brand's (null =
+   * the brand's; 0 = free here).
+   */
   priceCents: number | null;
   /** A and B: the product's own default; null = the catalog's. */
   isDefault: boolean | null;
+  /**
+   * False = not offered on this product (a shawarma's «Основа» without
+   * «Булка»); null = offered when the brand has it. Missing from API builds
+   * before 2026-11-18: null.
+   */
+  enabled?: boolean | null;
 }
 
 /** `GET`/`PUT /admin/products/:id/option-groups`. */
@@ -266,7 +329,7 @@ export interface ProductOptionGroupsConfig {
  * - `OPTION_NAME_TAKEN` — a group name is taken, or an option name within its group;
  * - `OPTION_GROUP_INVALID` (400) — type D, a VARIANT of type C, min/max on
  *   a B or C group, min above max, a C option's default outside its bounds,
- *   a condition on an option of the group itself;
+ *   a condition on an option of the group itself, a negative add-on price;
  * - `OPTION_NOT_ON_PRODUCT` (400) — a product override for an option of a
  *   group the product does not have.
  */
@@ -275,16 +338,3 @@ export type OptionCatalogErrorCode =
   | 'OPTION_NAME_TAKEN'
   | 'OPTION_GROUP_INVALID'
   | 'OPTION_NOT_ON_PRODUCT';
-
-/**
- * What a brand still has of the older per-product options (`GET` and the
- * answer of `POST /admin/brands/:brandId/legacy-options/clear`, SUPER_ADMIN):
- * products with older options, and the rows that clearing deletes.
- */
-export interface LegacyOptionsSummary {
-  products: number;
-  variations: number;
-  modifiers: number;
-  categoryOptions: number;
-  ingredients: number;
-}

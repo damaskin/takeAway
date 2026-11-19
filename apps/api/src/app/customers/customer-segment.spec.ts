@@ -8,6 +8,7 @@ import {
   isInactive,
   isInactiveCustomer,
   perCustomerSql,
+  segmentCustomersSql,
   segmentSql,
 } from './customer-segment';
 
@@ -24,6 +25,12 @@ describe('isInactive', () => {
   it('takes the 3-day window', () => {
     expect(inactiveBefore(3, NOW).toISOString()).toBe('2026-10-07T12:00:00.000Z');
     expect(isInactive({ orders: 10, lastOrderAt: daysAgo(4) }, 3, NOW)).toBe(true);
+  });
+
+  it('takes any number of days, 30 or a custom 45', () => {
+    expect(isInactive({ orders: 3, lastOrderAt: daysAgo(31) }, 30, NOW)).toBe(true);
+    expect(isInactive({ orders: 3, lastOrderAt: daysAgo(29) }, 30, NOW)).toBe(false);
+    expect(inactiveBefore(45, NOW).toISOString()).toBe('2026-08-26T12:00:00.000Z');
   });
 });
 
@@ -42,6 +49,23 @@ describe('segmentSql', () => {
     const sql = segmentSql('inactive', 7, NOW);
     expect(sql?.sql).toContain('p."lastOrderAt" <');
     expect(sql?.values).toEqual([3, '2026-10-03T12:00:00.000Z']);
+  });
+});
+
+describe('segmentCustomersSql', () => {
+  const scope = { brandIds: ['b1'], storeIds: ['s1'] };
+
+  it('is the per-customer rows narrowed to the segment', () => {
+    const sql = segmentCustomersSql(scope, 'inactive', 30, NOW);
+    expect(sql.sql).toContain('SELECT p.* FROM (');
+    expect(sql.sql).toContain('WHERE p."orders" >= ? AND p."lastOrderAt" < ?::timestamp');
+    expect(sql.values).toEqual([['b1'], ['s1'], 3, '2026-09-10T12:00:00.000Z']);
+  });
+
+  it('is everyone for all, and adds up spend in a currency when asked', () => {
+    const sql = segmentCustomersSql(scope, 'all', 30, NOW, 'MDL');
+    expect(sql.sql).not.toContain('WHERE p.');
+    expect(sql.values).toEqual(['MDL', 'MDL', ['b1'], ['s1']]);
   });
 });
 

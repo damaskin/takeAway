@@ -3,46 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/features/cart/upsell.dart';
 import 'package:takeaway_mobile/features/catalog/catalog_providers.dart';
-import 'package:takeaway_mobile/features/menu/quick_add.dart';
-import 'package:takeaway_mobile/features/product/product_options.dart';
 import 'package:takeaway_mobile/l10n/app_localizations.dart';
 import 'package:takeaway_mobile/shared/checkout_errors.dart';
 import 'package:takeaway_mobile/shared/product_kinds.dart';
 
+import '../helpers/catalog_fixtures.dart';
 import '../helpers/fake_api.dart';
 
-Map<String, dynamic> variation(String id, String type, String name, {int delta = 0, bool def = false, int sort = 0}) =>
-    {
-      'id': id,
-      'type': type,
-      'name': name,
-      'priceDeltaCents': delta,
-      'prepTimeDeltaSeconds': 0,
-      'sortOrder': sort,
-      'isDefault': def,
-    };
-
-Map<String, dynamic> addon(String id, String name, {String? group, int min = 0, int max = 1, int sort = 0}) => {
-  'id': id,
-  'slug': id,
-  'name': name,
-  'priceDeltaCents': 500,
-  'minCount': min,
-  'maxCount': max,
-  'sortOrder': sort,
-  'group': group,
-};
-
-ProductDetail detail({
-  List<Map<String, dynamic>> variations = const [],
-  List<Map<String, dynamic>> modifiers = const [],
-  String? kind,
-}) => ProductDetail.fromJson({
+ProductDetail detail({String? kind}) => ProductDetail.fromJson({
   ...FakeApi.productJson('p', 'Капучино', 3000),
   'brandId': 'br_1',
   'categoryKind': kind,
-  'variations': variations,
-  'modifiers': modifiers,
+  'optionGroups': cappuccinoGroups,
 });
 
 Menu menu(List<(String id, String? kind, List<Map<String, dynamic>> products)> categories) => Menu.fromJson({
@@ -55,90 +27,6 @@ Menu menu(List<(String id, String? kind, List<Map<String, dynamic>> products)> c
 });
 
 void main() {
-  group('add-on groups', () {
-    test('group add-ons by their display group, in menu order, the ungrouped ones together', () {
-      final groups = addonGroups(
-        detail(
-          modifiers: [
-            addon('shot', 'Шот', sort: 2, max: 3),
-            addon('caramel', 'Карамель', group: 'Сиропы', sort: 1),
-            addon('vanilla', 'Ваниль', group: 'Сиропы'),
-            addon('sugar', 'Без сахара', group: 'Убрать', sort: 3),
-            addon('cinnamon', 'Корица', sort: 4),
-          ],
-        ),
-      );
-      expect(groups.map((g) => g.name), ['Сиропы', null, 'Убрать']);
-      expect(groups.first.modifiers.map((m) => m.id), ['vanilla', 'caramel']);
-      expect(groups[1].modifiers.map((m) => m.id), ['shot', 'cinnamon']);
-      expect(groups.map((g) => g.key), ['Сиропы', '', 'Убрать']);
-    });
-
-    test('a group with an add-on that has to be taken is required', () {
-      final groups = addonGroups(
-        detail(
-          modifiers: [
-            addon('ketchup', 'Кетчуп', group: 'Соус', min: 1),
-            addon('cheese', 'Сырный', group: 'Соус', sort: 1),
-            addon('onion', 'Без лука', group: 'Убрать', sort: 2),
-          ],
-        ),
-      );
-      expect(groups.map((g) => g.isRequired), [true, false]);
-    });
-
-    test('say what is taken from a group, with counts', () {
-      final group = addonGroups(
-        detail(
-          modifiers: [
-            addon('vanilla', 'Ваниль', group: 'Сиропы'),
-            addon('caramel', 'Карамель', group: 'Сиропы', sort: 1, max: 3),
-          ],
-        ),
-      ).single;
-      expect(addonGroupSummary(group, {}), '');
-      expect(addonGroupSummary(group, {'vanilla': 1, 'caramel': 2}), 'Ваниль, 2× Карамель');
-    });
-  });
-
-  group('options summary', () {
-    final product = detail(
-      variations: [
-        variation('oat', 'MILK', 'Овсяное', sort: 1),
-        variation('cow', 'MILK', 'Коровье', def: true),
-        variation('l', 'SIZE', 'Большой', sort: 1),
-        variation('s', 'SIZE', 'Малый', def: true),
-        variation('paper', 'CUP', 'Бумажный', def: true),
-      ],
-      modifiers: [
-        addon('shot', 'Шот', max: 3),
-        addon('vanilla', 'Ваниль', group: 'Сиропы', sort: 1),
-      ],
-    );
-
-    test('lists the size first, then the other choices and the add-ons', () {
-      expect(
-        optionsSummary(product, ['oat', 'l', 'paper'], {'vanilla': 1, 'shot': 2}),
-        'Большой · Овсяное · Бумажный · 2× Шот · Ваниль',
-      );
-    });
-
-    test('leaves out what could not be chosen when asked to', () {
-      expect(optionsSummary(product, ['oat', 'l', 'paper'], {}, onlyChoices: true), 'Большой · Овсяное');
-    });
-
-    test('is empty until the product details arrive', () {
-      expect(optionsSummary(null, ['l'], {'shot': 1}), '');
-    });
-  });
-
-  test('a product with a size or a required add-on opens its screen instead of a quick add', () {
-    expect(needsChoosing(detail()), isFalse);
-    expect(needsChoosing(detail(modifiers: [addon('shot', 'Шот')])), isFalse);
-    expect(needsChoosing(detail(modifiers: [addon('ketchup', 'Кетчуп', min: 1)])), isTrue);
-    expect(needsChoosing(detail(variations: [variation('s', 'SIZE', 'S', def: true)])), isTrue);
-  });
-
   group('product kinds', () {
     test('read the kinds the API names, in any case, and nothing else', () {
       expect(ProductKind.tryParse('BAKERY'), ProductKind.bakery);
@@ -187,16 +75,7 @@ void main() {
       etaSeconds: 0,
       items: [
         for (final id in productIds)
-          CartItem(
-            id: 'ci_$id',
-            productId: id,
-            productName: id,
-            quantity: 1,
-            variationIds: const [],
-            modifiers: const {},
-            unitPriceCents: 1000,
-            unitPrepSeconds: 0,
-          ),
+          CartItem(id: 'ci_$id', productId: id, productName: id, quantity: 1, unitPriceCents: 1000, unitPrepSeconds: 0),
       ],
       updatedAt: DateTime.utc(2026, 10, 11),
     );

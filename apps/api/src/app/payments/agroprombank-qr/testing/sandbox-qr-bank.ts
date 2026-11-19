@@ -335,7 +335,8 @@ export function createSandboxQrBank(options: SandboxQrBankOptions): SandboxQrBan
       const node = findLocal(credentials, name);
       return node ? textOf(node).trim() : '';
     };
-    if (field('DeviceId') !== '-1' || field('PushId') !== '-1') return false;
+    // A merchant may have a device id from the bank for notifications; PushId stays -1.
+    if (field('DeviceId') === '' || field('PushId') !== '-1') return false;
     if (options.externalToken && field('ExternalToken') === options.externalToken) return true;
     return field('ExternalToken') === '' && field('Login') === options.login && field('Password') === options.password;
   }

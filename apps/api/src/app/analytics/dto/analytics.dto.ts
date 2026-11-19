@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-
-import { CHURN_WINDOWS } from '../retention';
+import { MAX_INACTIVE_DAYS, MIN_INACTIVE_DAYS } from '@takeaway/shared-types';
 
 export class RevenuePointDto {
   @ApiProperty() date!: string;
@@ -172,7 +171,7 @@ export class LapsedAtStoreDto {
 }
 
 export class ChurnDto extends AnalyticsPeriodDto {
-  @ApiProperty({ enum: CHURN_WINDOWS }) window!: number;
+  @ApiProperty({ minimum: MIN_INACTIVE_DAYS, maximum: MAX_INACTIVE_DAYS }) window!: number;
   @ApiProperty() count!: number;
   @ApiProperty() lostRevenueCents!: number;
   @ApiProperty({ type: () => ChurnPeriodDto }) previous!: ChurnPeriodDto;
@@ -181,6 +180,29 @@ export class ChurnDto extends AnalyticsPeriodDto {
   @ApiProperty({ type: () => RetentionCustomerDto, isArray: true, nullable: true })
   customers!: RetentionCustomerDto[] | null;
   /** Lost at one store, still ordering at another; null when the figures are for one store. */
+  @ApiProperty({ type: () => LapsedAtStoreDto, nullable: true })
+  activeElsewhere!: LapsedAtStoreDto | null;
+}
+
+/**
+ * The customers inactive right now — at least 3 orders and none for
+ * `inactiveDays` days — the very people of «Клиенты → Неактивные» with the
+ * same days and store. Money is what they would have brought by today
+ * coming at their usual pace: per customer R = D ÷ T × A, D up to today.
+ */
+export class InactiveNowDto {
+  @ApiProperty({ minimum: MIN_INACTIVE_DAYS, maximum: MAX_INACTIVE_DAYS }) inactiveDays!: number;
+  /** Today in `timeZone`, the day D runs up to. */
+  @ApiProperty({ example: '2026-11-18' }) asOf!: string;
+  @ApiProperty() timeZone!: string;
+  @ApiProperty() count!: number;
+  @ApiProperty() lostRevenueCents!: number;
+  /** The currency of `lostRevenueCents`; null when nothing prices in one yet. */
+  @ApiProperty({ nullable: true, type: String }) currency!: string | null;
+  /** The biggest estimates first; null on a plan without the list or with `take=0`. */
+  @ApiProperty({ type: () => RetentionCustomerDto, isArray: true, nullable: true })
+  customers!: RetentionCustomerDto[] | null;
+  /** Inactive at one store, still ordering at another; null when the figures are for one store. */
   @ApiProperty({ type: () => LapsedAtStoreDto, nullable: true })
   activeElsewhere!: LapsedAtStoreDto | null;
 }
@@ -207,7 +229,7 @@ export class WinBackCustomerDto {
 }
 
 export class WinBackDto extends AnalyticsPeriodDto {
-  @ApiProperty({ enum: CHURN_WINDOWS }) window!: number;
+  @ApiProperty({ minimum: MIN_INACTIVE_DAYS, maximum: MAX_INACTIVE_DAYS }) window!: number;
   @ApiProperty({ type: () => WinBackPeriodDto }) current!: WinBackPeriodDto;
   @ApiProperty({ type: () => WinBackPeriodDto }) previous!: WinBackPeriodDto;
   @ApiProperty({ nullable: true, type: Number }) returnedDeltaPercent!: number | null;

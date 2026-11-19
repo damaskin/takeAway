@@ -15,7 +15,7 @@ export interface CampaignRow {
   body: string;
   channel: 'PUSH' | 'TELEGRAM' | 'EMAIL';
   audience: 'ALL' | 'HAS_ORDERED' | 'INACTIVE_30D' | 'INACTIVE';
-  /** INACTIVE: days without an order (3, 7 or 14). */
+  /** INACTIVE: days without an order, 1–365 (7, 14, 30 or 90 from the presets). */
   inactiveDays: number | null;
   /** INACTIVE: the one store whose orders count; null for the whole brand. */
   storeId: string | null;

@@ -37,7 +37,8 @@ import 'package:takeaway_mobile/shared/widgets/pressable.dart';
 /// what lets the developer sign-in through.
 const _storeName = String.fromEnvironment('E2E_STORE', defaultValue: 'takeAway Marina');
 const _product = String.fromEnvironment('E2E_PRODUCT', defaultValue: 'Latte');
-const _size = String.fromEnvironment('E2E_SIZE', defaultValue: 'Medium');
+// The dev seed's latte takes the catalog sizes S / M / L (og_coffee_size) since 2026-11-18.
+const _size = String.fromEnvironment('E2E_SIZE', defaultValue: 'M');
 const _staffEmail = String.fromEnvironment('E2E_STAFF_EMAIL');
 const _staffPassword = String.fromEnvironment('E2E_STAFF_PASSWORD');
 

@@ -12,7 +12,7 @@ import {
   inactiveAtOneStoreOnly,
   inactiveBefore,
   perCustomerSql,
-  segmentSql,
+  segmentCustomersSql,
 } from './customer-segment';
 import {
   CustomerDetailDto,
@@ -116,11 +116,12 @@ export class CustomersService {
       )`);
     }
     const inactiveDays = query.inactiveDays ?? DEFAULT_INACTIVE_DAYS;
-    const segment = segmentSql(query.segment ?? 'all', inactiveDays, now);
-    if (segment) conditions.push(segment);
+    // The segment's people come from the query the dashboard card, «Возврат
+    // клиентов» and the campaigns read too: the same days, the same people.
+    const people = segmentCustomersSql(scope, query.segment ?? 'all', inactiveDays, now, spendCurrency(money));
 
     const rows = await this.prisma.$queryRaw<CustomerRow[]>`
-      WITH per_user AS (${perCustomerSql(scope, undefined, spendCurrency(money))})
+      WITH per_user AS (${people})
       SELECT p.*, COUNT(*) OVER ()::int AS "total"
       FROM per_user p
       JOIN "User" u ON u.id = p."userId"
@@ -294,8 +295,9 @@ export class CustomersService {
       SELECT f."userId" AS "userId", f."name" AS "name", f."quantity" AS "quantity",
              c."name" AS "categoryName", c."kind"::text AS "categoryKind",
              EXISTS (
-               SELECT 1 FROM "Variation" v
-               WHERE v."productId" = pr.id AND v."type" IN ('TEMPERATURE', 'MILK', 'CUP')
+               SELECT 1 FROM "ProductOptionGroup" pog
+               JOIN "OptionGroup" g ON g.id = pog."groupId"
+               WHERE pog."productId" = pr.id AND g."scope" = 'DRINKS'
              ) AS "drinkOptions"
       FROM (
         SELECT o."userId" AS "userId",

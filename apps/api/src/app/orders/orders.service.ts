@@ -1318,22 +1318,22 @@ export class OrdersService {
 
   /**
    * The line as it was bought. Names and prices are copied, not referenced:
-   * the barista has to see "L, oat, +vanilla" even after the admin renames
-   * the milk or deletes the syrup, and the receipt must keep saying what was
-   * charged. `variationIds` and `modifiers` stay for the POS push and for
-   * clients that read them.
+   * the barista has to see «L, Овсяное · Ваниль» even after the catalog
+   * renames the milk or the brand switches the syrup off, and the receipt
+   * must keep saying what was charged. The older options' fields are written
+   * empty (deleted on 2026-11-18; orders placed before keep theirs).
    */
   private snapshotItem(line: CheckoutLine): OrderItemSnapshot {
     return {
       id: line.productId,
       slug: line.productSlug,
       name: line.productName,
-      variationIds: line.variationIds,
-      modifiers: line.modifiers,
+      variationIds: [],
+      modifiers: {},
       notes: line.notes,
       unitPrepSeconds: line.unitPrepSeconds,
-      variations: line.variations,
-      modifierLines: line.modifierLines,
+      variations: [],
+      modifierLines: [],
       // Catalog picks with names and prices as bought (docs/option-groups.md).
       optionLines: line.optionLines,
     };

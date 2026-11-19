@@ -1,4 +1,5 @@
 import type { PasswordService } from '../../auth/services/password.service';
+import { optionGroupsStub } from '../../option-groups/testing/option-groups.stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
@@ -11,6 +12,7 @@ describe('AdminCatalogService.listBrandsForScope', () => {
       { brand: { findMany } } as unknown as PrismaService,
       {} as PasswordService,
       {} as StoreAvailabilityNotifier,
+      optionGroupsStub(),
     );
 
     await svc.listBrandsForScope(['b1']);
@@ -29,6 +31,7 @@ describe('AdminCatalogService.listBrandsForScope', () => {
       { brand: { findMany } } as unknown as PrismaService,
       {} as PasswordService,
       {} as StoreAvailabilityNotifier,
+      optionGroupsStub(),
     );
 
     await svc.listBrandsForScope(null);

@@ -42,3 +42,45 @@ describe('AnalyticsController.overview', () => {
     expect(overviews.business.mock.calls[0]?.[1]).toEqual({ storeComparison: true, deep: true });
   });
 });
+
+describe('AnalyticsController.inactive', () => {
+  function controller(features: PlanFeature[]) {
+    const people = {
+      scope: { brandIds: ['b1'], storeIds: null },
+      parent: { brandIds: ['b1'], storeIds: null },
+      storeId: null,
+      timeZone: 'Europe/Chisinau',
+      features: new Set(features),
+      currency: 'RUP',
+      currencies: ['MDL', 'RUP'],
+    };
+    const scopes = { peopleContext: jest.fn().mockResolvedValue(people) } as unknown as AnalyticsScopeResolver;
+    const analytics = { inactiveNow: jest.fn().mockResolvedValue({}) };
+    const ctrl = new AnalyticsController(
+      analytics as unknown as AnalyticsService,
+      scopes,
+      {} as unknown as OverviewService,
+    );
+    return { ctrl, scopes, analytics, people };
+  }
+
+  it('counts people the way «Клиенты» does, 14 days and three names by default', async () => {
+    const { ctrl, scopes, analytics, people } = controller(['churnList']);
+    await ctrl.inactive(OWNER, { brandId: 'b1' });
+    expect(scopes.peopleContext).toHaveBeenCalledWith(OWNER, { brandId: 'b1' });
+    expect(analytics.inactiveNow).toHaveBeenCalledWith(people.scope, 14, {
+      timeZone: 'Europe/Chisinau',
+      currency: 'RUP',
+      currencies: ['MDL', 'RUP'],
+      withList: true,
+      take: 3,
+    });
+  });
+
+  it('takes the threshold and names nobody without the list feature', async () => {
+    const { ctrl, analytics } = controller([]);
+    await ctrl.inactive(OWNER, { inactiveDays: 45, take: 10 });
+    expect(analytics.inactiveNow.mock.calls[0]?.[1]).toBe(45);
+    expect(analytics.inactiveNow.mock.calls[0]?.[2]).toMatchObject({ withList: false, take: 10 });
+  });
+});
