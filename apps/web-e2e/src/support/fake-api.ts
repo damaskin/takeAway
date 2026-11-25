@@ -724,7 +724,16 @@ export async function installFakeApi(
     const qrCancelPath = path.match(/^\/payments\/agroprombank-qr\/([^/]+)\/cancel$/);
     if (qrCancelPath && method === 'POST' && qrInvoice) {
       qrCancels.push(qrCancelPath[1] ?? '');
-      if (qrInvoice['status'] === 'PENDING') qrInvoice = { ...qrInvoice, status: 'EXPIRED', qr: null };
+      if (qrInvoice['status'] === 'PENDING') {
+        qrInvoice = { ...qrInvoice, status: 'EXPIRED', qr: null };
+        // Unpaid, the order goes with its invoice.
+        const order = orders.find((o) => o['id'] === qrInvoice?.['orderId']);
+        if (order) {
+          order['status'] = 'CANCELLED';
+          order['canCancel'] = false;
+          order['cancelledBy'] = 'CUSTOMER';
+        }
+      }
       return json(route, qrInvoice);
     }
     if (path.match(/^\/payments\/agroprombank-qr\/[^/]+$/) && method === 'GET' && qrInvoice) {

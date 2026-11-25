@@ -765,7 +765,7 @@ POST /api/payments/agroprombank-qr/start        { orderId }
   → AgroprombankQrPaymentDto
 GET  /api/payments/agroprombank-qr/:paymentId   (customer polls every 3 s)
   → AgroprombankQrPaymentDto
-POST /api/payments/agroprombank-qr/:paymentId/cancel   (customer closed the QR screen)
+POST /api/payments/agroprombank-qr/:paymentId/cancel   («Отменить заказ» on the QR screen)
   → AgroprombankQrPaymentDto
 POST /api/payments/agroprombank-qr/callback     (the bank; public; form fields `payments`, `trx`)
   → 200 "OK"
@@ -831,11 +831,18 @@ and `cancel` only, the status `GET` answers from the database instead).
    the order once: the order goes onto the kitchen board and the staff are
    told, as with a card hold. `rawJson` keeps `qrPaymentId` and `rrn` (the
    card transaction's RRN) — `ReversePayment` needs both.
-4. **Cancel** closes an unpaid invoice (`ClosePaymentExtId`), re-checks it,
-   and marks it `EXPIRED` (stored as `FAILED` with `rawJson.closed = true`).
-   The order stays, so the customer can start again or pay by card. Found
-   paid on the re-check, it answers `PAID`. A bank that could not be told to
-   close it answers 503 and the invoice stays `PENDING`.
+4. **Cancel** — «Отменить заказ» on the QR screen — closes an unpaid invoice
+   (`ClosePaymentExtId`), re-checks it, marks it `EXPIRED` (stored as `FAILED`
+   with `rawJson.closed = true`) and cancels the order it was for, as the
+   customer's own cancel does (`cancelledBy = CUSTOMER`, promo, points and
+   gift card given back). Until 2026-11-25 the order stayed, unpaid and
+   counting down, to be cancelled a second time from its page. Any newer QR
+   invoice of the order is closed first. The order is kept when money has
+   reached it — found paid on the re-check, or paid another way: the answer is
+   then that payment, `PAID` — and when it is no longer `CREATED`. A bank that
+   could not be told to close the invoice answers 503; invoice and order stay
+   as they are. Leaving the screen any other way («К заказу», the cross, back)
+   calls nothing off.
 5. **Accept** on the KDS: `CardPaymentsService.captureHoldForOrder` settles
    the QR row as `SUCCEEDED` with no bank call (the money was taken at payment).
 6. **Release** (customer cancel before the accept, kitchen rejection, expiry):
@@ -868,8 +875,8 @@ body is trusted, `trx` included.
 `provider` (`PaymentProvider`, `null` with `NONE`). For `AGROPROMBANK_QR`,
 `HELD` means the money is taken and waits on the order (given back in full if
 the store turns it down), `PAID` settled, `REFUNDED` reversed; a QR invoice
-closed unpaid — by the customer or once it lapsed — reads `NONE`, so the
-order offers payment again. `cardMask` stays `null` for QR.
+closed unpaid — once it lapsed — reads `NONE`, so the order offers payment
+again. `cardMask` stays `null` for QR.
 
 **What a client can rely on:**
 
