@@ -187,6 +187,26 @@ void main() {
     await h.unmount(tester);
   });
 
+  // Maxim 2026-11-25: the customer picks its variants and add-ons first.
+  testWidgets('the «+» under a drink opens the product instead of adding it', (tester) async {
+    _phone(tester);
+    final h = await pumpApp(tester, api: _api());
+    await _openProduct(tester, h, 'p_capp');
+    await _reveal(tester, find.text('Круассан'));
+
+    await tester.tap(
+      find.descendant(of: find.byKey(const ValueKey('p_croissant')), matching: find.byIcon(Icons.add_rounded)),
+    );
+    await settle(tester);
+
+    expect(h.api.added, isEmpty);
+    expect(
+      h.container.read(routerProvider).routerDelegate.currentConfiguration.last.matchedLocation,
+      Routes.product('p_croissant'),
+    );
+    await h.unmount(tester);
+  });
+
   testWidgets('food: calories and macros, its defaults, an order comment', (tester) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api());

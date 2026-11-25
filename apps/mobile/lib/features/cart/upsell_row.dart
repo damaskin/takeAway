@@ -76,13 +76,25 @@ class _CartUpsellState extends ConsumerState<CartUpsell> {
 /// A titled horizontal row of products to add — «Часто берут вместе», the
 /// cart's «Добавить к напитку?», the drink screen's «К этому напитку». A card opens the
 /// product; its «+» adds it at once, or opens it when there is something to
-/// choose (see [quickAdd]).
+/// choose (see [quickAdd]). On a product's own screen ([openToChoose]) the
+/// «+» always opens the product: the customer is choosing, and picks its
+/// variants and add-ons too (Maxim, 2026-11-25).
 class UpsellRow extends StatelessWidget {
-  const UpsellRow({required this.title, required this.items, required this.store, this.onAdded, super.key});
+  const UpsellRow({
+    required this.title,
+    required this.items,
+    required this.store,
+    this.openToChoose = false,
+    this.onAdded,
+    super.key,
+  });
 
   final String title;
   final List<Suggestion> items;
   final Store store;
+
+  /// The «+» opens the product instead of adding it with its defaults.
+  final bool openToChoose;
 
   /// Called after a «+» put a product in the cart.
   final ValueChanged<Product>? onAdded;
@@ -118,6 +130,7 @@ class UpsellRow extends StatelessWidget {
               key: ValueKey(items[index].product.id),
               suggestion: items[index],
               store: store,
+              openToChoose: openToChoose,
               onAdded: onAdded,
             ),
           ),
@@ -128,10 +141,17 @@ class UpsellRow extends StatelessWidget {
 }
 
 class _UpsellCard extends ConsumerStatefulWidget {
-  const _UpsellCard({required this.suggestion, required this.store, this.onAdded, super.key});
+  const _UpsellCard({
+    required this.suggestion,
+    required this.store,
+    required this.openToChoose,
+    this.onAdded,
+    super.key,
+  });
 
   final Suggestion suggestion;
   final Store store;
+  final bool openToChoose;
   final ValueChanged<Product>? onAdded;
 
   @override
@@ -151,10 +171,14 @@ class _UpsellCardState extends ConsumerState<_UpsellCard> {
 
   Product get _product => widget.suggestion.product;
 
-  void _open() => context.push(Routes.product(_product.id), extra: _product);
+  Future<void> _open() => context.push(Routes.product(_product.id), extra: _product);
 
   Future<void> _add() async {
     if (_busy) return;
+    if (widget.openToChoose) {
+      unawaited(_open());
+      return;
+    }
     try {
       final result = await quickAdd(context, ref, _product, widget.store, onBusy: () => setState(() => _busy = true));
       if (result != QuickAddResult.added || !mounted) return;

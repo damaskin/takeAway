@@ -1436,10 +1436,10 @@ abstract class AppLocalizations {
   /// **'Waiting for the payment…'**
   String get qrPayWaiting;
 
-  /// QR payment screen: closes the invoice. The order stays, unpaid.
+  /// QR payment screen: closes the invoice and cancels the unpaid order with it.
   ///
   /// In en, this message translates to:
-  /// **'Cancel'**
+  /// **'Cancel order'**
   String get qrPayCancel;
 
   /// No description provided for @qrPayExpiredTitle.

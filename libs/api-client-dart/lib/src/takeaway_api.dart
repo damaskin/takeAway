@@ -272,8 +272,9 @@ abstract class TakeAwayApi {
   @GET('/payments/agroprombank-qr/{paymentId}')
   Future<QrPayment> qrPayment(@Path('paymentId') String paymentId);
 
-  /// Closes an unpaid invoice — the customer left the QR screen on purpose.
-  /// The order stays, to be paid again.
+  /// «Отменить заказ» on the QR screen: closes the invoice and cancels the
+  /// unpaid order with it. `PAID` when the money has just landed: the order
+  /// stays.
   @POST('/payments/agroprombank-qr/{paymentId}/cancel')
   Future<QrPayment> cancelQrPayment(@Path('paymentId') String paymentId);
 

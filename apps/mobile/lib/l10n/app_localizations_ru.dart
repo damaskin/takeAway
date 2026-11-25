@@ -797,7 +797,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get qrPayWaiting => 'Ждём оплату…';
 
   @override
-  String get qrPayCancel => 'Отменить';
+  String get qrPayCancel => 'Отменить заказ';
 
   @override
   String get qrPayExpiredTitle => 'Счёт истёк';

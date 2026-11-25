@@ -651,9 +651,9 @@
     }
   },
   "qrPayWaiting": "Waiting for the payment…",
-  "qrPayCancel": "Cancel",
+  "qrPayCancel": "Cancel order",
   "@qrPayCancel": {
-    "description": "QR payment screen: closes the invoice. The order stays, unpaid."
+    "description": "QR payment screen: closes the invoice and cancels the unpaid order with it."
   },
   "qrPayExpiredTitle": "The invoice has expired",
   "qrPayExpiredBody": "This QR code no longer works. Get a new one to pay for the order.",

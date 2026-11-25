@@ -899,6 +899,10 @@ class FakeApi extends Fake implements TakeAwayApi {
       throw _apiError('/payments/agroprombank-qr/$paymentId/cancel', failure, {'message': 'Bank unavailable'});
     }
     if (qrStatus == 'PENDING') qrStatus = 'EXPIRED';
+    // Unpaid, the order goes with its invoice.
+    if (qrStatus == 'EXPIRED') {
+      currentOrder = sampleOrder(status: 'CANCELLED', cancelledBy: 'CUSTOMER', currency: 'RUP');
+    }
     return _qrInvoice();
   }
 

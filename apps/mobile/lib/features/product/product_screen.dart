@@ -278,7 +278,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
       title: together.isNotEmpty ? l10n.upsellTogether : l10n.productPairsWith,
       items: items,
       store: store,
-      onAdded: (added) => Snack.show(context, l10n.addedToCart(added.name), icon: Icons.check_circle_rounded),
+      openToChoose: true,
     );
   }
 }

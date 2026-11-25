@@ -224,7 +224,7 @@
   "qrPayBankAppNotOpened": "Не удалось открыть приложение банка. Отсканируйте код в нём.",
   "qrPayValidFor": "Код действует ещё {time}",
   "qrPayWaiting": "Ждём оплату…",
-  "qrPayCancel": "Отменить",
+  "qrPayCancel": "Отменить заказ",
   "qrPayExpiredTitle": "Счёт истёк",
   "qrPayExpiredBody": "Этот QR-код больше не действует. Получите новый, чтобы оплатить заказ.",
   "qrPayNewCode": "Новый QR-код",
