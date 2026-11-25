@@ -604,9 +604,9 @@ export class PlatformPage {
     return this.fmt.money(cents, this.data()?.currency);
   }
 
-  /** The commission as a share of revenue: the blended rate across plans. */
+  /** The commission as a share of sales at menu prices — what it is taken on: the blended rate across plans. */
   commissionRate(t: OverviewTotals): string {
-    return t.revenueCents > 0 ? this.fmt.percent((t.commissionCents / t.revenueCents) * 100) : '—';
+    return t.salesCents > 0 ? this.fmt.percent((t.commissionCents / t.salesCents) * 100) : '—';
   }
 
   ordersDiff(b: PlatformBrandRow): number {

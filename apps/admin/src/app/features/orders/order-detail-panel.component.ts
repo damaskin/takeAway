@@ -294,13 +294,17 @@ import {
               }}
             </p>
           }
-          <!-- A brand's own promo code: the brand gives that discount, takeAway does not compensate it. -->
+          <!-- A brand's own promo code: the brand gives that discount, takeAway does not compensate it
+               and takes its commission on the price before it (only where there is money to take it on). -->
           @if (brandPromoCents() > 0) {
             <p
               data-testid="order-brand-promo"
               style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
             >
               {{ 'admin.orderDetail.brandPromo' | translate }}
+              @if (o.totalCents > 0) {
+                {{ 'admin.orderDetail.brandPromoCommission' | translate }}
+              }
             </p>
           }
           <!-- What takeAway compensates (its promo, the points), then what the business is credited with. -->

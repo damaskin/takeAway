@@ -5,7 +5,8 @@
  * the brand's money and pays nothing out of it. Two debts meet instead:
  *
  * - the brand owes takeAway its **commission**, taken on the order's full
- *   price (card money + what takeAway compensates);
+ *   price (card money + what takeAway compensates + the brand's own promo
+ *   codes, which nobody compensates);
  * - takeAway owes the brand **compensation** for the discounts it funds:
  *   its own promos («Акции takeAway») and loyalty points spent.
  *
@@ -69,7 +70,7 @@ export interface SettlementTotals {
   unpaidTotalCents: number;
   /** «Продажи»: line items before any discount. */
   salesCents: number;
-  /** Discounts of the brand's own promo codes (the brand pays for them). */
+  /** Discounts of the brand's own promo codes: the brand pays for them, the commission is on the price before them. */
   promoDiscountCents: number;
   /** Loyalty points spent (as the orders recorded them, cancelled ones included). */
   pointsDiscountCents: number;
@@ -96,8 +97,9 @@ export interface SettlementTotals {
   /** What takeAway owes the brand: promo + points compensation. */
   compensationCents: number;
   /**
-   * Commission base: card net + compensation — the commission of an order
-   * with takeAway's promo or points is taken on its full price.
+   * Commission base: card net + compensation + the brand's own promo codes on
+   * orders paid by card — the commission is taken on the order's full price,
+   * whoever gives the discount (since 2026-11-25 the brand's one too).
    */
   commissionBaseCents: number;
   /** «Комиссия takeAway», rounded per order (half up). */

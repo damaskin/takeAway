@@ -36,6 +36,14 @@ export const REVENUE = Prisma.sql`GREATEST(o."subtotalCents" - ${BUSINESS_DISCOU
 /** The part of the revenue a gift card paid for. */
 export const GIFT_CARDS = Prisma.sql`LEAST(o."giftCardCents", ${REVENUE})`;
 
+/**
+ * What takeAway's commission is taken on, as in the settlements report: the
+ * items at menu price, the business's own promo code included (Maxim,
+ * 2026-11-25), less the gift card the brand sold itself. Nothing on an order
+ * the code or the card covered whole: no card money, no commission.
+ */
+export const COMMISSION_BASE = Prisma.sql`CASE WHEN ${REVENUE} > ${GIFT_CARDS} THEN ${SALES} - ${GIFT_CARDS} ELSE 0 END`;
+
 /** Orders handed over at the counter with both timestamps: the pickup time sample. */
 export const PICKUP_DONE = Prisma.sql`o."status" = 'PICKED_UP' AND o."readyAt" IS NOT NULL AND o."pickedUpAt" IS NOT NULL`;
 

@@ -4,7 +4,8 @@
 Maxim's list 6.0, item 7). takeAway does not hold the brand's money and pays
 nothing out of it. Two debts meet instead:
 
-- the brand owes takeAway its **commission**, taken on the order's full price;
+- the brand owes takeAway its **commission**, taken on the order's full price —
+  before any discount, the brand's own promo code included;
 - takeAway owes the brand **compensation** for the discounts takeAway funds:
   its own promos («Акции takeAway», docs/takeaway-promos.md) and the loyalty
   points guests spend (item 6).
@@ -40,20 +41,20 @@ One report covers **one brand, one currency and a period of calendar days in
 the brand's time zone** (the zone most of its stores keep — the same days the
 dashboards count). Currencies are never added together.
 
-| Term                               | Meaning                                                                                                                                                                                                                |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Counted order**                  | A card payment for it was captured (even if refunded since), **or** the store accepted it. A cancelled or expired order with no captured payment never counts; a held payment that was never captured does not either. |
-| **Settled at**                     | The moment the store accepted the order; if it never did (paid, then cancelled and refunded), the moment its first payment was captured. It picks the order's **day** and its **commission rate**.                     |
-| **Продажи** (sales)                | `Order.subtotalCents` — line items before any discount.                                                                                                                                                                |
-| **Промокоды**                      | `discountCents − pointsDiscountCents − takeawayDiscountCents` — discounts of the brand's own promo codes. The brand pays for them; takeAway never does (Maxim, 2026-11-06, №11).                                       |
-| **Подарочные карты**               | `giftCardCents` — the brand sold the card and already holds that money.                                                                                                                                                |
-| **Всего оплачено картами**         | Captured − refunded: `Payment.amountCents` over the order's payments in `SUCCEEDED`, `PARTIALLY_REFUNDED` or `REFUNDED`, minus their `refundedCents`. Tips are not in it.                                              |
-| **Компенсация takeAway по акциям** | Σ D of the order's takeAway promo (`TakeawayPromoRedemption.discountCents`). 0 for a cancelled or expired order.                                                                                                       |
-| **Компенсация takeAway по баллам** | `pointsDiscountCents` — the loyalty points spent. 0 for a cancelled or expired order (the points went back).                                                                                                           |
-| **Компенсация** (total)            | promo + points: what takeAway owes the brand for the order.                                                                                                                                                            |
-| **База комиссии**                  | card money + compensation: the order at the price the brand would have got without takeAway's discounts.                                                                                                               |
-| **Комиссия takeAway**              | base × the rate in force when the order settled, rounded per order (see 3).                                                                                                                                            |
-| **К взаиморасчёту** (net)          | commission − compensation. **Positive — the brand owes takeAway; negative — takeAway owes the brand.** Every signed figure on the page and in the API reads this way.                                                  |
+| Term                               | Meaning                                                                                                                                                                                                                                            |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Counted order**                  | A card payment for it was captured (even if refunded since), **or** the store accepted it. A cancelled or expired order with no captured payment never counts; a held payment that was never captured does not either.                             |
+| **Settled at**                     | The moment the store accepted the order; if it never did (paid, then cancelled and refunded), the moment its first payment was captured. It picks the order's **day** and its **commission rate**.                                                 |
+| **Продажи** (sales)                | `Order.subtotalCents` — line items before any discount.                                                                                                                                                                                            |
+| **Промокоды**                      | `discountCents − pointsDiscountCents − takeawayDiscountCents` — discounts of the brand's own promo codes. The brand pays for them; takeAway never does (Maxim, 2026-11-06, №11). They do not lower the commission (Maxim, 2026-11-25).             |
+| **Подарочные карты**               | `giftCardCents` — the brand sold the card and already holds that money.                                                                                                                                                                            |
+| **Всего оплачено картами**         | Captured − refunded: `Payment.amountCents` over the order's payments in `SUCCEEDED`, `PARTIALLY_REFUNDED` or `REFUNDED`, minus their `refundedCents`. Tips are not in it.                                                                          |
+| **Компенсация takeAway по акциям** | Σ D of the order's takeAway promo (`TakeawayPromoRedemption.discountCents`). 0 for a cancelled or expired order.                                                                                                                                   |
+| **Компенсация takeAway по баллам** | `pointsDiscountCents` — the loyalty points spent. 0 for a cancelled or expired order (the points went back).                                                                                                                                       |
+| **Компенсация** (total)            | promo + points: what takeAway owes the brand for the order.                                                                                                                                                                                        |
+| **База комиссии**                  | card money + compensation + **Промокоды** of an order paid by card: the order at its menu price, less what a gift card paid. A refund takes the same share off the compensation and the code's discount; a cancelled or expired order has neither. |
+| **Комиссия takeAway**              | base × the rate in force when the order settled, rounded per order (see 3).                                                                                                                                                                        |
+| **К взаиморасчёту** (net)          | commission − compensation. **Positive — the brand owes takeAway; negative — takeAway owes the brand.** Every signed figure on the page and in the API reads this way.                                                                              |
 
 Every counted order with no card money is shown separately, never hidden:
 
@@ -73,14 +74,15 @@ Per order _i_ settled at _tᵢ_ with rate _r(tᵢ)_ in basis points:
 cardᵢ        = capturedᵢ − refundedᵢ
 keptᵢ(x)     = ⌊(2·x·cardᵢ + capturedᵢ) / (2·capturedᵢ)⌋  -- x without a refund or a capture
 compᵢ        = keptᵢ(promoᵢ) + keptᵢ(pointsᵢ)        -- 0 once cancelled or expired, 0 after a full refund
-baseᵢ        = cardᵢ + compᵢ
+codeᵢ        = keptᵢ(brand promoᵢ)                   -- the same; 0 without a card payment
+baseᵢ        = cardᵢ + compᵢ + codeᵢ
 commissionᵢ  = ⌊(baseᵢ × r(tᵢ) + 5000) / 10000⌋       -- half up, whole cents
 netᵢ         = commissionᵢ − compᵢ                    -- + brand → takeAway, − takeAway → brand
 ```
 
-What the brand keeps of an order is `cardᵢ − netᵢ = baseᵢ − commissionᵢ`: a
-promo or points order leaves it exactly what a regular order of the same full
-price does.
+What the brand keeps of an order is `cardᵢ − netᵢ = baseᵢ − codeᵢ − commissionᵢ`:
+a takeAway promo or points order leaves it exactly what a regular order of the
+same full price does; on its own code it keeps that less the discount it gave.
 
 A settlement _S_ has a direction and an amount ≥ 0; signed, it is +amount
 when the brand pays and −amount when takeAway pays. For a period _P_ =
@@ -120,21 +122,26 @@ guests pay the brand:
 | D     | 60.00, of which 10.00 in loyalty points | 60.00   | points 10.00         | 50.00  | points 10.00 | 60.00  | 9.00          | −1.00        |
 | E     | 33.33, then 10.00 refunded              | 33.33   | —                    | 23.33  | —            | 23.33  | 3.50 (3.4995) | +3.50        |
 | F     | 100.00 with a takeAway promo −10 %      | 100.00  | takeAway promo 10.00 | 90.00  | promo 10.00  | 100.00 | 15.00         | +5.00        |
-|       | **Total**                               | 428.33  |                      | 308.33 | **20.00**    | 328.33 | **49.25**     | **+29.25**   |
+| G     | 29.00 on the brand's promo code −50 %   | 29.00   | brand promo 14.50    | 14.50  | —            | 29.00  | 4.35          | +4.35        |
+|       | **Total**                               | 457.33  |                      | 322.83 | **20.00**    | 357.33 | **53.60**     | **+33.60**   |
 
-- The brand owes takeAway **29.25** for the day: 49.25 of commission less the
+- The brand owes takeAway **33.60** for the day: 53.60 of commission less the
   20.00 takeAway owes for the points (D) and its promo (F).
 - **Order D** leaves the brand 50.00 + 10.00 − 9.00 = 51.00 = 60.00 − 15 %:
   what a regular order of 60.00 leaves. Same for **F**: 90.00 + 10.00 − 15.00
   = 85.00.
-- **Order B** is the brand's own promo: nothing either way.
+- **Order B**: the brand's own code covered it whole. No card money — no
+  commission, nothing either way (the open part of decision 6).
+- **Order G**: the brand's own code again, but the guest paid 14.50. Nobody
+  compensates the discount, and the commission is on 29.00, not on 14.50
+  (order 9780 of Maxim's check, 2026-11-25).
 - **Order C**: the gift-card share is not in the base — the brand sold the
   card and took the money then.
 
 The previous settlement covered the days up to yesterday and was confirmed.
 «Зафиксировать взаиморасчёт» for this day creates a `PENDING` settlement
-`BRAND_TO_TAKEAWAY` of **29.25** (`cardNetCents` 308.33, `commissionCents`
-49.25, `compensationCents` 10.00, `pointsCompensationCents` 10.00). Had the
+`BRAND_TO_TAKEAWAY` of **33.60** (`cardNetCents` 322.83, `commissionCents`
+53.60, `compensationCents` 10.00, `pointsCompensationCents` 10.00). Had the
 compensation outweighed the commission, the net would be negative and the
 settlement would read `TAKEAWAY_TO_BRAND` for the difference.
 
@@ -263,7 +270,11 @@ promo codes are its discount (migration `20261114110000_analytics_points_funded`
 1. **Who funds promo codes and points?** Decided: a brand's own code is the
    brand's (Maxim, 2026-11-06, №11); takeAway's own promos (2026-11-10) and the
    loyalty points (2026-11-14, list 6.0 item 6) are takeAway's — compensated
-   to the brand, commission on the full price.
+   to the brand, commission on the full price. Since 2026-11-25 (Maxim, check
+   of the 18.11 batch, п.4) the commission is on the full price on a brand's
+   own code too; until then that discount lowered it. The rule holds for the
+   whole history: a settlement already fixed does not change, the difference
+   goes into the balance.
 2. **Where the guest's money goes.** Decided 2026-11-14: to the brand
    directly; settlements are netted (one sum, either way, confirmed by the
    receiver). Confirmed 2026-11-17 (Maxim): every brand gives takeAway its own
@@ -291,7 +302,9 @@ promo codes are its discount (migration `20261114110000_analytics_points_funded`
    stays on the full amount; nothing is deducted for the fee.
 6. **Orders not paid by card** (paid at the counter while cards are off;
    orders at 0). Decided 2026-11-17 (Maxim): takeAway does not touch orders
-   paid at the counter — no commission on them, as today.
+   paid at the counter — no commission on them, as today. **Open:** an order
+   the brand's own code covered whole (100 %) has no commission either, while
+   one at 99 % pays it on the full price; say if the free one should too.
 7. **Settlement schedule and minimum.** Decided 2026-11-17 (Maxim): agreed
    with each brand individually. The platform admin fixes a closed period
    whenever that brand's agreement says (the rate history's `note` can hold

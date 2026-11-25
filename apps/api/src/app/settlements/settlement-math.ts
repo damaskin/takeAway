@@ -26,10 +26,12 @@ import { rateAt, type RatePoint } from '../plans/commission-history';
  *   discount D of a takeAway promo (docs/takeaway-promos.md) plus the loyalty
  *   points spent. Both are takeAway's to fund; 0 once the order was cancelled
  *   or expired (the promo and the points went back).
- * - **Commission base** = card money captured − refunded + compensation: the
- *   order at the price the brand would have got without takeAway's discounts.
- *   The brand's own promo codes and gift cards stay outside it, and so does
- *   an order with no card payment (paid at the counter, if at all).
+ * - **Commission base** = card money captured − refunded + compensation + the
+ *   brand's own promo code: the order at its menu price. Since 2026-11-25
+ *   (Maxim, п.4) a discount the brand gives does not lower the commission; it
+ *   is still the brand's — takeAway never compensates it. Gift cards stay
+ *   outside the base, and so does an order with no card payment (paid at the
+ *   counter, or free on the brand's code).
  * - **Commission** = base × rate, in whole cents, rounded half up, per order.
  *   Rounding each order (not the day or the period) is what makes days add
  *   up to the period and periods to the year exactly.
@@ -62,6 +64,11 @@ export interface SettlementOrderRow {
    * `pointsDiscountCents`, 0 once the order was cancelled or expired.
    */
   pointsCompensationCents: number;
+  /**
+   * The discount of the brand's own promo code, part of the commission base:
+   * 0 once the order was cancelled or expired.
+   */
+  brandDiscountCents: number;
   giftCardCents: number;
   deliveryFeeCents: number;
   /** What the customer had to pay. */
@@ -93,7 +100,8 @@ export function commissionCents(baseCents: number, bps: number): number {
  * rounded half up to a whole cent. A refund is the brand's, from its own
  * terminal, and takeAway's compensation (its promo, the points) for the
  * refunded part is cancelled with it (owner, 2026-11-17) — a full refund
- * leaves none. Without a capture or a refund it is the whole amount.
+ * leaves none. Without a capture or a refund it is the whole amount. The
+ * brand's own discount leaves the commission base in the same share.
  */
 export function compensationAfterRefund(
   compensationCents: number,
@@ -143,7 +151,9 @@ export function settleOrder(row: SettlementOrderRow, bps: number): SettlementTot
   const pointsCompensation = compensationAfterRefund(row.pointsCompensationCents, captured, refunded);
   const compensation = promoCompensation + pointsCompensation;
   const cardNet = captured - refunded;
-  const base = cardNet + compensation;
+  // The brand's own promo code: not compensated, but the commission is on the price before it.
+  const brandDiscount = row.hasCapture ? compensationAfterRefund(row.brandDiscountCents, captured, refunded) : 0;
+  const base = cardNet + compensation + brandDiscount;
   const commission = commissionCents(base, bps);
   const unpaid = !row.hasCapture && row.totalCents > 0;
   return {

@@ -29,6 +29,7 @@ function order(overrides: Partial<SettlementOrderRow> = {}): SettlementOrderRow 
     takeawayDiscountCents: 0,
     takeawayCompensationCents: 0,
     pointsCompensationCents: 0,
+    brandDiscountCents: 0,
     giftCardCents: 0,
     deliveryFeeCents: 0,
     totalCents: 0,
@@ -47,7 +48,7 @@ const EXAMPLE: SettlementOrderRow[] = [
   // A — latte and croissant, 75 руб., paid by card.
   order({ id: 'A', subtotalCents: 7500, totalCents: 7500, capturedCents: 7500, hasCapture: true }),
   // B — a free coffee on the brand's own promo code: 0 руб., no card payment at all.
-  order({ id: 'B', subtotalCents: 4000, discountCents: 4000, totalCents: 0 }),
+  order({ id: 'B', subtotalCents: 4000, discountCents: 4000, brandDiscountCents: 4000, totalCents: 0 }),
   // C — 120 руб., 50 of them from a gift card the brand sold, 70 by card.
   order({
     id: 'C',
@@ -86,6 +87,17 @@ const EXAMPLE: SettlementOrderRow[] = [
     takeawayCompensationCents: 1000,
     totalCents: 9000,
     capturedCents: 9000,
+    hasCapture: true,
+  }),
+  // G — 29 руб. on the brand's own code −50 %: the guest paid 14,50, nobody compensates the rest
+  // (order 9780 of Maxim's check, 2026-11-25).
+  order({
+    id: 'G',
+    subtotalCents: 2900,
+    discountCents: 1450,
+    brandDiscountCents: 1450,
+    totalCents: 1450,
+    capturedCents: 1450,
     hasCapture: true,
   }),
 ];
@@ -137,10 +149,10 @@ describe('compensationAfterRefund', () => {
 });
 
 describe('settleOrder', () => {
-  it('charges commission on the card money plus what takeAway compensates', () => {
-    const [a, b, c, d, e, f] = EXAMPLE.map((row) => settleOrder(row, 1500));
+  it('charges commission on the full price: card money, compensation and the brand discount', () => {
+    const [a, b, c, d, e, f, g] = EXAMPLE.map((row) => settleOrder(row, 1500));
     expect(a).toMatchObject({ cardNetCents: 7500, commissionBaseCents: 7500, commissionCents: 1125, netCents: 1125 });
-    // The brand's own promo: the guest paid nothing, nothing is owed either way.
+    // The brand's own promo covered everything: the guest paid nothing, nothing is owed either way.
     expect(b).toMatchObject({
       cardOrders: 0,
       zeroTotalOrders: 1,
@@ -183,11 +195,49 @@ describe('settleOrder', () => {
       commissionCents: 1500,
       netCents: 500,
     });
+    // The brand's own code: 15 % of 29,00 and not of the 14,50 the guest paid; no compensation.
+    expect(g).toMatchObject({
+      promoDiscountCents: 1450,
+      cardNetCents: 1450,
+      compensationCents: 0,
+      commissionBaseCents: 2900,
+      commissionCents: 435,
+      netCents: 435,
+    });
   });
 
-  it('takes no commission on an accepted order paid at the counter', () => {
+  it('takes no commission on an accepted order paid at the counter, on a brand code either', () => {
     const settled = settleOrder(order({ subtotalCents: 5000, totalCents: 5000 }), 1500);
     expect(settled).toMatchObject({ unpaidOrders: 1, unpaidTotalCents: 5000, capturedCents: 0, netCents: 0 });
+    const onCode = settleOrder(
+      order({ subtotalCents: 5000, discountCents: 2000, brandDiscountCents: 2000, totalCents: 3000 }),
+      1500,
+    );
+    expect(onCode).toMatchObject({ unpaidOrders: 1, commissionBaseCents: 0, commissionCents: 0, netCents: 0 });
+  });
+
+  it('leaves the brand its price less its own discount less the commission on the full price', () => {
+    const settled = settleOrder(EXAMPLE[6] as SettlementOrderRow, 1500);
+    expect(settled.cardNetCents - settled.netCents).toBe(2900 - 1450 - 435);
+  });
+
+  it("takes the brand's discount beside a gift card and a delivery fee", () => {
+    // 120 at the menu, the brand's code −20, 50 from a gift card, 5 of delivery: 55 by card.
+    const settled = settleOrder(
+      order({
+        subtotalCents: 12000,
+        discountCents: 2000,
+        brandDiscountCents: 2000,
+        giftCardCents: 5000,
+        deliveryFeeCents: 500,
+        totalCents: 5500,
+        capturedCents: 5500,
+        hasCapture: true,
+      }),
+      1000,
+    );
+    // Card 55 + the discount 20; the gift card stays out.
+    expect(settled).toMatchObject({ commissionBaseCents: 7500, commissionCents: 750 });
   });
 
   it('nets a full refund to nothing', () => {
@@ -307,6 +357,34 @@ describe('settleOrder — a refunded order with takeAway compensation', () => {
   });
 });
 
+describe("settleOrder — a refunded order on the brand's own code", () => {
+  const row = (refundedCents: number) =>
+    order({
+      subtotalCents: 2900,
+      discountCents: 1450,
+      brandDiscountCents: 1450,
+      totalCents: 1450,
+      capturedCents: 1450,
+      refundedCents,
+      hasCapture: true,
+    });
+
+  it('takes the refunded share off the base', () => {
+    // 5,80 of 14,50 back — 40 %: 8,70 of the card money and 8,70 of the discount are left.
+    expect(settleOrder(row(580), 1500)).toMatchObject({
+      cardNetCents: 870,
+      compensationCents: 0,
+      commissionBaseCents: 1740,
+      commissionCents: 261,
+      netCents: 261,
+    });
+  });
+
+  it('owes nothing after a full refund', () => {
+    expect(settleOrder(row(1450), 1500)).toMatchObject({ commissionBaseCents: 0, commissionCents: 0, netCents: 0 });
+  });
+});
+
 describe('computeSettlement', () => {
   const window = {
     start: at('2026-10-01T00:00:00Z'),
@@ -318,22 +396,22 @@ describe('computeSettlement', () => {
     const result = computeSettlement(EXAMPLE, [], 1500, window, utcDay);
     expect(result.totals).toEqual({
       ...emptyTotals(),
-      orders: 6,
-      cardOrders: 5,
+      orders: 7,
+      cardOrders: 6,
       zeroTotalOrders: 1,
-      salesCents: 42833,
-      promoDiscountCents: 4000,
+      salesCents: 45733,
+      promoDiscountCents: 5450,
       pointsDiscountCents: 1000,
       giftCardCents: 5000,
-      capturedCents: 31833,
+      capturedCents: 33283,
       refundedCents: 1000,
-      cardNetCents: 30833,
+      cardNetCents: 32283,
       takeawayCompensationCents: 1000,
       pointsCompensationCents: 1000,
       compensationCents: 2000,
-      commissionBaseCents: 32833,
-      commissionCents: 4925,
-      netCents: 2925,
+      commissionBaseCents: 35733,
+      commissionCents: 5360,
+      netCents: 3360,
     });
   });
 
