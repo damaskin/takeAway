@@ -1,9 +1,10 @@
-import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { ProductDetail, StoreListItem, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { catchError, throwError, type Observable } from 'rxjs';
+import { EMPTY, catchError, distinctUntilChanged, map, switchMap, throwError, type Observable } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
@@ -278,6 +279,7 @@ import { optionChoiceProblem, ProductOptionGroupsComponent } from './product-opt
               [suggestions]="pairings().items"
               [store]="store"
               [canAdd]="authStore.isAuthenticated() && !storeClosed()"
+              [openToChoose]="true"
             />
           }
         </div>
@@ -411,6 +413,7 @@ export class ProductPage implements OnInit {
   readonly authStore = inject(AuthStore);
   private readonly fmt = inject(LocaleFormatService);
   private readonly translate = inject(TranslateService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly adding = signal(false);
   readonly addError = signal<string | null>(null);
@@ -563,24 +566,47 @@ export class ProductPage implements OnInit {
   }
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (!slug) {
-      this.error.set(this.translate.instant('web.product.notFound'));
-      return;
-    }
-    this.browsedStore = this.route.snapshot.queryParamMap.get('store');
-    this.fetchProduct(slug).subscribe({
-      next: (p) => {
+    // One product opens another — a card of «К этому напитку», the browser's
+    // Back — and the router keeps this page for it, changing the address
+    // only. So the address is followed rather than read once.
+    this.route.paramMap
+      .pipe(
+        map((params) => params.get('slug')),
+        distinctUntilChanged(),
+        switchMap((slug) => {
+          this.startAfresh();
+          if (!slug) return this.notFound();
+          this.browsedStore = this.route.snapshot.queryParamMap.get('store');
+          return this.fetchProduct(slug).pipe(catchError(() => this.notFound()));
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((p) => {
         this.product.set(p);
         this.optionPicks.set(defaultOptionPicks(orderOptionGroups(p.optionGroups ?? [])));
-      },
-      error: () => this.error.set(this.translate.instant('web.product.notFound')),
-    });
+      });
 
     this.catalog.listStores().subscribe({
       next: (list) => this.stores.set(list),
       error: () => this.stores.set([]),
     });
+  }
+
+  /** Nothing of the product shown before: not its choice, its note or its errors. */
+  private startAfresh(): void {
+    this.product.set(null);
+    this.optionPicks.set({});
+    this.quantity.set(1);
+    this.notes = '';
+    this.error.set(null);
+    this.adding.set(false);
+    this.addError.set(null);
+    this.closedOnAdd.set(false);
+  }
+
+  private notFound(): Observable<never> {
+    this.error.set(this.translate.instant('web.product.notFound'));
+    return EMPTY;
   }
 
   /** The product by its slug, in the store the customer came from when it has it. */
@@ -600,6 +626,8 @@ export class ProductPage implements OnInit {
     if (!p || !store || this.optionProblem()) return;
     const storeId = store.id;
     const notes = this.notes.trim() || undefined;
+    /** The customer may have gone on to another product before the answer came. */
+    const stillHere = () => this.product()?.id === p.id;
     this.adding.set(true);
     this.addError.set(null);
     this.cart
@@ -611,8 +639,11 @@ export class ProductPage implements OnInit {
         notes,
       })
       .subscribe({
-        next: () => this.adding.set(false),
+        next: () => {
+          if (stillHere()) this.adding.set(false);
+        },
         error: (err) => {
+          if (!stillHere()) return;
           this.adding.set(false);
           const body = (err as { error?: { code?: unknown; message?: unknown } }).error;
           if (body?.code === 'STORE_NOT_TAKING_ORDERS') this.closedOnAdd.set(true);
@@ -635,6 +666,7 @@ export class ProductPage implements OnInit {
   private refreshOptions(slug: string): void {
     this.fetchProduct(slug).subscribe({
       next: (p) => {
+        if (this.product()?.slug !== slug) return;
         this.product.set(p);
         this.optionPicks.update((picks) => normalizeOptionPicks(this.optionGroups(), picks));
       },

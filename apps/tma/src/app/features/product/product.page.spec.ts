@@ -64,6 +64,7 @@ function product(over: Partial<ProductDetail> = {}): ProductDetail {
 describe('TmaProductPage', () => {
   let tg: { setMainButton: jest.Mock; hideMainButton: jest.Mock; setBackButton: jest.Mock; haptic: jest.Mock };
   let cart: { add: jest.Mock };
+  let catalog: { getProduct: jest.Mock; listStores: jest.Mock; getMenu: jest.Mock; getSuggestions: jest.Mock };
 
   async function open(detail: ProductDetail) {
     tg = {
@@ -73,6 +74,12 @@ describe('TmaProductPage', () => {
       haptic: jest.fn(),
     };
     cart = { add: jest.fn(() => of({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 0 })) };
+    catalog = {
+      getProduct: jest.fn(() => of(detail)),
+      listStores: jest.fn(() => of([STORE])),
+      getMenu: jest.fn(() => of({ storeId: STORE.id, storeSlug: STORE.slug, categories: [] })),
+      getSuggestions: jest.fn(() => throwError(() => new Error('404'))),
+    };
     TestBed.configureTestingModule({
       providers: [
         provideRouter([
@@ -80,15 +87,7 @@ describe('TmaProductPage', () => {
           { path: 'checkout', children: [] },
         ]),
         provideTranslateService({ fallbackLang: 'ru' }),
-        {
-          provide: CatalogService,
-          useValue: {
-            getProduct: jest.fn(() => of(detail)),
-            listStores: jest.fn(() => of([STORE])),
-            getMenu: jest.fn(() => of({ storeId: STORE.id, storeSlug: STORE.slug, categories: [] })),
-            getSuggestions: jest.fn(() => throwError(() => new Error('404'))),
-          },
-        },
+        { provide: CatalogService, useValue: catalog },
         { provide: CartService, useValue: cart },
         { provide: TelegramBridgeService, useValue: tg },
         { provide: TmaAuthStore, useValue: { isAuthenticated: signal(true) } },
@@ -189,5 +188,43 @@ describe('TmaProductPage', () => {
       options: [{ optionId: 'regular', qty: 1 }],
       notes: undefined,
     });
+  });
+
+  // Maxim 2026-11-25: a card under the drink changed the address and left the
+  // drink on the screen.
+  it('follows the address to another product, starting afresh', async () => {
+    const harness = await open(product({ hasRequiredOptions: true, optionGroups: COFFEE_GROUPS }));
+    const el = harness.routeNativeElement as HTMLElement;
+    const croissant = product({ id: 'croissant', slug: 'croissant', name: 'Круассан', basePriceCents: 2500 });
+    catalog.getProduct.mockReturnValue(of(croissant));
+    tg.hideMainButton.mockClear();
+
+    await harness.navigateByUrl('/products/croissant');
+    await harness.fixture.whenStable();
+
+    expect(text(el)).toContain('Круассан');
+    expect(text(el)).not.toContain('Латте');
+    // The old price must not be on the button while the new product loads.
+    expect(tg.hideMainButton).toHaveBeenCalled();
+    expect(mainButton().label).toMatch(/^Добавить · 25\s?руб\.$/);
+    mainButton().tap();
+    expect(cart.add).toHaveBeenCalledWith(expect.objectContaining({ productId: 'croissant', quantity: 1 }));
+    // Telegram's Back button is set up once.
+    expect(tg.setBackButton).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a product was not found, and shows the next one all the same', async () => {
+    const harness = await open(product());
+    const el = harness.routeNativeElement as HTMLElement;
+    catalog.getProduct.mockReturnValue(throwError(() => ({ status: 500 })));
+    await harness.navigateByUrl('/products/gone');
+    await harness.fixture.whenStable();
+    expect(text(el)).toContain(TRANSLATIONS_RU.tma.product.notFound);
+
+    catalog.getProduct.mockReturnValue(of(product()));
+    await harness.navigateByUrl('/products/latte');
+    await harness.fixture.whenStable();
+    expect(text(el)).toContain('Латте');
+    expect(text(el)).not.toContain(TRANSLATIONS_RU.tma.product.notFound);
   });
 });

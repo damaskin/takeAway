@@ -32,7 +32,7 @@ export class QrPaymentApi {
       .pipe(tap((payment) => this.latest.set(payment.orderId, payment)));
   }
 
-  /** The customer called the invoice off; the order stays, to be paid again or by card. */
+  /** «Отменить заказ»: closes the invoice and cancels the unpaid order; `PAID` when the money has just landed. */
   cancel(paymentId: string): Observable<AgroprombankQrPaymentDto> {
     return this.http
       .post<AgroprombankQrPaymentDto>(

@@ -68,7 +68,7 @@ export class AgroprombankQrController {
     return this.qr.getPayment(user.id, paymentId);
   }
 
-  /** The customer closed the QR screen: the invoice is closed unpaid (or found paid). */
+  /** «Отменить заказ» on the QR screen: closes the invoice and cancels the unpaid order (or finds it paid). */
   @Post(':paymentId/cancel')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()

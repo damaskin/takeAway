@@ -306,7 +306,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       openBankApp: 'Open the bank app',
       expiresIn: 'The invoice is valid for {{time}}',
       waiting: 'Waiting for the payment — this screen updates by itself',
-      cancel: 'Cancel',
+      cancel: 'Cancel order',
       cancelling: 'Cancelling…',
       expiredTitle: 'The invoice has expired',
       expiredHint: 'This code is no longer accepted.',
@@ -4082,6 +4082,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         carbs: 'Carbs {{grams}} g',
       },
       offlinePrompt: 'No connection to the server — adding to the cart is unavailable.',
+      notFound: 'Item not found',
       addFailed: 'Could not add this item to the cart. Please try again.',
       noStore: 'No store from this brand is taking orders right now.',
       cta: {

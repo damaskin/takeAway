@@ -180,6 +180,7 @@ describe('TmaQrPaymentPage', () => {
 
   it('calls the invoice off on «Отменить»', async () => {
     const { byTestId, router } = await open({ issued: pending() });
+    expect(byTestId('qr-cancel')?.textContent?.trim()).toBe('Отменить заказ');
     byTestId('qr-cancel')?.click();
     expect(qr.cancel).toHaveBeenCalledWith('pay-1');
     await jest.runOnlyPendingTimersAsync();

@@ -16,6 +16,7 @@ import type {
   AgroprombankQrPaymentStatus,
 } from '@takeaway/shared-types';
 
+import { OrdersService } from '../../orders/orders.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { withFreshInvoiceId } from '../agroprombank/invoice-ids';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
@@ -93,6 +94,7 @@ export class AgroprombankQrService {
     private readonly settlement: OrderSettlementService,
     private readonly holds: PaymentHoldsService,
     private readonly terminals: PaymentTerminalsService,
+    private readonly orders: OrdersService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -165,15 +167,54 @@ export class AgroprombankQrService {
   }
 
   /**
-   * The customer closed the QR screen: the invoice is closed at the bank and
-   * checked once more. Unpaid, it reads `EXPIRED` and the order stays, to be
-   * paid again by QR or by card.
+   * «Отменить заказ» on the QR screen: the invoice is closed at the bank and
+   * checked once more, and the order it was for is cancelled with it — one
+   * tap, instead of an unpaid order left waiting (Maxim, 2026-11-25).
+   *
+   * The invoice goes first: money that landed in the same second is found,
+   * the order keeps it and the answer is `PAID` — the customer cancels it
+   * from the order, knowing it is paid. So does money that came another way
+   * (a card, an invoice opened in another tab). A bank that could not be
+   * told to close the invoice is a 503 and the order stays: it may be paid.
    */
   async cancelPayment(userId: string, paymentId: string): Promise<AgroprombankQrPaymentDto> {
     const payment = await this.requireOwnPayment(userId, paymentId);
-    if (payment.status !== 'PENDING') return this.toDto(payment);
-    const closed = await this.askingTheBank(payment, () => this.closeInvoice(payment, 'cancelled-by-customer'));
+    let closed: Payment = payment;
+    if (payment.status === 'PENDING') {
+      closed = await this.askingTheBank(payment, () => this.closeInvoice(payment, 'cancelled-by-customer'));
+    }
+    if (closed.status !== 'FAILED') return this.toDto(closed);
+
+    // Another tab may have opened a newer invoice for the same order.
+    const others = await this.prisma.payment.findMany({
+      where: { orderId: payment.orderId, provider: 'AGROPROMBANK_QR', status: 'PENDING', id: { not: payment.id } },
+      orderBy: { createdAt: 'desc' },
+    });
+    for (const other of others) {
+      await this.askingTheBank(other, () => this.closeInvoice(other, 'cancelled-by-customer'));
+    }
+    const paid = await this.findPaid(payment.orderId);
+    if (paid) return this.toDto(paid);
+
+    await this.cancelUnpaidOrder(userId, payment.orderId);
     return this.toDto(closed);
+  }
+
+  /**
+   * The customer's own cancel of an order nothing was paid for. One that went
+   * on meanwhile — cancelled or expired already, or taken on by the kitchen —
+   * is left as it is: the order page, where the customer lands, says what
+   * became of it.
+   */
+  private async cancelUnpaidOrder(userId: string, orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
+    if (order?.status !== 'CREATED') return;
+    try {
+      await this.orders.cancel(userId, orderId);
+    } catch (err) {
+      if (!(err instanceof ConflictException || err instanceof BadRequestException)) throw err;
+      this.logger.warn(`Order ${orderId} not cancelled from the QR screen: ${messageOf(err)}`);
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────

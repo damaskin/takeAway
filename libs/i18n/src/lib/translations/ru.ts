@@ -320,7 +320,8 @@ export const TRANSLATIONS_RU = {
       openBankApp: 'Открыть приложение банка',
       expiresIn: 'Счёт действует ещё {{time}}',
       waiting: 'Ждём оплату — экран обновится сам',
-      cancel: 'Отменить',
+      /** Closes the invoice and cancels the unpaid order with it. */
+      cancel: 'Отменить заказ',
       cancelling: 'Отменяем…',
       expiredTitle: 'Счёт истёк',
       expiredHint: 'Этот код больше не принимается.',
@@ -4122,6 +4123,7 @@ export const TRANSLATIONS_RU = {
         carbs: 'Углеводы {{grams}} г',
       },
       offlinePrompt: 'Нет связи с сервером — добавить в корзину пока нельзя.',
+      notFound: 'Позиция не найдена',
       addFailed: 'Не удалось добавить товар в корзину. Попробуйте ещё раз.',
       noStore: 'Ни одна точка этого бренда сейчас не принимает заказы.',
       cta: {
