@@ -173,9 +173,10 @@ export class AgroprombankQrService {
    *
    * The invoice goes first: money that landed in the same second is found,
    * the order keeps it and the answer is `PAID` — the customer cancels it
-   * from the order, knowing it is paid. So does money that came another way
-   * (a card, an invoice opened in another tab). A bank that could not be
-   * told to close the invoice is a 503 and the order stays: it may be paid.
+   * from the order, knowing it is paid. Money that came another way (a card,
+   * an invoice opened in another tab) keeps the order too. A bank that could
+   * not be told to close the invoice is a 503 and the order stays: it may be
+   * paid.
    */
   async cancelPayment(userId: string, paymentId: string): Promise<AgroprombankQrPaymentDto> {
     const payment = await this.requireOwnPayment(userId, paymentId);
