@@ -1,9 +1,11 @@
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { ViewportScroller } from '@angular/common';
+import { Component, DestroyRef, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { ProductDetail, StoreListItem, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { catchError, throwError, type Observable } from 'rxjs';
+import { EMPTY, catchError, distinctUntilChanged, map, switchMap, throwError, type Observable } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
@@ -175,8 +177,17 @@ import { optionChoiceProblem, TmaProductOptionGroupsComponent } from './product-
             [suggestions]="pairings().items"
             [store]="s"
             [canAdd]="authStore.isAuthenticated() && !storeClosed()"
+            [openToChoose]="true"
           />
         }
+      } @else if (error()) {
+        <p
+          role="alert"
+          class="text-center"
+          style="margin: 48px 0 0; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
+        >
+          {{ error() }}
+        </p>
       }
     </section>
 
@@ -218,6 +229,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private readonly translate = inject(TranslateService);
   private readonly activeStore = inject(ActiveStoreService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly viewport = inject(ViewportScroller);
   readonly authStore = inject(TmaAuthStore);
 
   readonly product = signal<ProductDetail | null>(null);
@@ -300,19 +313,28 @@ export class TmaProductPage implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (!slug) return;
-    // The active store's brand first (two cafés can both have a `latte`); a
-    // product shared from another brand's menu is not there, so look again
-    // without a store.
-    this.fetchProduct(slug).subscribe({
-      next: (p) => {
+    // One product opens another — a card of «К этому напитку», Back — and the
+    // router keeps this screen for it, changing the address only. So the
+    // address is followed rather than read once.
+    this.route.paramMap
+      .pipe(
+        map((params) => params.get('slug')),
+        distinctUntilChanged(),
+        switchMap((slug, index) => {
+          if (index > 0) this.startAfresh();
+          // The active store's brand first (two cafés can both have a `latte`);
+          // a product shared from another brand's menu is not there, so look
+          // again without a store.
+          return slug ? this.fetchProduct(slug).pipe(catchError(() => this.notFound())) : EMPTY;
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((p) => {
         this.product.set(p);
         this.optionPicks.set(defaultOptionPicks(orderOptionGroups(p.optionGroups ?? [])));
         this.resolveStore(p.brandId);
         this.refreshMainButton();
-      },
-    });
+      });
     this.detachBack = this.tg.setBackButton(() => {
       if (history.length > 1) history.back();
       else void this.router.navigate(['/']);
@@ -322,6 +344,27 @@ export class TmaProductPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.tg.hideMainButton();
     this.detachBack?.();
+  }
+
+  /**
+   * Nothing of the product shown before: not its choice, its note or its
+   * errors, and no button with its price. The new one opens at its top.
+   */
+  private startAfresh(): void {
+    this.tg.hideMainButton();
+    this.product.set(null);
+    this.optionPicks.set({});
+    this.notes = '';
+    this.error.set(null);
+    this.store.set(null);
+    this.storeClosed.set(false);
+    this.menu.set(null);
+    this.viewport.scrollToPosition([0, 0]);
+  }
+
+  private notFound(): Observable<never> {
+    this.error.set(this.translate.instant('tma.product.notFound'));
+    return EMPTY;
   }
 
   price(cents: number): string {
@@ -372,6 +415,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private resolveStore(brandId: string): void {
     this.catalog.listStores().subscribe({
       next: (list) => {
+        if (this.product()?.brandId !== brandId) return;
         const active = list.find((s) => s.id === this.activeStore.current());
         const fit = active?.brandId === brandId ? active : list.find((s) => s.brandId === brandId);
         this.store.set(fit ?? null);
@@ -391,6 +435,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private refreshOptions(slug: string): void {
     this.fetchProduct(slug).subscribe({
       next: (p) => {
+        if (this.product()?.slug !== slug) return;
         this.product.set(p);
         this.optionPicks.update((picks) => normalizeOptionPicks(this.optionGroups(), picks));
       },
@@ -420,6 +465,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
         // A coded refusal (sold out here, not sold in this store) reads in the
         // customer's language, like on the website.
         error: (err: { error?: { code?: string; message?: string }; message?: string }) => {
+          // The customer went on to another product before the answer came.
+          if (this.product()?.id !== p.id) return;
           // The store closed while the customer was choosing.
           if (err.error?.code === 'STORE_NOT_TAKING_ORDERS') {
             this.storeClosed.set(true);

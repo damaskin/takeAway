@@ -65,12 +65,15 @@ suite('settlements on Postgres', () => {
   async function order(input: {
     subtotalCents: number;
     pointsDiscountCents?: number;
+    /** The brand's own promo code. */
+    brandDiscountCents?: number;
     capturedCents: number;
     refundedCents?: number;
     status?: 'PICKED_UP' | 'CANCELLED';
   }) {
     n += 1;
     const points = input.pointsDiscountCents ?? 0;
+    const discount = points + (input.brandDiscountCents ?? 0);
     const refunded = input.refundedCents ?? 0;
     await prisma.order.create({
       data: {
@@ -82,10 +85,10 @@ suite('settlements on Postgres', () => {
         pickupAt: new Date('2026-11-12T10:15:00Z'),
         acceptedAt: new Date('2026-11-12T10:00:00Z'),
         subtotalCents: input.subtotalCents,
-        discountCents: points,
+        discountCents: discount,
         pointsDiscountCents: points,
         pointsSpent: points,
-        totalCents: input.subtotalCents - points,
+        totalCents: input.subtotalCents - discount,
         currency: 'RUP',
         orderCode: `stit-${n}`,
         qrToken: `stit-${n}`,
@@ -166,6 +169,35 @@ suite('settlements on Postgres', () => {
     after = await svc.report(admin, { brandId: BRAND, from: '2026-11-12', to: '2026-11-13' }, NOW);
     expect(after.balance).toMatchObject({ settledCents: -750, closingCents: 0, closingOpenCents: 0 });
     expect(after.nextPayout).toMatchObject({ blocked: 'OVERLAP', lastSettledDay: '2026-11-13' });
+  });
+
+  it("takes the commission on the price before the brand's own promo code (Maxim, 2026-11-25)", async () => {
+    await prisma.brandPayout.deleteMany({ where: { brandId: BRAND } });
+    await prisma.order.deleteMany({ where: { storeId: STORE } });
+    // 29 on the brand's code −50 %: the guest paid 14.50, the commission is 15 % of 29.
+    await order({ subtotalCents: 2_900, brandDiscountCents: 1_450, capturedCents: 1_450 });
+    // 10 in points beside the brand's 20: an old order, the two no longer combine.
+    await order({
+      subtotalCents: 10_000,
+      pointsDiscountCents: 1_000,
+      brandDiscountCents: 2_000,
+      capturedCents: 7_000,
+    });
+    // Cancelled without the money going back yet: the code's discount is out, the card money is in.
+    await order({ subtotalCents: 4_000, brandDiscountCents: 1_000, capturedCents: 3_000, status: 'CANCELLED' });
+
+    const report = await svc.report(admin, { brandId: BRAND, from: '2026-11-12', to: '2026-11-13' }, NOW);
+    expect(report.totals).toMatchObject({
+      orders: 3,
+      promoDiscountCents: 4_450,
+      cardNetCents: 11_450,
+      pointsCompensationCents: 1_000,
+      compensationCents: 1_000,
+      // 29 + 100 + 30.
+      commissionBaseCents: 15_900,
+      commissionCents: 435 + 1_500 + 450,
+      netCents: 2_385 - 1_000,
+    });
   });
 });
 

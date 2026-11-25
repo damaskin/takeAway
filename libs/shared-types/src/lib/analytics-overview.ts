@@ -56,7 +56,7 @@ export interface OverviewTotals {
   avgPickupSeconds: number | null;
   /** Stores (business view) or brands (platform view) with at least one counted order. */
   activeUnits: number;
-  /** The platform's commission on that revenue, at each brand's current rate. */
+  /** The platform's commission on those orders' full price, at each brand's current rate. */
   commissionCents: number;
 }
 

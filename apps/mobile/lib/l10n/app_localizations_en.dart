@@ -789,7 +789,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get qrPayWaiting => 'Waiting for the payment…';
 
   @override
-  String get qrPayCancel => 'Cancel';
+  String get qrPayCancel => 'Cancel order';
 
   @override
   String get qrPayExpiredTitle => 'The invoice has expired';

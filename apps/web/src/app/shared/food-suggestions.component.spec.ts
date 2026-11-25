@@ -171,6 +171,19 @@ describe('FoodSuggestionsComponent', () => {
     expect(plus('Сэндвич')?.disabled).toBe(false);
   });
 
+  // On a product's own page (Maxim 2026-11-25): the customer chooses first.
+  it('opens whatever is tapped when the «+» is there to choose, without fetching or adding', async () => {
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentRef.setInput('openToChoose', true);
+    await fixture.whenStable();
+
+    plus('Круассан')?.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/products', 'croissant'], { queryParams: { store: 'centre' } });
+    http.expectNone((r) => r.url === '/api/products/croissant');
+    http.expectNone('/api/cart/items');
+  });
+
   it('has no «+» for a customer who cannot order', async () => {
     fixture.componentRef.setInput('canAdd', false);
     await fixture.whenStable();

@@ -69,6 +69,7 @@ interface RawOrderRow {
   takeawayDiscountCents: number;
   takeawayCompensationCents: number;
   pointsCompensationCents: number;
+  brandDiscountCents: number;
   giftCardCents: number;
   deliveryFeeCents: number;
   totalCents: number;
@@ -508,6 +509,11 @@ export class SettlementsService {
                   ELSE COALESCE(tr."discountCents", 0) END AS "takeawayCompensationCents",
              CASE WHEN o."status" IN ('CANCELLED', 'EXPIRED') THEN 0
                   ELSE o."pointsDiscountCents" END AS "pointsCompensationCents",
+             CASE WHEN o."status" IN ('CANCELLED', 'EXPIRED') THEN 0
+                  ELSE LEAST(
+                    GREATEST(o."discountCents" - o."takeawayDiscountCents" - o."pointsDiscountCents", 0),
+                    o."subtotalCents"
+                  ) END AS "brandDiscountCents",
              o."giftCardCents" AS "giftCardCents",
              o."deliveryFeeCents" AS "deliveryFeeCents",
              o."totalCents" AS "totalCents",
@@ -544,6 +550,7 @@ export class SettlementsService {
       takeawayDiscountCents: r.takeawayDiscountCents,
       takeawayCompensationCents: r.takeawayCompensationCents,
       pointsCompensationCents: r.pointsCompensationCents,
+      brandDiscountCents: r.brandDiscountCents,
       giftCardCents: r.giftCardCents,
       deliveryFeeCents: r.deliveryFeeCents,
       totalCents: r.totalCents,

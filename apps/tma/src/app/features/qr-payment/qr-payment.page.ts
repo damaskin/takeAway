@@ -29,7 +29,8 @@ const FINAL_ERRORS: readonly string[] = ['QR_PAYMENT_DISABLED', 'QR_CURRENCY_UNS
  * back from the bank's app — and opens the order once it has.
  *
  * Leaving the screen never calls the invoice off: the customer leaves for
- * the bank's app and comes back. Only «Отменить» does.
+ * the bank's app and comes back. Only «Отменить заказ» does, and the order
+ * with it.
  */
 @Component({
   selector: 'app-tma-qr-payment',
@@ -346,7 +347,7 @@ export class TmaQrPaymentPage implements OnInit, OnDestroy {
     this.start();
   }
 
-  /** The customer calls the invoice off; the order stays, to be paid again or by card. */
+  /** «Отменить заказ»: the invoice and the unpaid order with it; money that has just landed keeps the order. */
   cancel(): void {
     const p = this.payment();
     if (!p || this.busy()) return;

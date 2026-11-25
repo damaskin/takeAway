@@ -2,7 +2,8 @@
 
 Maxim's list 5.0, item 20 (spec «Учёт акций takeAway», 2026-11-05; Maxim's
 answers 2026-11-06 №11 and №16). Not to be confused with a brand's own promo
-codes («Акции → Промокоды», `Promo`), which the brand pays for.
+codes («Акции → Промокоды», `Promo`), which the brand pays for (the commission
+is on the full price with those too, docs/settlements.md).
 
 ## 1. The rule
 

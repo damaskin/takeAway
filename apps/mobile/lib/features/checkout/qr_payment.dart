@@ -91,7 +91,7 @@ enum QrPhase {
   /// No invoice: the bank refused to issue one, or the API could not be asked.
   failed,
 
-  /// The customer called the invoice off.
+  /// The customer called it off: the invoice is closed and the order with it.
   cancelled,
 }
 
@@ -211,7 +211,8 @@ class QrPaymentController extends AutoDisposeFamilyNotifier<QrPaymentState, Stri
     _sync();
   }
 
-  /// Calls the invoice off — on the customer's word only. Answers the phase
+  /// «Отменить заказ»: closes the invoice and cancels the unpaid order with
+  /// it — on the customer's word only. Answers the phase
   /// it ended in: [QrPhase.cancelled], or [QrPhase.paid] when the payment
   /// landed meanwhile. Throws [ApiError] when the API could not be asked;
   /// the code then stays up.

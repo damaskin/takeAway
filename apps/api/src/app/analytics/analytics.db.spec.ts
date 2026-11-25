@@ -161,6 +161,8 @@ const SEEDS: Seed[] = [
     status: 'PICKED_UP',
     createdAt: '2026-10-04T08:00:00Z',
     lines: [americano(5)],
+    // The brand's own code: off the revenue, not off the commission.
+    promo: 2_000,
   },
 ];
 
@@ -358,6 +360,18 @@ suite('analytics money on Postgres', () => {
 
     const p = await overview.platform({ from: WEEK.from, to: WEEK.to }, 'RUP');
     expect(p.byBrand.find((b) => b.id === BRAND)).toMatchObject({ revenueCents: 9_000, commissionCents: 1_140 });
+    // Five americanos in lei less the brand's code: 15 % of the full 70, as in the settlements report.
+    const leiOnly: AnalyticsScope = { brandIds: [BRAND], storeIds: [LEI] };
+    const lei = await overview.business(
+      { range: WEEK, currency: 'MDL', currencies: ['MDL', 'RUP'], scope: leiOnly, parent: leiOnly, storeId: LEI },
+      { storeComparison: true, deep: false },
+    );
+    expect(lei.current).toMatchObject({
+      salesCents: 7_000,
+      discountCents: 2_000,
+      revenueCents: 5_000,
+      commissionCents: 1_050,
+    });
 
     await prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW "mv_orders_daily"');
     const brands = await analytics.brandPerformance(3650);

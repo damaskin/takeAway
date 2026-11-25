@@ -79,7 +79,10 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // STAFF work it; it only toggles, so the menu editor role is not needed.
   stopList: [SA, BA, SM, ST],
   stores: [SA, BA, SM, ST],
-  orders: [SA, BA, SM, ST],
+  // The archive of orders with the customer's contacts and the refund — not
+  // the kitchen's: STAFF work the board, and the API has never given them
+  // `GET /admin/orders` (the section only showed its 403).
+  orders: [SA, BA, SM],
   dispatch: [SA, BA, SM],
   riders: [SA, BA, SM],
   staff: [SA, BA, SM],

@@ -26,7 +26,8 @@ import 'web_payment.dart';
 /// Paying an order by QR in Agroprombank's app: the code with its amount and
 /// countdown, a button that opens the bank's app on this phone when the
 /// server has a link for it, and the outcome. Paid → the order screen.
-/// Leaving (the cross, back) keeps the invoice; only «Отменить» calls it off.
+/// Leaving (the cross, back) keeps the invoice; only «Отменить заказ» calls it
+/// off, and the unpaid order with it.
 class QrPaymentScreen extends ConsumerStatefulWidget {
   const QrPaymentScreen({required this.orderId, this.justPlaced = false, this.initial, super.key});
 
@@ -71,15 +72,16 @@ class _QrPaymentScreenState extends ConsumerState<QrPaymentScreen> {
   }
 
   /// To the order: back to its screen when it is under this one, else in
-  /// place of this one. Never calls the invoice off.
-  void _leave({bool paid = false}) {
+  /// place of this one — as one just placed, unless it has been [cancelled].
+  /// Never calls the invoice off.
+  void _leave({bool paid = false, bool cancelled = false}) {
     if (_left || !mounted) return;
     _left = true;
     if (paid) unawaited(HapticFeedback.heavyImpact());
     ref.invalidate(ordersProvider);
     final router = GoRouter.of(context);
     if (widget.justPlaced) {
-      unawaited(router.pushReplacement(Routes.order(widget.orderId, placed: true)));
+      unawaited(router.pushReplacement(Routes.order(widget.orderId, placed: !cancelled)));
     } else if (router.canPop()) {
       router.pop(paid);
     } else {
@@ -149,7 +151,7 @@ class _QrPaymentScreenState extends ConsumerState<QrPaymentScreen> {
         case QrPhase.paid:
           _leave(paid: true);
         case QrPhase.refunded || QrPhase.cancelled:
-          _leave();
+          _leave(cancelled: true);
         case QrPhase.starting || QrPhase.pending || QrPhase.expired || QrPhase.failed:
           break;
       }

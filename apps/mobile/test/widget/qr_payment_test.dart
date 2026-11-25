@@ -197,7 +197,7 @@ void main() {
   });
 
   group('QR screen from the order', () {
-    testWidgets('an unpaid order is paid by QR from its screen; «Отменить» closes the invoice, not the order', (
+    testWidgets('an unpaid order is paid by QR from its screen; «Отменить заказ» cancels it there and then', (
       tester,
     ) async {
       final api = _rupStore(_qrOnly)..currentOrder = FakeApi.sampleOrder(currency: 'RUP');
@@ -220,12 +220,35 @@ void main() {
       expect(api.qrStarts, ['ord_1', 'ord_1']);
       expect(find.textContaining('Код действует ещё'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('qr-cancel')));
+      await tester.tap(find.widgetWithText(TextButton, 'Отменить заказ'));
       await settle(tester);
       expect(api.qrCancels, ['pay_qr_1']);
-      expect(api.cancelled, isEmpty, reason: 'the order stays, to be paid again');
+      expect(api.cancelled, isEmpty, reason: 'one call does both');
       expect(find.text('Заказ #4821'), findsOneWidget);
-      expect(find.text('Оплатить $_total мобильным платежом'), findsOneWidget);
+      expect(find.text('Вы отменили заказ'), findsOneWidget);
+      expect(find.text('Оплатить $_total мобильным платежом'), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('cancelling straight from checkout opens the cancelled order, not a just placed one', (tester) async {
+      final api = _rupStore(_qrOnly)..seedCart(FakeApi.croissant());
+      final h = await pumpApp(tester, api: api);
+      await _openCheckout(tester);
+      await tester.tap(find.textContaining('Оплатить'));
+      await settle(tester, const Duration(seconds: 2));
+      expect(find.byType(QrImageView), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('qr-cancel')));
+      await settle(tester, const Duration(seconds: 2));
+
+      expect(api.qrCancels, ['pay_qr_1']);
+      expect(find.text('Вы отменили заказ'), findsOneWidget);
+      final uri = h.container.read(routerProvider).routerDelegate.currentConfiguration.last.matchedLocation;
+      expect(uri, '/order/ord_1');
+      expect(
+        h.container.read(routerProvider).routerDelegate.currentConfiguration.uri.queryParameters['placed'],
+        isNull,
+      );
       await h.unmount(tester);
     });
 

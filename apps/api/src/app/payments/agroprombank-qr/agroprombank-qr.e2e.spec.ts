@@ -2,6 +2,7 @@ import { type Server, createServer } from 'node:http';
 
 import type { HttpException } from '@nestjs/common';
 
+import type { OrdersService } from '../../orders/orders.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { AgroprombankClient } from '../agroprombank/agroprombank.client';
 import type { AgroprombankConfig } from '../agroprombank/agroprombank.config';
@@ -251,6 +252,12 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
         settlement as unknown as OrderSettlementService,
         holds,
         fakeTerminals({ qr: config }),
+        {
+          cancel: async (_userId: string, orderId: string) => {
+            const order = db.orders.get(orderId);
+            if (order) order.status = 'CANCELLED';
+          },
+        } as unknown as OrdersService,
       );
       cards = new CardPaymentsService(holds, {} as AgroprombankService, {} as AgroprombankWebService, service);
       onCallback = (fields) => service.handleCallback(fields);
@@ -363,7 +370,7 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
       expect((await service.getPayment('user-1', started.paymentId)).status).toBe('EXPIRED');
     });
 
-    it('closes the invoice when the customer leaves the QR screen', async () => {
+    it('closes the invoice and cancels the order when the customer calls it off on the QR screen', async () => {
       db.addOrder('order-7', 1100);
       const started = await service.startPayment('user-1', 'order-7');
       const extid = db.payments.get(started.paymentId)?.invoiceId as string;
@@ -372,7 +379,7 @@ describe('Agroprombank QR payment end-to-end (sandbox bank)', () => {
 
       expect(cancelled.status).toBe('EXPIRED');
       expect([...bank.payments.values()].find((p) => p.externalId === extid)?.state).toBe(SANDBOX_QR_STATE.CLOSED);
-      expect(db.orders.get('order-7')?.status).toBe('CREATED');
+      expect(db.orders.get('order-7')?.status).toBe('CANCELLED');
     });
 
     it('gives back money that arrives for an order cancelled meanwhile', async () => {

@@ -322,6 +322,103 @@ describe('ProductPage', () => {
     expect(text(el.querySelector('app-food-suggestions h2'))).toBe('К этому напитку');
   });
 
+  // Maxim 2026-11-25: a card under the drink, or its «+», changed the address
+  // and left the drink on the screen.
+  describe('going on to another product', () => {
+    const title = (el: HTMLElement) => text(el.querySelector('h1'));
+    const card = (el: HTMLElement, name: string) =>
+      Array.from(el.querySelectorAll('[data-testid="food-suggestion"]')).find((c) => text(c).includes(name));
+
+    /** Answers everything a product asks for once the page is already open. */
+    const answer = async (harness: RouterTestingHarness, detail: ProductDetail) => {
+      http.expectOne((r) => r.url === `/api/products/${detail.slug}`).flush(detail);
+      await harness.fixture.whenStable();
+      for (const req of http.match((r) => r.url === '/api/cart')) {
+        req.flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 0 });
+      }
+      for (const req of http.match('/api/stores/centre/menu')) req.flush(MENU);
+      await harness.fixture.whenStable();
+      for (const req of http.match((r) => r.url === `/api/stores/${STORE.id}/suggestions`)) {
+        req.flush('Not Found', { status: 404, statusText: 'Not Found' });
+      }
+      await harness.fixture.whenStable();
+    };
+
+    it('opens the product of a tapped card, starting afresh', async () => {
+      const harness = await open('latte', LATTE);
+      const el = harness.routeNativeElement as HTMLElement;
+      await pick(harness, 'L');
+      const notes = el.querySelector<HTMLTextAreaElement>('#pdp-notes');
+      if (!notes) throw new Error('no notes');
+      notes.value = 'погорячее';
+      notes.dispatchEvent(new Event('input'));
+
+      card(el, 'Круассан')?.querySelector('a')?.click();
+      await harness.fixture.whenStable();
+      await answer(harness, CROISSANT);
+
+      expect(title(el)).toBe('Круассан');
+      expect(el.querySelector<HTMLTextAreaElement>('#pdp-notes')?.value).toBe('');
+      addButton(el)?.click();
+      const add = http.expectOne('/api/cart/items');
+      expect(add.request.body).toMatchObject({ productId: 'croissant', quantity: 1 });
+      expect(add.request.body.notes).toBeUndefined();
+      add.flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 3000 });
+    });
+
+    it('opens it from the «+» too, to choose its variants and add-ons', async () => {
+      const harness = await open('latte', LATTE);
+      const el = harness.routeNativeElement as HTMLElement;
+
+      card(el, 'Круассан')?.querySelector('button')?.click();
+      await harness.fixture.whenStable();
+      await answer(harness, CROISSANT);
+
+      expect(title(el)).toBe('Круассан');
+      http.expectNone('/api/cart/items');
+    });
+
+    it('comes back to the first product on Back', async () => {
+      const harness = await open('latte', LATTE);
+      const el = harness.routeNativeElement as HTMLElement;
+      await harness.navigateByUrl('/products/croissant?store=centre');
+      await answer(harness, CROISSANT);
+
+      await harness.navigateByUrl('/products/latte?store=centre');
+      await answer(harness, LATTE);
+
+      expect(title(el)).toBe('Латте');
+      expect(text(el.querySelector('[data-testid="choice-summary"]'))).toBe('M');
+    });
+
+    it('drops the answer for a product the customer has already left', async () => {
+      const harness = await open('latte', LATTE);
+      const el = harness.routeNativeElement as HTMLElement;
+      await harness.navigateByUrl('/products/croissant?store=centre');
+      const late = http.expectOne((r) => r.url === '/api/products/croissant');
+      await harness.navigateByUrl('/products/muffin?store=centre');
+      expect(late.cancelled).toBe(true);
+      await answer(harness, product('muffin', { name: 'Маффин', categoryId: 'pastry' }));
+
+      expect(title(el)).toBe('Маффин');
+    });
+
+    it('says a product was not found, and shows the next one all the same', async () => {
+      const harness = await open('latte', LATTE);
+      await harness.navigateByUrl('/products/gone?store=centre');
+      http.expectOne((r) => r.url === '/api/products/gone').flush('', { status: 500, statusText: 'Error' });
+      await harness.fixture.whenStable();
+      const el = harness.routeNativeElement as HTMLElement;
+      expect(title(el)).toBe('');
+      expect(text(el)).toContain(TRANSLATIONS_RU.web.product.notFound);
+
+      await harness.navigateByUrl('/products/croissant?store=centre');
+      await answer(harness, CROISSANT);
+      expect(title(el)).toBe('Круассан');
+      expect(text(el)).not.toContain(TRANSLATIONS_RU.web.product.notFound);
+    });
+  });
+
   describe('a coffee with a size to choose', () => {
     const CATALOG_LATTE = product('catalog-latte', {
       name: 'Латте',

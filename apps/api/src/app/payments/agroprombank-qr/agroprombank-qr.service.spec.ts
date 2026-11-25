@@ -1,6 +1,7 @@
-import { BadRequestException, type HttpException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, type HttpException, Logger, NotFoundException } from '@nestjs/common';
 import type { Payment } from '@prisma/client';
 
+import type { OrdersService } from '../../orders/orders.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { PaymentHoldsService } from '../agroprombank/payment-holds.service';
 import type { OrderSettlementService } from '../order-settlement.service';
@@ -51,6 +52,7 @@ describe('AgroprombankQrService', () => {
   };
   let holds: { release: jest.Mock };
   let settlement: { announceHeld: jest.Mock; settlePaidOrder: jest.Mock };
+  let orders: { cancel: jest.Mock };
   let config: Record<string, unknown>;
   let service: AgroprombankQrService;
 
@@ -80,6 +82,13 @@ describe('AgroprombankQrService', () => {
       announceHeld: jest.fn().mockResolvedValue(undefined),
       settlePaidOrder: jest.fn().mockResolvedValue(null),
     };
+    orders = {
+      cancel: jest.fn(async (_userId: string, orderId: string) => {
+        const order = db.orders.get(orderId);
+        if (order) order.status = 'CANCELLED';
+        return {};
+      }),
+    };
     config = {
       enabled: true,
       isConfigured: true,
@@ -106,7 +115,17 @@ describe('AgroprombankQrService', () => {
       settlement as unknown as OrderSettlementService,
       holds as unknown as PaymentHoldsService,
       fakeTerminals({ qr: config as unknown as AgroprombankQrConfig }),
+      orders as unknown as OrdersService,
     );
+  }
+
+  /** The invoice ran out and was closed; the order still waits for its money. */
+  function lapse(payment: Payment): void {
+    db.payments.set(payment.id, {
+      ...payment,
+      status: 'FAILED',
+      rawJson: { ...(payment.rawJson as object), closed: true, closeReason: 'lapsed' },
+    });
   }
 
   async function startPaid(orderId: string, total = 3300): Promise<Payment> {
@@ -341,8 +360,7 @@ describe('AgroprombankQrService', () => {
 
     it('uses money paid on an invoice we had already closed, while the order still waits for it', async () => {
       const payment = await startPaid('order-1');
-      await service.cancelPayment('user-1', payment.id);
-      expect(db.payments.get(payment.id)?.status).toBe('FAILED');
+      lapse(payment);
       client.getPaymentStateExtId.mockResolvedValue(paidRecord(payment.invoiceId as string));
 
       await service.handleCallback({
@@ -400,12 +418,77 @@ describe('AgroprombankQrService', () => {
       });
     });
 
-    it('finds the payment that landed in the same second as the cancel', async () => {
+    it('cancels the unpaid order with the invoice: one tap, nothing left waiting', async () => {
+      const payment = await startPaid('order-1');
+
+      await service.cancelPayment('user-1', payment.id);
+
+      expect(orders.cancel).toHaveBeenCalledWith('user-1', 'order-1');
+      expect(db.orders.get('order-1')?.status).toBe('CANCELLED');
+    });
+
+    it('finds the payment that landed in the same second as the cancel: the order keeps it', async () => {
       const payment = await startPaid('order-1');
       client.getPaymentStateExtId.mockResolvedValue(paidRecord(payment.invoiceId as string));
 
       await expect(service.cancelPayment('user-1', payment.id)).resolves.toMatchObject({ status: 'PAID' });
       expect(settlement.announceHeld).toHaveBeenCalledTimes(1);
+      expect(orders.cancel).not.toHaveBeenCalled();
+    });
+
+    it('cancels the order from a screen whose invoice had already lapsed', async () => {
+      const payment = await startPaid('order-1');
+      lapse(payment);
+
+      await expect(service.cancelPayment('user-1', payment.id)).resolves.toMatchObject({ status: 'EXPIRED' });
+      expect(client.closePaymentExtId).not.toHaveBeenCalled();
+      expect(orders.cancel).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the order alone when another payment of it went through', async () => {
+      const payment = await startPaid('order-1');
+      const card: Payment = {
+        ...payment,
+        id: 'card-1',
+        provider: 'AGROPROMBANK_WEB',
+        status: 'REQUIRES_ACTION',
+        invoiceId: '1999998',
+      };
+      db.payments.set(card.id, card);
+
+      await expect(service.cancelPayment('user-1', payment.id)).resolves.toMatchObject({
+        paymentId: 'card-1',
+        status: 'PAID',
+      });
+      expect(db.payments.get(payment.id)?.status).toBe('FAILED');
+      expect(orders.cancel).not.toHaveBeenCalled();
+    });
+
+    it('closes a newer invoice of the order too, opened in another tab', async () => {
+      const payment = await startPaid('order-1');
+      db.payments.set('qr-2', { ...payment, id: 'qr-2', invoiceId: '1999997' });
+
+      await service.cancelPayment('user-1', payment.id);
+
+      expect(client.closePaymentExtId).toHaveBeenCalledWith('1999997', DEFAULT_QR);
+      expect(db.payments.get('qr-2')?.status).toBe('FAILED');
+      expect(orders.cancel).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers the invoice when the order went on while it was being cancelled', async () => {
+      const payment = await startPaid('order-1');
+      orders.cancel.mockRejectedValue(new ConflictException('The order changed while it was being cancelled'));
+
+      await expect(service.cancelPayment('user-1', payment.id)).resolves.toMatchObject({ status: 'EXPIRED' });
+    });
+
+    it('does not cancel an order that is no longer waiting', async () => {
+      const payment = await startPaid('order-1');
+      const order = db.orders.get('order-1');
+      if (order) order.status = 'EXPIRED';
+
+      await expect(service.cancelPayment('user-1', payment.id)).resolves.toMatchObject({ status: 'EXPIRED' });
+      expect(orders.cancel).not.toHaveBeenCalled();
     });
 
     it('keeps the invoice pending when the bank could not be told to close it', async () => {
@@ -416,6 +499,8 @@ describe('AgroprombankQrService', () => {
 
       expect(errorCode(err)).toMatchObject({ code: 'QR_BANK_UNAVAILABLE' });
       expect(db.payments.get(payment.id)?.status).toBe('PENDING');
+      // It may be paid for all we know: the order waits with it.
+      expect(orders.cancel).not.toHaveBeenCalled();
     });
   });
 

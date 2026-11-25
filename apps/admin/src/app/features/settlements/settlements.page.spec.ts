@@ -241,7 +241,9 @@ describe('SettlementsPage', () => {
       expect(textOf('figure-compensation-points')).toBe('по баллам 20 руб.');
       expect(textOf('figure-commission')).toContain('Комиссия takeAway · 15');
       expect(textOf('figure-commission')).toContain('22,50 руб.');
-      expect(textOf('figure-commission')).toContain('с полной цены заказа — оплата картой + компенсация: с 150 руб.');
+      expect(textOf('figure-commission')).toContain(
+        'с полной цены заказа — оплата картой + компенсация + промокоды бренда: с 150 руб.',
+      );
       expect(textOf('figure-net')).toContain('К взаиморасчёту');
       expect(textOf('figure-net')).toContain('takeAway должен бренду 7,50 руб.');
       expect(byTestId('figure-net')?.getAttribute('data-sign')).toBe('negative');
@@ -306,6 +308,7 @@ describe('SettlementsPage', () => {
         'Оплачено картами',
         'Компенсация по акциям',
         'Компенсация по баллам',
+        'База комиссии',
         'Комиссия',
         'К взаиморасчёту',
       ]);

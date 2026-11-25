@@ -360,6 +360,13 @@ describe('OrderDetailPanelComponent — a takeAway promo order', () => {
     expect(el.querySelector('[data-testid="order-business-total"]')).toBeNull();
     expect(el.querySelector('[data-testid="order-takeaway-compensation"]')).toBeNull();
     expect(text(el.querySelector('[data-testid="order-brand-promo"]'))).toBe(
+      'Промокод бренда: скидку даёт бренд, takeAway её не компенсирует. Комиссия takeAway — с полной цены заказа, до скидки.',
+    );
+  });
+
+  it('says nothing of the commission on an order the brand code covered whole', async () => {
+    const el = await render({ ...PROMO_ORDER, takeawayPromo: null, couponCode: 'FREE', totalCents: 0 });
+    expect(text(el.querySelector('[data-testid="order-brand-promo"]'))).toBe(
       'Промокод бренда: скидку даёт бренд, takeAway её не компенсирует.',
     );
   });

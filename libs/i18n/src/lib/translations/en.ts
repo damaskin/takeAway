@@ -306,7 +306,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       openBankApp: 'Open the bank app',
       expiresIn: 'The invoice is valid for {{time}}',
       waiting: 'Waiting for the payment — this screen updates by itself',
-      cancel: 'Cancel',
+      cancel: 'Cancel order',
       cancelling: 'Cancelling…',
       expiredTitle: 'The invoice has expired',
       expiredHint: 'This code is no longer accepted.',
@@ -1827,7 +1827,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         previousCheck: 'previous {{value}}',
         activeStores: 'stores with orders {{value}}',
         activeBrands: 'businesses with orders {{value}}',
-        commissionRate: '{{value}} of revenue on average',
+        commissionRate: '{{value}} of sales on average',
       },
       tip: {
         revenue: 'Revenue',
@@ -2004,6 +2004,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         points: 'Points',
       },
       brandPromo: "The brand's own promo code: the brand gives this discount, takeAway does not compensate it.",
+      brandPromoCommission: 'takeAway commission is on the full price, before the discount.',
       events: {
         STATUS_CHANGED: 'Status',
         ETA_UPDATED: 'Ready time changed',
@@ -3432,7 +3433,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         compensationPoints: 'for points',
         compensationNote: 'discounts takeAway pays for',
         commission: 'takeAway commission · {{rate}}',
-        commissionNote: 'on the full order price — card money + compensation: on {{base}}',
+        commissionNote: 'on the full order price — card money + compensation + brand promo codes: on {{base}}',
         net: 'To settle',
         netNote: 'commission {{commission}} − compensation {{compensation}}',
       },
@@ -3460,9 +3461,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         delivery: 'delivery {{amount}}',
       },
       breakdownHint:
-        "The brand's promo codes and gift cards are on the brand: they are neither compensated nor in the commission base.",
+        "The brand's promo codes and gift cards are on the brand: takeAway does not compensate them. The brand's promo code does not lower the commission — it is on the price before it. Gift cards are not in the commission base.",
       zeroTotal:
-        'Orders at 0 (a promo code, points or a gift card covered everything): {{count}}. Nobody paid by card for them; takeAway compensates the points on them as on any order.',
+        "Orders at 0 (a promo code, points or a gift card covered everything): {{count}}. Nobody paid by card for them, so the brand's promo code and gift card bring no commission; takeAway compensates the points as on any order.",
       unpaid:
         'Accepted orders not paid by card: {{count}}, worth {{amount}} — paid at the counter, if at all. No commission is taken on them.',
       waiting: {
@@ -3624,7 +3625,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         compensation:
           '«takeAway compensation» is the discounts takeAway pays for, not the brand: its own promos and loyalty points. takeAway returns them to the brand in the settlement. Cancelled and expired orders get none.',
         commission:
-          '«takeAway commission» = (paid by card + compensation) × the rate in force when the store accepted the order — that is, on the full order price, rounded to the cent order by order. Brand promo codes and gift cards are not in the base.',
+          '«takeAway commission» = (paid by card + compensation + discounts by brand promo codes) × the rate in force when the store accepted the order — that is, on the full order price, rounded to the cent order by order. A refund takes the same share off the base. Gift cards are not in the base, nor is an order not paid by card.',
         net: '«To settle» = commission − compensation. Plus — the brand pays takeAway, minus — takeAway pays the brand.',
         balance:
           '«Balance» = opening balance + the period’s result − confirmed settlements. A refund or a rate correction after a settlement goes into the next one.',
@@ -4082,6 +4083,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         carbs: 'Carbs {{grams}} g',
       },
       offlinePrompt: 'No connection to the server — adding to the cart is unavailable.',
+      notFound: 'Item not found',
       addFailed: 'Could not add this item to the cart. Please try again.',
       noStore: 'No store from this brand is taking orders right now.',
       cta: {

@@ -25,7 +25,9 @@ import { CatalogService } from '../core/catalog/catalog.service';
  * A card opens the product; its «+» adds one straight to the cart with the
  * default options, unless the product has something to choose — a size with
  * no default, an add-on that must be taken — then the product page opens, so
- * the customer sees what goes in and what it costs.
+ * the customer sees what goes in and what it costs. On a product's own page
+ * (`openToChoose`) the «+» always opens the product: the customer is
+ * choosing, and picks its variants and add-ons too (Maxim, 2026-11-25).
  */
 @Component({
   selector: 'app-food-suggestions',
@@ -156,6 +158,8 @@ export class FoodSuggestionsComponent {
   readonly title = input('common.upsell.title');
   /** Signed in and the store takes orders: the «+» shows. */
   readonly canAdd = input(false);
+  /** The «+» opens the product instead of adding it with its defaults. */
+  readonly openToChoose = input(false);
   /** The cart after a quick add. */
   readonly cartChanged = output<CartView>();
 
@@ -168,7 +172,7 @@ export class FoodSuggestionsComponent {
     const store = this.store();
     const { product } = suggestion;
     if (this.busy()) return;
-    if (product.hasRequiredOptions) {
+    if (this.openToChoose() || product.hasRequiredOptions) {
       void this.router.navigate(['/products', product.slug], { queryParams: { store: store.slug } });
       return;
     }

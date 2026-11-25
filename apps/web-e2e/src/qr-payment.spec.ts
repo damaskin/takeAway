@@ -61,7 +61,9 @@ test.describe('paying by QR', () => {
     expect(api.qrCancels).toEqual([]);
   });
 
-  test('with cards on, the customer picks QR, and may call the invoice off and pay it again', async ({ page }) => {
+  test('with cards on, the customer picks QR, may leave the code for later, and cancels the order in one tap', async ({
+    page,
+  }) => {
     const api = await installFakeApi(page, { qrPayment: {} });
     await basketAtCheckout(page);
 
@@ -79,14 +81,20 @@ test.describe('paying by QR', () => {
     await expect(page.getByRole('link', { name: 'Open the bank app' })).toHaveCount(0);
     await expect(page.getByTestId('qr-hint')).toContainText('Scan the code in the Agroprombank app');
 
-    await page.getByTestId('qr-cancel').click();
+    // «To the order» keeps the invoice; paying from the order shows the code again.
+    await page.getByTestId('qr-to-order').click();
     await page.waitForURL(/\/orders\/order-1$/);
-    expect(api.qrCancels).toHaveLength(1);
-
-    // The order stays, to be paid by QR again from its page.
+    expect(api.qrCancels).toEqual([]);
     await page.getByTestId('pay-by-qr').click();
     await page.waitForURL(/\/orders\/order-1\/qr$/);
     await expect(page.getByTestId('qr-code').locator('svg path')).toHaveCount(1);
-    expect(api.qrStarts).toEqual(['order-1', 'order-1']);
+
+    // «Cancel order» calls off the invoice and the order with it: nothing left waiting or counting down.
+    await expect(page.getByTestId('qr-cancel')).toHaveText('Cancel order');
+    await page.getByTestId('qr-cancel').click();
+    await page.waitForURL(/\/orders\/order-1$/);
+    expect(api.qrCancels).toHaveLength(1);
+    await expect(page.getByTestId('order-countdown')).toHaveCount(0);
+    await expect(page.getByTestId('pay-by-qr')).toHaveCount(0);
   });
 });

@@ -98,9 +98,14 @@ describe('permissions map', () => {
     });
 
     it('lets STAFF reach the operational sections', () => {
-      expect(canAccess('STAFF', 'orders')).toBe(true);
       expect(canAccess('STAFF', 'kitchen')).toBe(true);
       expect(canAccess('STAFF', 'stores')).toBe(true);
+    });
+
+    it('keeps «Заказы» from the kitchen: the API gives STAFF no orders archive (Maxim, 2026-11-25)', () => {
+      expect(ADMIN_ROLES.orders).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER']);
+      expect(canAccess('STAFF', 'orders')).toBe(false);
+      expect(canAccess('STAFF', 'reviews')).toBe(false);
     });
 
     it('lets STAFF run the stop-list but not edit the menu or the add-ins library', () => {

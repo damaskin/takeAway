@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { type DateRange, type RangeInput, resolveDateRange } from './analytics-range';
 import type { AnalyticsContext, AnalyticsScope } from './analytics-scope';
 import {
+  COMMISSION_BASE,
   COUNTED,
   DISCOUNTS,
   GIFT_CARDS,
@@ -211,10 +212,9 @@ export class OverviewService {
     const tz = range.timeZone;
     const localDay = (column: Prisma.Sql) =>
       Prisma.sql`to_char((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${tz}, 'YYYY-MM-DD')`;
-    // Commission at each brand's current rate on the part of the revenue paid
-    // through the platform — gift cards are sold by the brand itself and stay
-    // out, as in the settlements report. Cents with fractions.
-    const commission = Prisma.sql`(${REVENUE} - ${GIFT_CARDS})::numeric * b."commissionBps" / 10000`;
+    // Commission at each brand's current rate, on the base the settlements
+    // report uses. Cents with fractions.
+    const commission = Prisma.sql`(${COMMISSION_BASE})::numeric * b."commissionBps" / 10000`;
 
     const [groups, daily, firstOrders, load, statuses] = await Promise.all([
       this.prisma.$queryRaw<

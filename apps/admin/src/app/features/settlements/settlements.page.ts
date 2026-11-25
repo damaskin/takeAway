@@ -33,6 +33,7 @@ const DAY_COLUMNS: ReadonlyArray<keyof SettlementTotals> = [
   'cardNetCents',
   'takeawayCompensationCents',
   'pointsCompensationCents',
+  'commissionBaseCents',
   'commissionCents',
   'netCents',
 ];
@@ -63,7 +64,8 @@ interface WaitingLine {
  * Since 2026-11-14 guests pay the brand directly. One brand, one currency, a
  * period: what guests paid by card (the brand has that money), what takeAway
  * compensates for the discounts it funds (its promos and loyalty points), the
- * commission on the full price, and the net of the two — «К взаиморасчёту»,
+ * commission on the full price — the brand's own promo code included — and
+ * the net of the two, «К взаиморасчёту»,
  * worded by sign and by who is looking. The platform admin fixes a settlement
  * for a closed period; the payer marks it paid, the receiver answers
  * «Получено» or «Не получено». Only a confirmed settlement reduces the

@@ -439,6 +439,25 @@ test.describe('customer journey', () => {
     });
   });
 
+  test('a card under a drink, and its «+», open that product to choose from', async ({ page }) => {
+    const api = await installFakeApi(page, { menuKinds: true });
+    await signIn(page);
+
+    await page.goto('/products/flat-white?store=dubai-marina');
+    const croissant = page.getByTestId('food-suggestion').filter({ hasText: 'Croissant' });
+    await croissant.getByRole('link').click();
+    await page.waitForURL(/\/products\/croissant\?store=dubai-marina$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Croissant');
+
+    // Back shows the drink again, not only its address.
+    await page.goBack();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(PRODUCT.name);
+
+    await croissant.getByRole('button', { name: 'Add Croissant' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Croissant');
+    expect(api.cartAdds).toEqual([]);
+  });
+
   test('checkout offers something to eat with a drink, added in one tap', async ({ page }) => {
     await installFakeApi(page, { menuKinds: true });
     await signIn(page);

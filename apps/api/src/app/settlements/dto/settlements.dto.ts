@@ -206,7 +206,8 @@ export class SettlementTotalsDto implements SettlementTotals {
   pointsCompensationCents!: number;
   @ApiProperty({ description: 'What takeAway owes the brand: promo + points compensation.' })
   compensationCents!: number;
-  @ApiProperty({ description: 'card net + compensation' }) commissionBaseCents!: number;
+  @ApiProperty({ description: "card net + compensation + the brand's own promo codes on orders paid by card" })
+  commissionBaseCents!: number;
   @ApiProperty({ description: 'Rounded half up per order.' }) commissionCents!: number;
   @ApiProperty({ description: 'commission − compensation; + the brand owes takeAway, − takeAway owes the brand' })
   netCents!: number;

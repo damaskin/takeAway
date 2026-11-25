@@ -20,6 +20,7 @@ function raw(overrides: Record<string, unknown>) {
     takeawayDiscountCents: 0,
     takeawayCompensationCents: 0,
     pointsCompensationCents: 0,
+    brandDiscountCents: 0,
     giftCardCents: 0,
     deliveryFeeCents: 0,
     totalCents: 0,
@@ -57,7 +58,13 @@ const ROWS = [
     hasCapture: true,
   }),
   // A free coffee on a promo.
-  raw({ id: 'free', settledAt: new Date('2026-10-03T08:00:00Z'), subtotalCents: 4000, discountCents: 4000 }),
+  raw({
+    id: 'free',
+    settledAt: new Date('2026-10-03T08:00:00Z'),
+    subtotalCents: 4000,
+    discountCents: 4000,
+    brandDiscountCents: 4000,
+  }),
 ];
 
 /** The September settlement: 15 % of 100 — the brand paid takeAway 15 and takeAway confirmed it. */
