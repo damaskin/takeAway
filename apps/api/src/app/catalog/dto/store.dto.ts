@@ -25,6 +25,15 @@ export class StoreWorkingHourDto {
   isClosed!: boolean;
 }
 
+/** Declared before its users: decorator metadata reads the class when they are defined. */
+export class StoreOnlinePaymentDto {
+  @ApiProperty({ description: 'By card, in the card flow of /config/features `cardPaymentFlow`.' })
+  card!: boolean;
+
+  @ApiProperty({ description: '«Мобильный платёж» by QR in the bank app; already checked against the store currency.' })
+  qr!: boolean;
+}
+
 export class StoreListItemDto {
   @ApiProperty()
   id!: string;
@@ -182,14 +191,6 @@ export class StoreListItemDto {
       "How the store's customers can pay online — its brand's own terminal decides. Both false: orders are paid at the store.",
   })
   onlinePayment?: StoreOnlinePaymentDto;
-}
-
-export class StoreOnlinePaymentDto {
-  @ApiProperty({ description: 'By card, in the card flow of /config/features `cardPaymentFlow`.' })
-  card!: boolean;
-
-  @ApiProperty({ description: '«Мобильный платёж» by QR in the bank app; already checked against the store currency.' })
-  qr!: boolean;
 }
 
 export class BrandThemeDto {
