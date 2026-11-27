@@ -116,6 +116,12 @@ export interface OrderView {
    * Absent from an API older than this build — then CREATED and PAID count.
    */
   canCancel?: boolean;
+  /**
+   * Paid at the store: the order costs something, but its brand took no
+   * online payment when it was placed, so it went to the kitchen at once —
+   * no payment step, nothing to pay here. Absent from an older API — false.
+   */
+  payAtCounter?: boolean;
   // Delivery fields — null / 0 on PICKUP orders.
   deliveryAddressLine?: string | null;
   deliveryCity?: string | null;
@@ -127,6 +133,15 @@ export interface OrderView {
   outForDeliveryAt?: string | null;
   deliveredAt?: string | null;
   payment?: OrderPaymentView;
+}
+
+/**
+ * Router state checkout hands the order page when it could not start the
+ * online payment because the brand takes none (any more): the API's code,
+ * `ONLINE_PAYMENT_UNAVAILABLE` or `QR_PAYMENT_DISABLED`, shown there once.
+ */
+export interface OrderPageState {
+  paymentRefused?: string;
 }
 
 export interface CreateOrderInput {

@@ -20,7 +20,7 @@ import {
 } from '@takeaway/utils';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { interval, take, timer, type Subscription } from 'rxjs';
-import { LocaleFormatService, pickupDayLabel, takeawayPromoLabel } from '@takeaway/i18n';
+import { checkoutErrorText, LocaleFormatService, pickupDayLabel, takeawayPromoLabel } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -28,6 +28,7 @@ import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import {
   OrdersApi,
+  type OrderPageState,
   type OrderPaymentState,
   type OrderStatusString,
   type OrderView,
@@ -50,6 +51,15 @@ const STEPS: StatusStep[] = [
   { key: 'READY', label: 'web.orderStatus.step.ready', icon: '🛎' },
   { key: 'PICKED_UP', label: 'web.orderStatus.step.pickedUp', icon: '🏁' },
 ];
+
+/** Where the money stands, as the first step says: paid online, still waiting for it, or paid at the store. */
+type PaymentStep = 'paid' | 'awaiting' | 'counter';
+
+const PAYMENT_STEPS: Record<PaymentStep, Pick<StatusStep, 'label' | 'icon'>> = {
+  paid: { label: 'web.orderStatus.step.paid', icon: '✓' },
+  awaiting: { label: 'web.orderStatus.step.awaitingPayment', icon: '⏳' },
+  counter: { label: 'web.orderStatus.step.atCounter', icon: '🏪' },
+};
 
 const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY', 'PICKED_UP'];
 
@@ -308,8 +318,9 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
         </div>
 
         <!-- The pickup code: what the customer says at the counter. The
-             kitchen scans nothing, so there is no QR. -->
-        @if (!isTerminal(o.status)) {
+             kitchen scans nothing, so there is no QR. Nothing to collect
+             while the order still waits for its online payment. -->
+        @if (!isTerminal(o.status) && !awaitingPayment()) {
           <div
             data-testid="pickup-code"
             class="w-full flex flex-col items-center text-center"
@@ -332,7 +343,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               'web.orderStatus.codeHint' | translate
             }}</span>
           </div>
-        } @else {
+        } @else if (isTerminal(o.status)) {
           <span
             data-testid="pickup-code"
             style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
@@ -614,6 +625,13 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   private readonly catalog = inject(CatalogService);
   private readonly webPayments = inject(WebPaymentApi);
 
+  /**
+   * Checkout could not start the online payment because the brand takes none
+   * (any more): the API's code, from the navigation that opened this page.
+   */
+  private readonly refusedPayment =
+    (this.router.currentNavigation()?.extras.state as OrderPageState | undefined)?.paymentRefused ?? null;
+
   readonly order = signal<OrderView | null>(null);
   /** The bank's verdict from the return redirect; read once, then dropped from the URL. */
   readonly paymentReturn = signal<PaymentReturn | null>(null);
@@ -676,7 +694,9 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   /** «Ждём подтверждения точки», «Немного задерживаемся» … — see `orderWaitNote`. */
   readonly waitNote = computed(() => {
     const o = this.order();
-    return o ? orderWaitNote(o, this.store(), new Date(this.now())) : null;
+    if (!o) return null;
+    // Paid at the store: on the kitchen's board from the start, like an order with nothing to pay online.
+    return orderWaitNote(o.payAtCounter ? { ...o, totalCents: 0 } : o, this.store(), new Date(this.now()));
   });
 
   /**
@@ -758,6 +778,35 @@ export class OrderStatusPage implements OnInit, OnDestroy {
    */
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
 
+  /**
+   * Paid at the store (`payAtCounter`): its brand took no online payment, so
+   * the order went to the kitchen at once. Nothing here says «Оплачено» or
+   * offers to pay it.
+   */
+  readonly payAtCounter = computed(() => this.order()?.payAtCounter === true);
+
+  /**
+   * A new order still waiting for its online payment: it costs something, is
+   * not paid at the store, and no money is held or taken yet. It has no
+   * pickup code to show until the money arrives.
+   */
+  readonly awaitingPayment = computed(() => {
+    const o = this.order();
+    if (!o || o.status !== 'CREATED' || o.payAtCounter || o.totalCents <= 0) return false;
+    return UNSETTLED.includes(this.paymentState());
+  });
+
+  /** What the first step says — see {@link PAYMENT_STEPS}. */
+  private readonly paymentStep = computed<PaymentStep>(() => {
+    if (this.payAtCounter()) return 'counter';
+    return this.awaitingPayment() ? 'awaiting' : 'paid';
+  });
+
+  /** The store's brand still takes this way of paying online; true from an API that does not say. */
+  private storeTakes(way: 'card' | 'qr'): boolean {
+    return this.store()?.onlinePayment?.[way] ?? true;
+  }
+
   /** The order's store can be paid by QR in Agroprombank's app. */
   private readonly qrOffered = computed(() => {
     const o = this.order();
@@ -778,11 +827,11 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   /**
    * «Оплатить мобильным платежом»: a new order whose money has not arrived, in a store the
    * QR payment takes. The QR screen issues the invoice, or shows the one
-   * already waiting.
+   * already waiting. Never for an order paid at the store.
    */
   readonly canPayByQr = computed(() => {
     const o = this.order();
-    if (!o || o.status !== 'CREATED' || !this.qrOffered()) return false;
+    if (!o || o.status !== 'CREATED' || o.payAtCounter || !this.qrOffered() || !this.storeTakes('qr')) return false;
     return UNSETTLED.includes(this.paymentState()) && !this.polling();
   });
 
@@ -814,6 +863,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     if (ended) {
       return this.qrMoneyBack(ended) ? 'common.qrPayment.order.refunded' : `web.orderStatus.payment.outcome.${ended}`;
     }
+    if (this.payAtCounter()) return 'web.orderStatus.payment.atCounter';
     if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
     const qr = this.paidByQr();
     switch (this.paymentState()) {
@@ -841,9 +891,11 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     }
   });
 
-  /** The concrete numbers under the title: amount and, when known, the card. */
+  /** The concrete numbers under the title: amount and, when known, the card; what to pay at the store. */
   readonly paymentDetail = computed(() => {
-    const payment = this.order()?.payment;
+    const o = this.order();
+    if (o && this.payAtCounter() && !this.endedMoney()) return this.price(o.totalCents);
+    const payment = o?.payment;
     if (!payment || payment.state === 'NONE') return '';
     const amount = this.price(payment.amountCents);
     return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
@@ -852,6 +904,10 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   /** A line under the numbers saying what happens next, as a translation key. */
   readonly paymentHint = computed(() => {
     if (this.endedMoney()) return '';
+    if (this.payAtCounter()) {
+      const status = this.order()?.status;
+      return status && !this.isTerminal(status) ? 'common.payAtCounter.orderHint' : '';
+    }
     if (this.paymentState() === 'HELD') {
       return this.paidByQr() ? 'common.qrPayment.order.heldHint' : 'web.orderStatus.payment.heldHint';
     }
@@ -865,10 +921,12 @@ export class OrderStatusPage implements OnInit, OnDestroy {
    * Paying again on the bank's page: only in the Web-платёж flow, only while
    * the order is new and its money has not arrived, and not while we are
    * still waiting for the bank to confirm a payment the customer just made.
+   * Never for an order paid at the store.
    */
   readonly canRetryPayment = computed(() => {
     const o = this.order();
-    if (!o || o.status !== 'CREATED' || !this.flags.webPaymentsEnabled()) return false;
+    if (!o || o.status !== 'CREATED' || o.payAtCounter || !this.flags.webPaymentsEnabled()) return false;
+    if (!this.storeTakes('card')) return false;
     if (!UNSETTLED.includes(this.paymentState())) return false;
     return !this.polling();
   });
@@ -886,6 +944,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
       default:
         break;
     }
+    if (this.payAtCounter()) return '🏪';
     if (this.bankSaidFail()) return '⚠️';
     switch (this.paymentState()) {
       case 'PAID':
@@ -1067,15 +1126,23 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     return call ? 'web.orderStatus.cancel.chargedCall' : 'web.orderStatus.cancel.chargedNoPhone';
   });
 
+  /**
+   * The progress row. The first step says where the money stands: «Оплачено»
+   * once paid online (or held), «Ждём оплату» — current — while a new order
+   * waits for its online payment, «Оплата на месте» — done from the moment
+   * it is placed — for an order paid at the store.
+   */
   readonly steps = computed(() => {
     const status = this.order()?.status ?? 'CREATED';
     const activeIdx = STEP_ORDER.indexOf(status);
+    const payment = this.paymentStep();
     return STEPS.map((step) => {
       const stepIdx = STEP_ORDER.indexOf(step.key);
-      const completed = stepIdx < activeIdx;
-      const current = stepIdx === activeIdx || (step.key === 'PAID' && status === 'CREATED');
+      const first = step.key === 'PAID';
+      const completed = stepIdx < activeIdx || (first && payment === 'counter' && activeIdx >= 0);
+      const current = stepIdx === activeIdx || (first && status === 'CREATED');
       const { background, color } = this.stepStyle(completed, current);
-      return { ...step, background, color };
+      return { ...step, ...(first ? PAYMENT_STEPS[payment] : {}), background, color };
     });
   });
 
@@ -1087,6 +1154,12 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     }
 
     this.flags.load();
+    if (this.refusedPayment) {
+      this.paymentError.set(
+        checkoutErrorText({ code: this.refusedPayment }, this.translate, this.fmt) ??
+          this.translate.instant('common.requestFailed'),
+      );
+    }
     const returned = readPaymentReturn(this.route.snapshot.queryParamMap.get('payment'));
     if (returned) {
       this.paymentReturn.set(returned);
@@ -1159,7 +1232,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
 
   private awaitingConfirmation(): boolean {
     const state = this.paymentState();
-    return this.order()?.status === 'CREATED' && (state === 'NONE' || state === 'PENDING');
+    return this.order()?.status === 'CREATED' && !this.payAtCounter() && (state === 'NONE' || state === 'PENDING');
   }
 
   private stopPolling(): void {

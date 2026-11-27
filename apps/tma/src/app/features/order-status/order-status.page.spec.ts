@@ -5,11 +5,12 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
+import type { StoreOnlinePayment } from '@takeaway/shared-types';
 import { type Observable, of, throwError } from 'rxjs';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
-import { OrdersApi, type OrderView } from '../../core/orders/orders.service';
+import { OrdersApi, type OrderPageState, type OrderView } from '../../core/orders/orders.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
@@ -48,7 +49,20 @@ describe('TmaOrderStatusPage', () => {
   /** The page's `order.statusChanged` handler, as it subscribed. */
   let pushStatus: (event: { status: OrderView['status'] }) => void;
 
-  async function open(first: OrderView, opts: { phone?: string; qr?: string[]; cards?: boolean } = {}) {
+  async function open(
+    first: OrderView,
+    opts: {
+      phone?: string;
+      qr?: string[];
+      cards?: boolean;
+      /** The bank's page is the card flow; off by default. */
+      web?: boolean;
+      /** The store's `onlinePayment`; absent by default, as from an older API. */
+      onlinePayment?: StoreOnlinePayment;
+      /** Router state checkout left for the screen. */
+      state?: OrderPageState;
+    } = {},
+  ) {
     orders = {
       get: jest.fn(() => of(first)),
       cancel: jest.fn(),
@@ -66,7 +80,8 @@ describe('TmaOrderStatusPage', () => {
           provide: CatalogService,
           useValue: {
             getMenu: () => of({ storeId: 'store-1', storeSlug: 'centre', categories: [] }),
-            getStore: () => of({ id: 'store-1', phone: opts.phone ?? null, openNow: true }),
+            getStore: () =>
+              of({ id: 'store-1', phone: opts.phone ?? null, openNow: true, onlinePayment: opts.onlinePayment }),
           },
         },
         {
@@ -83,7 +98,7 @@ describe('TmaOrderStatusPage', () => {
           provide: FeatureFlagsStore,
           useValue: {
             load: jest.fn(),
-            webPaymentsEnabled: signal(false),
+            webPaymentsEnabled: signal(opts.web ?? false),
             cardPaymentsEnabled: signal(opts.cards ?? true),
             qrPaymentCurrencies: signal(opts.qr ?? []),
           },
@@ -99,7 +114,13 @@ describe('TmaOrderStatusPage', () => {
     translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
     translate.use('ru');
     const harness = await RouterTestingHarness.create();
-    const page = await harness.navigateByUrl('/orders/ord-1', TmaOrderStatusPage);
+    let page: TmaOrderStatusPage;
+    if (opts.state) {
+      await TestBed.inject(Router).navigateByUrl('/orders/ord-1', { state: opts.state });
+      page = harness.routeDebugElement?.componentInstance as TmaOrderStatusPage;
+    } else {
+      page = await harness.navigateByUrl('/orders/ord-1', TmaOrderStatusPage);
+    }
     harness.detectChanges();
     const root = harness.routeNativeElement as HTMLElement;
     const byTestId = (id: string) => root.querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -291,6 +312,72 @@ describe('TmaOrderStatusPage', () => {
       expect(byTestId('payment-line')?.textContent).toContain('Возврат в обработке');
       expect(root.textContent).not.toContain('Спишем при принятии заказа');
       expect(root.textContent).not.toContain('Если точка не примет заказ');
+      destroy();
+    });
+  });
+
+  /** Online payment only at the brand's own terminal, else at the counter (docs/agroprombank-payments.md §13.3). */
+  describe('paid at the counter, or waiting for the online payment', () => {
+    const NONE = { state: 'NONE' as const, amountCents: 0, cardMask: null, paidAt: null };
+    const rows = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll('[data-testid="timeline-step"]'), (row) =>
+        Array.from(row.children, (el) => el.textContent?.trim()).join(' '),
+      );
+
+    it('says «Оплата на месте», done from the moment the order is placed, and offers no payment', async () => {
+      const { root, text, byTestId, destroy } = await open(
+        order({ status: 'CREATED', payAtCounter: true, payment: NONE }),
+        { qr: ['RUP'], web: true },
+      );
+      expect(rows(root)).toEqual(['✓ Оплата на месте', '2 Принят кухней', '3 Готов к выдаче', '4 Получен']);
+      expect(text('payment-line')).toContain('Оплата на месте');
+      expect(text('payment-line')).toContain('45');
+      expect(root.textContent).toContain('Оплатите заказ при получении.');
+      expect(root.textContent).not.toContain('Оплата подтверждена');
+      expect(root.textContent).not.toContain('Оплачено');
+      expect(byTestId('pay-by-qr')).toBeNull();
+      expect(byTestId('retry-payment')).toBeNull();
+      // On the kitchen's board from the start: the code to say, and the wait for the store.
+      expect(text('pickup-code')).toBe('код A-12');
+      expect(text('order-slogan')).toBe('Ждём подтверждения точки');
+      destroy();
+    });
+
+    it('waits for the online payment: «Ждём оплату» as the current row, and no pickup code yet', async () => {
+      const { page, root, text, byTestId, destroy } = await open(order({ status: 'CREATED', payment: NONE }), {
+        qr: ['RUP'],
+      });
+      expect(rows(root)[0]).toBe('⏳ Ждём оплату');
+      expect(page.timeline()[0]).toMatchObject({ done: false, current: true });
+      expect(byTestId('pickup-code')).toBeNull();
+      expect(text('payment-line')).toContain('Ждём оплату');
+      expect(byTestId('pay-by-qr')).not.toBeNull();
+      destroy();
+    });
+
+    it('offers no online payment the store no longer takes', async () => {
+      const { byTestId, destroy } = await open(order({ status: 'CREATED', payment: NONE }), {
+        qr: ['RUP'],
+        web: true,
+        onlinePayment: { card: false, qr: false },
+      });
+      expect(byTestId('pay-by-qr')).toBeNull();
+      expect(byTestId('retry-payment')).toBeNull();
+      destroy();
+    });
+
+    it('says the payment is confirmed once it is, with the pickup code', async () => {
+      const { root, text, destroy } = await open(order());
+      expect(rows(root)[0]).toBe('✓ Оплата подтверждена');
+      expect(text('pickup-code')).toBe('код A-12');
+      destroy();
+    });
+
+    it('says why when checkout could not start the online payment', async () => {
+      const { root, destroy } = await open(order({ status: 'CREATED', payAtCounter: true, payment: NONE }), {
+        state: { paymentRefused: 'ONLINE_PAYMENT_UNAVAILABLE' },
+      });
+      expect(root.textContent).toContain('Онлайн-оплата в этом заведении недоступна — оплатите заказ на месте');
       destroy();
     });
   });

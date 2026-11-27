@@ -22,11 +22,12 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
   OrdersApi,
+  type OrderPageState,
   type OrderPaymentState,
   type OrderStatusString,
   type OrderView,
 } from '../../core/orders/orders.service';
-import { LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
+import { checkoutErrorText, LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
@@ -48,6 +49,17 @@ interface CancellationLine {
 
 /** Payment states where the order still waits for its money. */
 const UNSETTLED: readonly OrderPaymentState[] = ['NONE', 'PENDING', 'FAILED'];
+
+/** The statuses an order goes through, in order; a cancelled or expired one has left them. */
+const PROGRESS: readonly OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY', 'PICKED_UP'];
+
+/** The timeline's rows; labels are translation keys, resolved with | translate in the template. */
+const TIMELINE: ReadonlyArray<{ idx: number; key: OrderStatusString; label: string }> = [
+  { idx: 1, key: 'PAID', label: 'web.orderStatus.status.PAID' },
+  { idx: 2, key: 'ACCEPTED', label: 'web.orderStatus.status.ACCEPTED' },
+  { idx: 3, key: 'READY', label: 'web.orderStatus.status.READY' },
+  { idx: 4, key: 'PICKED_UP', label: 'web.orderStatus.status.PICKED_UP' },
+];
 
 /**
  * While the customer pays in the browser the order is re-read this often, for
@@ -230,9 +242,14 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
                 >
               }
             }
-            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
-              'web.orderStatus.codeLabel' | translate: { code: o.orderCode }
-            }}</span>
+            <!-- The pickup code: nothing to collect while the order waits for its online payment. -->
+            @if (!awaitingPayment()) {
+              <span
+                data-testid="pickup-code"
+                style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                >{{ 'web.orderStatus.codeLabel' | translate: { code: o.orderCode } }}</span
+              >
+            }
           }
         </div>
 
@@ -260,18 +277,21 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
 
         <!-- Timeline -->
         <div class="flex flex-col w-full" style="gap: 12px">
-          @for (step of timelineSteps; track step.key) {
+          @for (step of timeline(); track step.key) {
             <div
+              data-testid="timeline-step"
               class="flex items-center"
               style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 14px 16px; gap: 12px"
             >
               <span
                 class="flex items-center justify-center"
-                [style.background]="isStepDone(o.status, step.key) ? 'var(--color-mint)' : 'var(--color-border-light)'"
-                [style.color]="isStepDone(o.status, step.key) ? 'white' : 'var(--color-text-tertiary)'"
+                [style.background]="
+                  step.done ? 'var(--color-mint)' : step.current ? 'var(--color-caramel)' : 'var(--color-border-light)'
+                "
+                [style.color]="step.done || step.current ? 'white' : 'var(--color-text-tertiary)'"
                 style="width: 28px; height: 28px; border-radius: 9999px; font-size: 13px; font-weight: 700"
               >
-                {{ isStepDone(o.status, step.key) ? '✓' : step.idx }}
+                {{ step.marker }}
               </span>
               <span
                 style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
@@ -420,6 +440,13 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private readonly catalog = inject(CatalogService);
   private readonly webPayments = inject(WebPaymentApi);
 
+  /**
+   * Checkout could not start the online payment because the brand takes none
+   * (any more): the API's code, from the navigation that opened this screen.
+   */
+  private readonly refusedPayment =
+    (this.router.currentNavigation()?.extras.state as OrderPageState | undefined)?.paymentRefused ?? null;
+
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
   /** The bank's verdict from the return redirect; read once, then dropped from the URL. */
@@ -487,19 +514,57 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     return [{ id: o.storeId, lat: o.storeLatitude, lng: o.storeLongitude, label: o.storeName, kind: 'store' }];
   });
 
-  // Labels are translation keys — resolved with | translate in the template.
-  readonly timelineSteps = [
-    { idx: 1, key: 'PAID' as OrderStatusString, label: 'web.orderStatus.status.PAID' },
-    { idx: 2, key: 'ACCEPTED' as OrderStatusString, label: 'web.orderStatus.status.ACCEPTED' },
-    { idx: 3, key: 'READY' as OrderStatusString, label: 'web.orderStatus.status.READY' },
-    { idx: 4, key: 'PICKED_UP' as OrderStatusString, label: 'web.orderStatus.status.PICKED_UP' },
-  ];
+  /**
+   * The timeline. Its first row says where the money stands: «Оплата
+   * подтверждена» once paid online, «Ждём оплату» — the current row — while a
+   * new order waits for its online payment, «Оплата на месте» — done from the
+   * moment it is placed — for an order paid at the store.
+   */
+  readonly timeline = computed(() => {
+    const o = this.order();
+    if (!o) return [];
+    const awaiting = this.awaitingPayment();
+    const counter = this.payAtCounter();
+    return TIMELINE.map((step) => {
+      const first = step.key === 'PAID';
+      const done = first && counter ? PROGRESS.includes(o.status) : this.isStepDone(o.status, step.key);
+      const current = first && awaiting;
+      let label = step.label;
+      if (first && awaiting) label = 'web.orderStatus.step.awaitingPayment';
+      if (first && counter) label = 'web.orderStatus.step.atCounter';
+      const marker = done ? '✓' : current ? '⏳' : String(step.idx);
+      return { key: step.key, label, done, current, marker };
+    });
+  });
 
   private tickSub: Subscription | null = null;
   private detachSocket: (() => void) | null = null;
   private detachBack: (() => void) | null = null;
 
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
+
+  /**
+   * Paid at the store (`payAtCounter`): its brand took no online payment, so
+   * the order went to the kitchen at once. Nothing here says it is paid or
+   * offers to pay it.
+   */
+  readonly payAtCounter = computed(() => this.order()?.payAtCounter === true);
+
+  /**
+   * A new order still waiting for its online payment: it costs something, is
+   * not paid at the store, and no money is held or taken yet. It has no
+   * pickup code to show until the money arrives.
+   */
+  readonly awaitingPayment = computed(() => {
+    const o = this.order();
+    if (!o || o.status !== 'CREATED' || o.payAtCounter || o.totalCents <= 0) return false;
+    return UNSETTLED.includes(this.paymentState());
+  });
+
+  /** The store's brand still takes this way of paying online; true from an API that does not say. */
+  private storeTakes(way: 'card' | 'qr'): boolean {
+    return this.store()?.onlinePayment?.[way] ?? true;
+  }
 
   /** The order's store can be paid by QR in Agroprombank's app. */
   private readonly qrOffered = computed(() => {
@@ -521,11 +586,11 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   /**
    * «Оплатить мобильным платежом»: a new order whose money has not arrived, in a store the
    * QR payment takes. The QR screen issues the invoice, or shows the one
-   * already waiting.
+   * already waiting. Never for an order paid at the store.
    */
   readonly canPayByQr = computed(() => {
     const o = this.order();
-    if (!o || o.status !== 'CREATED' || !this.qrOffered()) return false;
+    if (!o || o.status !== 'CREATED' || o.payAtCounter || !this.qrOffered() || !this.storeTakes('qr')) return false;
     return UNSETTLED.includes(this.paymentState());
   });
 
@@ -560,6 +625,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     if (ended) {
       return this.qrMoneyBack(ended) ? 'common.qrPayment.order.refunded' : `web.orderStatus.payment.outcome.${ended}`;
     }
+    if (this.payAtCounter()) return 'web.orderStatus.payment.atCounter';
     if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
     const qr = this.paidByQr();
     switch (this.paymentState()) {
@@ -588,7 +654,10 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   });
 
   readonly paymentDetail = computed(() => {
-    const payment = this.order()?.payment;
+    const o = this.order();
+    // Paid at the store: what to pay there.
+    if (o && this.payAtCounter() && !this.endedMoney()) return this.price(o.totalCents);
+    const payment = o?.payment;
     if (!payment || payment.state === 'NONE') return '';
     const amount = this.fmt.money(payment.amountCents, this.order()?.currency);
     return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
@@ -597,6 +666,10 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   /** A line under the payment chip saying what happens next, as a translation key. */
   readonly paymentHint = computed(() => {
     if (this.endedMoney()) return '';
+    if (this.payAtCounter()) {
+      const status = this.order()?.status;
+      return status && !this.isTerminal(status) ? 'common.payAtCounter.orderHint' : '';
+    }
     if (this.paymentState() === 'HELD') {
       return this.paidByQr() ? 'common.qrPayment.order.heldHint' : 'web.orderStatus.payment.heldHint';
     }
@@ -606,11 +679,13 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   /**
    * Paying (again) on the bank's page: only in the Web-платёж flow, and only
-   * while the order is new and its money has not arrived.
+   * while the order is new and its money has not arrived. Never for an order
+   * paid at the store.
    */
   readonly canRetryPayment = computed(() => {
     const o = this.order();
-    if (!o || o.status !== 'CREATED' || !this.flags.webPaymentsEnabled()) return false;
+    if (!o || o.status !== 'CREATED' || o.payAtCounter || !this.flags.webPaymentsEnabled()) return false;
+    if (!this.storeTakes('card')) return false;
     return UNSETTLED.includes(this.paymentState());
   });
 
@@ -627,6 +702,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
       default:
         break;
     }
+    if (this.payAtCounter()) return '🏪';
     if (this.bankSaidFail()) return '⚠️';
     switch (this.paymentState()) {
       case 'PAID':
@@ -758,7 +834,9 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   /** «Ждём подтверждения точки», «Немного задерживаемся» … — see `orderWaitNote`. */
   readonly waitNote = computed(() => {
     const o = this.order();
-    return o ? orderWaitNote(o, this.store(), new Date(this.now())) : null;
+    if (!o) return null;
+    // Paid at the store: on the kitchen's board from the start, like an order with nothing to pay online.
+    return orderWaitNote(o.payAtCounter ? { ...o, totalCents: 0 } : o, this.store(), new Date(this.now()));
   });
 
   constructor() {
@@ -785,6 +863,12 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     this.orderId = id;
 
     this.flags.load();
+    if (this.refusedPayment) {
+      this.paymentError.set(
+        checkoutErrorText({ code: this.refusedPayment }, this.translate, this.fmt) ??
+          this.translate.instant('common.requestFailed'),
+      );
+    }
     const returned = readPaymentReturn(this.route.snapshot.queryParamMap.get('payment'));
     if (returned) {
       this.paymentReturn.set(returned);
@@ -888,7 +972,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   private awaitingConfirmation(): boolean {
     const state = this.paymentState();
-    return this.order()?.status === 'CREATED' && (state === 'NONE' || state === 'PENDING');
+    return this.order()?.status === 'CREATED' && !this.payAtCounter() && (state === 'NONE' || state === 'PENDING');
   }
 
   /** The QR screen: it issues the invoice, or shows the one already waiting. */
@@ -1060,9 +1144,8 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   }
 
   isStepDone(current: OrderStatusString, step: OrderStatusString): boolean {
-    const order: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY', 'PICKED_UP'];
-    const ci = order.indexOf(current);
-    const si = order.indexOf(step);
+    const ci = PROGRESS.indexOf(current);
+    const si = PROGRESS.indexOf(step);
     if (ci < 0 || si < 0) return false;
     return ci >= si;
   }

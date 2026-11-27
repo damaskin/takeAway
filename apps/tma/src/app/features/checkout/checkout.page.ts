@@ -47,7 +47,7 @@ import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh
 import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
-import { OrdersApi } from '../../core/orders/orders.service';
+import { OrdersApi, type OrderPageState } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { PaymentMethodChoice } from '../../core/payments/payment-method-choice.service';
 import { QrPaymentApi } from '../../core/payments/qr-payment.service';
@@ -57,6 +57,24 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
+
+type MainButtonKind = 'asap' | 'scheduled' | 'delivery' | 'deliveryScheduled';
+
+/** The main button's words: «Оплатить …», or «Заказать за …» where the order is paid at the store. */
+const MAIN_BUTTON_KEYS: Record<'pay' | 'counter', Record<MainButtonKind, string>> = {
+  pay: {
+    asap: 'tma.checkout.payAsap',
+    scheduled: 'tma.checkout.payScheduled',
+    delivery: 'tma.checkout.payDelivery',
+    deliveryScheduled: 'tma.checkout.payDeliveryScheduled',
+  },
+  counter: {
+    asap: 'tma.checkout.counterAsap',
+    scheduled: 'tma.checkout.counterScheduled',
+    delivery: 'tma.checkout.counterDelivery',
+    deliveryScheduled: 'tma.checkout.counterDeliveryScheduled',
+  },
+};
 
 /**
  * TMA Checkout — pencil u5mrZ.
@@ -488,7 +506,9 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         />
       }
 
-      <!-- Payment method: by card (Agroprombank), or by QR in the bank's app. -->
+      <!-- Payment method: by card (Agroprombank), or by QR in the bank's app. A
+           store whose brand takes no online payment (no terminal of its own)
+           is paid at the counter instead. -->
       @if (paymentMethodChoice()) {
         <div class="flex flex-col" style="gap: 10px">
           <span
@@ -517,7 +537,26 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
           </div>
         </div>
       }
-      @if (paymentMethod() === 'QR') {
+      @if (payAtCounter()) {
+        <!-- No payment step: the order goes to the kitchen at once. -->
+        @if (hasTotal()) {
+          <div class="flex flex-col" style="gap: 10px">
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ 'tma.checkout.paymentMethod' | translate }}</span
+            >
+            <div
+              role="note"
+              data-testid="pay-at-counter"
+              class="flex flex-col"
+              style="gap: 4px; padding: 12px 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+            >
+              <strong>{{ 'common.payAtCounter.title' | translate }}</strong>
+              <span>{{ 'common.payAtCounter.checkoutHint' | translate }}</span>
+            </div>
+          </div>
+        }
+      } @else if (paymentMethod() === 'QR') {
         <div class="flex flex-col" style="gap: 10px">
           @if (!paymentMethodChoice()) {
             <span
@@ -795,14 +834,39 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly taxRateBps = signal(0);
   readonly taxIncludedInPrice = signal(true);
 
-  /** Card payments are only offered where ops enabled the bank integration. */
-  readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  /**
+   * How the store's brand takes payment online — its own bank terminal
+   * decides (`onlinePayment`). Null from an API that predates it: the
+   * feature flags alone decide then, as before.
+   */
+  private readonly onlinePayment = computed(() => this.servingStore()?.onlinePayment ?? null);
+  /**
+   * The store takes no online payment at all — its brand has no terminal of
+   * its own: the order goes to the kitchen at once and is paid at the store.
+   * Only when the API says so; it decides the same when the order is placed.
+   */
+  readonly payAtCounter = computed(() => {
+    const online = this.onlinePayment();
+    return !!online && !online.card && !online.qr;
+  });
+  /**
+   * Card payments are only offered where ops enabled the bank integration
+   * and the store's brand takes cards at its own terminal.
+   */
+  readonly cardPaymentsEnabled = computed(
+    () => this.flags.cardPaymentsEnabled() && (this.onlinePayment()?.card ?? true),
+  );
   /** Cards bound in the profile, held in one tap — the `token` flow. */
-  readonly boundCardsEnabled = this.flags.boundCardsEnabled;
+  readonly boundCardsEnabled = computed(() => this.flags.boundCardsEnabled() && this.cardPaymentsEnabled());
   /** The customer pays on the bank's own page — the `web` flow. */
-  readonly webPaymentsEnabled = this.flags.webPaymentsEnabled;
-  /** The store can be paid by QR in Agroprombank's app: its currency is one the QR payment takes. */
-  readonly qrPaymentOffered = computed(() => qrPaymentOffered(this.currency(), this.flags.qrPaymentCurrencies()));
+  readonly webPaymentsEnabled = computed(() => this.flags.webPaymentsEnabled() && this.cardPaymentsEnabled());
+  /**
+   * The store can be paid by QR in Agroprombank's app: its currency is one
+   * the QR payment takes, and its brand takes QR payment.
+   */
+  readonly qrPaymentOffered = computed(
+    () => qrPaymentOffered(this.currency(), this.flags.qrPaymentCurrencies()) && (this.onlinePayment()?.qr ?? true),
+  );
   /** Both ways are on: the customer picks, and the pick is remembered on this device. */
   readonly paymentMethodChoice = computed(() => this.cardPaymentsEnabled() && this.qrPaymentOffered());
   /** How this order gets paid; null while neither the card nor QR is on. */
@@ -826,9 +890,13 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     const flow = this.flags.cardPaymentFlow();
     untracked(() => (flow === 'token' ? this.loadCards() : this.refreshMainButton()));
   });
-  /** QR turning up with the flags or the store, or the customer's pick, changes what the main button does. */
+  /**
+   * QR turning up with the flags or the store, the customer's pick, or a
+   * store paid at the counter changes what the main button does.
+   */
   private readonly refreshOnPaymentMethod = effect(() => {
     this.paymentMethod();
+    this.payAtCounter();
     untracked(() => this.refreshMainButton());
   });
   readonly cards = signal<BoundCard[]>([]);
@@ -877,10 +945,14 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     suggestionRow(this.menu(), this.basketProductIds(), this.suggestions(), 6),
   );
 
-  readonly needsCard = computed(() => {
+  /** The order costs something once a promo code is off it. */
+  readonly hasTotal = computed(() => {
     const c = this.cart();
     return !!c && this.totalCents(c.subtotalCents) > 0;
   });
+
+  /** Paid online before the kitchen sees it: there is something to pay, and the store takes online payment. */
+  readonly needsCard = computed(() => this.hasTotal() && !this.payAtCounter());
 
   /** A way to pay by card is ready: the bank's page, or a bound card picked. */
   readonly payingByCard = computed(
@@ -1272,19 +1344,22 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.tg.hideMainButton();
       return;
     }
-    // Orders are paid by card or by QR; until there is a way to pay, there
-    // is nothing to press.
+    // Orders are paid by card or by QR, or at a store that takes no online
+    // payment, at the counter; until there is a way to pay, there is nothing
+    // to press.
     if (this.needsCard() && !this.paymentReady()) {
       this.tg.hideMainButton();
       return;
     }
     const total = this.price(this.totalCents(c.subtotalCents));
-    let key: string;
+    const scheduled = this.pickupMode() === 'SCHEDULED';
+    let kind: MainButtonKind;
     if (this.fulfillmentType() === 'DELIVERY') {
-      key = this.pickupMode() === 'SCHEDULED' ? 'tma.checkout.payDeliveryScheduled' : 'tma.checkout.payDelivery';
+      kind = scheduled ? 'deliveryScheduled' : 'delivery';
     } else {
-      key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
+      kind = scheduled ? 'scheduled' : 'asap';
     }
+    const key = MAIN_BUTTON_KEYS[this.payAtCounter() ? 'counter' : 'pay'][kind];
     const label = this.translate.instant(key, { total });
     this.tg.setMainButton(label, () => this.placeOrder());
   }
@@ -1326,7 +1401,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       next: (order) => {
         this.placedOrderId = order.id;
         this.placedOrder.set(true);
-        this.payFor(order.id);
+        this.payFor(order.id, order.payAtCounter === true);
       },
       error: (err) => {
         const body = (err as { error?: unknown }).error;
@@ -1558,14 +1633,15 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   /**
-   * Holds the amount on the selected card and opens the order screen. Only an
-   * order with nothing left to pay goes there without a card. In the
-   * Web-платёж flow the amount is held on the bank's page instead; paying by
-   * QR goes on to the QR screen.
+   * Holds the amount on the selected card and opens the order screen. An
+   * order with nothing left to pay goes there without a card, and so does one
+   * the API placed to be paid at the store (`atCounter`), whatever way was
+   * chosen here. In the Web-платёж flow the amount is held on the bank's page
+   * instead; paying by QR goes on to the QR screen.
    */
-  private payFor(orderId: string): void {
+  private payFor(orderId: string, atCounter = false): void {
     const cardId = this.selectedCardId();
-    if (!this.needsCard()) {
+    if (atCounter || !this.needsCard()) {
       void this.router.navigate(['/orders', orderId]);
       return;
     }
@@ -1592,9 +1668,25 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.paying.set(false);
+        if (this.openOrderIfPaymentRefused(orderId, err)) return;
         this.showError(err, 'tma.checkout.payFailed');
       },
     });
+  }
+
+  /**
+   * Starting the payment was refused because the brand takes no online
+   * payment (any more) — 409 `ONLINE_PAYMENT_UNAVAILABLE`, or
+   * `QR_PAYMENT_DISABLED` for QR. The order exists: open it, with the reason,
+   * rather than leave a pay button that cannot work. False for any other
+   * failure.
+   */
+  private openOrderIfPaymentRefused(orderId: string, err: unknown): boolean {
+    const code = ((err as { error?: unknown } | null)?.error as { code?: unknown } | null)?.code;
+    if (code !== 'ONLINE_PAYMENT_UNAVAILABLE' && code !== 'QR_PAYMENT_DISABLED') return false;
+    const state: OrderPageState = { paymentRefused: code };
+    void this.router.navigate(['/orders', orderId], { replaceUrl: true, state });
+    return true;
   }
 
   /**
@@ -1614,6 +1706,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.paying.set(false);
+        if (this.openOrderIfPaymentRefused(orderId, err)) return;
         this.showError(err, 'common.requestFailed');
       },
     });
@@ -1636,6 +1729,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.paying.set(false);
+        if (this.openOrderIfPaymentRefused(orderId, err)) return;
         this.showError(err, 'common.requestFailed');
       },
     });
