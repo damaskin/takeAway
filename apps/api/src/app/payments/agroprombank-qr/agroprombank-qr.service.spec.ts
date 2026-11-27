@@ -206,6 +206,26 @@ describe('AgroprombankQrService', () => {
       expect(client.createPaymentId).not.toHaveBeenCalled();
     });
 
+    // Owner, 2026-11-27: never takeAway's terminal in place of the brand's.
+    it('refuses a brand without a QR terminal of its own, and never issues an invoice on another terminal', async () => {
+      const without = new AgroprombankQrService(
+        db.prisma as unknown as PrismaService,
+        config as unknown as AgroprombankQrConfig,
+        client as unknown as AgroprombankQrClient,
+        settlement as unknown as OrderSettlementService,
+        holds as unknown as PaymentHoldsService,
+        fakeTerminals({ qr: config as unknown as AgroprombankQrConfig }, {}, [], ['brand-1']),
+        orders as unknown as OrdersService,
+      );
+      db.addOrder('order-1', 3300);
+
+      const err = await without.startPayment('user-1', 'order-1').catch((e: unknown) => e);
+
+      expect((err as HttpException).getStatus()).toBe(409);
+      expect(errorCode(err)).toMatchObject({ code: 'QR_PAYMENT_DISABLED' });
+      expect(client.createPaymentId).not.toHaveBeenCalled();
+    });
+
     it("does not show one customer another's order", async () => {
       db.addOrder('order-1', 3300, { userId: 'someone-else' });
       await expect(service.startPayment('user-1', 'order-1')).rejects.toBeInstanceOf(NotFoundException);

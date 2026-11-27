@@ -36,7 +36,7 @@ describe('KdsService.accept', () => {
 
   let prisma: { order: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock } };
   let payments: { captureHoldForOrder: jest.Mock };
-  let holds: { cardPaymentRequired: jest.Mock; hasCardPayment: jest.Mock; findHold: jest.Mock };
+  let holds: { hasCardPayment: jest.Mock; findHold: jest.Mock };
   let orders: { cancelOrder: jest.Mock };
   let notifications: { notifyOrderStatus: jest.Mock };
   let service: KdsService;
@@ -58,7 +58,6 @@ describe('KdsService.accept', () => {
       }),
     };
     holds = {
-      cardPaymentRequired: jest.fn().mockReturnValue(true),
       hasCardPayment: jest.fn().mockResolvedValue(true),
       findHold: jest.fn().mockResolvedValue(null),
     };
@@ -147,9 +146,10 @@ describe('KdsService.accept', () => {
     expect(payments.captureHoldForOrder).not.toHaveBeenCalled();
   });
 
-  /** There is no paying at the counter: no card behind the order, no ticket. */
+  /** An order waiting for its online payment (`kitchenVisibleAt` null): no money behind it, no ticket. */
   it('refuses an order the customer has not paid for yet', async () => {
     holds.hasCardPayment.mockResolvedValue(false);
+    prisma.order.findUnique.mockResolvedValue({ ...order, kitchenVisibleAt: null });
 
     await expect(service.accept('store-1', order.id, 'staff-1')).rejects.toThrow(
       'The customer has not paid for this order yet',
@@ -159,9 +159,13 @@ describe('KdsService.accept', () => {
     expect(prisma.order.update).not.toHaveBeenCalled();
   });
 
-  it('takes on an order with nothing to pay without asking for a card', async () => {
-    holds.cardPaymentRequired.mockReturnValue(false);
+  it('takes on an order with nothing to pay online — paid at the store, or covered in full — without asking for a card', async () => {
     holds.hasCardPayment.mockResolvedValue(false);
+    prisma.order.findUnique.mockResolvedValue({
+      ...order,
+      payAtCounter: true,
+      kitchenVisibleAt: new Date('2026-09-22T09:50:00.000Z'),
+    });
 
     await service.accept('store-1', order.id, 'staff-1');
 
@@ -253,7 +257,7 @@ describe('KdsService.listOpen', () => {
         { provide: NotificationsService, useValue: {} },
         { provide: CardPaymentsService, useValue: {} },
         { provide: OrdersService, useValue: {} },
-        { provide: PaymentHoldsService, useValue: { cardPaymentRequired: () => true } },
+        { provide: PaymentHoldsService, useValue: {} },
       ],
     }).compile();
 
@@ -289,7 +293,7 @@ describe('KdsService.listOpen', () => {
         { provide: NotificationsService, useValue: {} },
         { provide: CardPaymentsService, useValue: {} },
         { provide: OrdersService, useValue: {} },
-        { provide: PaymentHoldsService, useValue: { cardPaymentRequired: () => true } },
+        { provide: PaymentHoldsService, useValue: {} },
       ],
     }).compile();
 

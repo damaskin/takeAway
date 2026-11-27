@@ -224,6 +224,8 @@ export const TRANSLATIONS_RU = {
       QR_CURRENCY_UNSUPPORTED: 'В этом заведении оплата мобильным платежом недоступна',
       ORDER_NOT_PAYABLE: 'Этот заказ уже оплачен или закрыт',
       QR_BANK_UNAVAILABLE: 'Банк сейчас не отвечает — попробуйте ещё раз через минуту',
+      /** A card or Web-платёж payment start for a brand without a terminal of its own (docs/agroprombank-payments.md §13.3). */
+      ONLINE_PAYMENT_UNAVAILABLE: 'Онлайн-оплата в этом заведении недоступна — оплатите заказ на месте',
     },
     units: {
       min: 'мин',
@@ -343,6 +345,17 @@ export const TRANSLATIONS_RU = {
         /** The money line of a cancelled order paid by QR (cancelMoney REFUNDED). */
         refundedLine: 'Мобильный платёж возвращён — деньги вернулись на ваш счёт в банке.',
       },
+    },
+    /**
+     * A store whose brand takes no online payment — no bank terminal of its
+     * own (docs/agroprombank-payments.md §13.3): its orders go to the kitchen
+     * at once and are paid at the store. Checkout and the order page, in the
+     * web and the Mini App.
+     */
+    payAtCounter: {
+      title: 'Оплата на месте',
+      checkoutHint: 'Заказ сразу уйдёт в заведение — оплатите его при получении.',
+      orderHint: 'Оплатите заказ при получении.',
     },
   },
   nav: {
@@ -508,6 +521,8 @@ export const TRANSLATIONS_RU = {
       bankPageHint:
         'Оплата картой на защищённой странице банка. Деньги забронируем сейчас, а спишем, когда точка примет заказ.',
       payCta: 'Оплатить {{total}} · готово к {{time}}',
+      /** The button where the order is paid at the store (common.payAtCounter). */
+      orderCta: 'Заказать за {{total}} · готово к {{time}}',
       fulfillmentPickup: 'Самовывоз',
       fulfillmentDelivery: 'Доставка',
       deliveryAddressLabel: 'Адрес',
@@ -546,6 +561,10 @@ export const TRANSLATIONS_RU = {
       },
       step: {
         paid: 'Оплачено',
+        /** A new order whose online payment has not arrived. */
+        awaitingPayment: 'Ждём оплату',
+        /** The order is paid at the store (common.payAtCounter). */
+        atCounter: 'Оплата на месте',
         preparing: 'Готовим',
         ready: 'Готово',
         pickedUp: 'Выдано',
@@ -1504,9 +1523,8 @@ export const TRANSLATIONS_RU = {
         title: 'Платёжный терминал',
         flows: { card: 'Привязанные карты', web: 'Web-платёж', qr: 'Мобильный платёж (QR)' },
         sourceBrand: 'терминал бренда',
-        sourceDefault: 'терминал takeAway по умолчанию',
-        defaultNotConfigured: 'не настроен на этом сервере',
-        hint: 'Деньги гостя за заказ поступают на терминал бренда. Раздел без своего терминала принимает оплату на терминал takeAway по умолчанию. Возврат всегда идёт через тот терминал, который принял оплату.',
+        sourceNone: 'нет своего терминала — оплата на месте',
+        hint: 'Деньги гостя за заказ поступают на терминал бренда. Способ оплаты без своего терминала бренду недоступен: без единого раздела заказы бренда сразу уходят на кухню, а гость платит на месте. Возврат всегда идёт через тот терминал, который принял оплату.',
         updated: 'Изменён {{date}} · {{name}}',
         common: 'Общее',
         fields: {
@@ -1537,12 +1555,12 @@ export const TRANSLATIONS_RU = {
         pemPlaceholder: '-----BEGIN …-----',
         cardHint:
           'Карты, привязанные раньше, принадлежат терминалу takeAway: на терминале бренда их нужно привязать заново. Сайт, Mini App и приложение пока привязывают карты только к терминалу takeAway — пока это так, не заполняйте раздел, если клиенты платят привязанной картой.',
-        clearSection: 'Убрать раздел — этот способ оплаты пойдёт через терминал takeAway по умолчанию',
+        clearSection: 'Убрать раздел — этот способ оплаты станет недоступен гостям бренда',
         secretsHint: 'Секреты не показываются. Пустое поле оставляет сохранённое значение.',
         check: 'Проверить подключение',
         remove: 'Убрать терминал',
         removeConfirm:
-          'Новые оплаты пойдут на терминал takeAway по умолчанию. Возвраты уже принятых оплат по-прежнему пойдут через этот терминал.',
+          'Онлайн-оплата бренду станет недоступна: новые заказы пойдут на кухню без оплаты, гость заплатит на месте. Возвраты уже принятых оплат по-прежнему пойдут через этот терминал.',
         saved: 'Сохранено',
         outcome: { OK: 'подключено', ANSWERED: 'банк ответил', FAILED: 'нет подключения' },
       },
@@ -4183,6 +4201,11 @@ export const TRANSLATIONS_RU = {
       payScheduled: 'Оплатить {{total}} · По времени',
       payDelivery: 'Оплатить {{total}} · Доставка',
       payDeliveryScheduled: 'Оплатить {{total}} · Доставка ко времени',
+      /** The main button where the order is paid at the store (common.payAtCounter). */
+      counterAsap: 'Заказать за {{total}} · Сейчас',
+      counterScheduled: 'Заказать за {{total}} · По времени',
+      counterDelivery: 'Заказать за {{total}} · Доставка',
+      counterDeliveryScheduled: 'Заказать за {{total}} · Доставка ко времени',
       deliveryWhen: 'Когда доставить?',
       placeOrderFailed: 'Не удалось оформить заказ',
       payFailed: 'Банк отклонил оплату',

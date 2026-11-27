@@ -8,6 +8,7 @@ import { StoreAvailabilityService } from '../kitchen/store-availability.service'
 import { typicalPrepCache } from '../kitchen/typical-prep';
 import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
 import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
+import { PaymentTerminalsService } from '../payments/terminals/payment-terminals.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 
@@ -119,6 +120,52 @@ describe('CatalogService', () => {
     const store = await service.getStore('store-1');
     expect(store.brand.themeOverrides).toBeNull();
     expect(prisma.store.findFirst.mock.calls[0]?.[0].include.brand.select).not.toHaveProperty('themeOverrides');
+  });
+
+  // Owner, 2026-11-27: a brand takes online payment only on its own terminal;
+  // without one its orders are paid at the store.
+  it("says per store how its brand's own terminal takes payment online, QR only in the currency QR takes", async () => {
+    const terminals = {
+      onlinePaymentByBrand: jest.fn().mockResolvedValue(
+        new Map([
+          ['brand-1', { card: false, qr: true }],
+          ['brand-2', { card: false, qr: true }],
+          ['brand-3', { card: false, qr: false }],
+        ]),
+      ),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        CatalogService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: FeatureFlagsService, useValue: { deliveryEnabled: true, qrPaymentCurrencies: ['RUP'] } },
+        KitchenLoadService,
+        StoreAvailabilityService,
+        { provide: ConfigService, useValue: { get: () => undefined } },
+        { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
+        { provide: PaymentTerminalsService, useValue: terminals },
+      ],
+    }).compile();
+    const withTerminals = moduleRef.get(CatalogService);
+    prisma.store.findMany.mockResolvedValue([
+      storeFixture({ id: 'rup', currency: 'RUP' }),
+      storeFixture({ id: 'usd', brandId: 'brand-2', currency: 'USD' }),
+      storeFixture({ id: 'none', brandId: 'brand-3', currency: 'RUP' }),
+    ]);
+
+    const listed = await withTerminals.listStores({});
+
+    expect(terminals.onlinePaymentByBrand).toHaveBeenCalledWith(['brand-1', 'brand-2', 'brand-3']);
+    expect(Object.fromEntries(listed.map((s) => [s.id, s.onlinePayment]))).toEqual({
+      rup: { card: false, qr: true },
+      usd: { card: false, qr: false },
+      none: { card: false, qr: false },
+    });
+
+    prisma.store.findFirst.mockResolvedValue(storeFixture({ currency: 'RUP' }));
+    await expect(withTerminals.getStore('store-1')).resolves.toMatchObject({
+      onlinePayment: { card: false, qr: true },
+    });
   });
 
   it('lists stores without lat/lng', async () => {

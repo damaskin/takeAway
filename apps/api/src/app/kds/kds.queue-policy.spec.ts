@@ -44,7 +44,6 @@ function harness() {
   const realtime = { emitOrderStatusChanged: jest.fn(), emitKdsOrderChanged: jest.fn() };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
   const holds = {
-    cardPaymentRequired: jest.fn().mockReturnValue(false),
     hasCardPayment: jest.fn(),
     findHold: jest.fn().mockResolvedValue(null),
   };

@@ -41,7 +41,7 @@ describe('AdminSettingsPage — the contact phone', () => {
         { provide: AuthStore, useValue: { user: signal({ role: 'BRAND_ADMIN' }) } },
         {
           provide: PaymentTerminalService,
-          useValue: { status: () => of({ connected: true, flows: { card: 'BRAND', web: 'DEFAULT', qr: 'DEFAULT' } }) },
+          useValue: { status: () => of({ connected: true, flows: { card: 'BRAND', web: 'NONE', qr: 'NONE' } }) },
         },
         {
           provide: OnboardingFlowService,

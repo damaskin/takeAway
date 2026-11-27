@@ -15,8 +15,8 @@ import { PaymentTerminalsService } from './payment-terminals.service';
 
 /**
  * Brand terminals on a real Postgres: secrets land encrypted and never come
- * back out, a brand without a terminal (or without a section) pays through
- * the default one, and a terminal that took payments is retired — not
+ * back out, a brand without a terminal (or without a section) takes no online
+ * payment in that flow — never takeAway's default terminal — and a terminal that took payments is retired — not
  * rewritten — when it is replaced or removed, so its refunds still find it.
  * Opt-in: set PAYMENT_TERMINALS_IT_DATABASE_URL to a throwaway database with
  * the migrations applied (`prisma migrate deploy`). The suite adds rows with
@@ -181,26 +181,33 @@ suite('brand payment terminals on Postgres', () => {
     expect(view.qr.password).toEqual({ set: true, last4: 'pass' });
     expect(view.card.privateKey.set).toBe(true);
     expect(view.card.source).toBe('BRAND');
-    expect(view.web.source).toBe('DEFAULT');
+    expect(view.web.source).toBe('NONE');
     expect(view.updatedByName).toBe('Platform admin');
 
     // The resolver hands the bank calls the decrypted values.
     const card = await terminals.cardForBrand(BRAND);
     expect(card).toMatchObject({ id: row.id, merchantId: 'M-BRAND', terminalId: 'E-BRAND' });
-    expect(card.privateKeyPem).toContain('PRIVATE KEY');
-    expect((await terminals.qrForBrand(BRAND)).password).toBe('secret-qr-pass');
+    expect(card?.privateKeyPem).toContain('PRIVATE KEY');
+    expect((await terminals.qrForBrand(BRAND))?.password).toBe('secret-qr-pass');
   });
 
-  it('falls back to the default terminal per flow', async () => {
+  // Owner, 2026-11-27: never takeAway's terminal in place of the brand's.
+  it("takes no payment in a flow the brand's own terminal has no section for, even with a default one in env", async () => {
     await admin.upsert(BRAND, { qrTerminalId: 'QRT123456789012345', qrLogin: 'b', qrPassword: 'brand-pass' }, ADMIN);
 
-    expect(await terminals.cardForBrand(BRAND)).toMatchObject({ id: null, merchantId: 'M-DEFAULT' });
-    expect(await terminals.webForBrand(BRAND)).toMatchObject({ id: null, merchantLogin: 'web-default' });
+    expect(await terminals.cardForBrand(BRAND)).toBeNull();
+    expect(await terminals.webForBrand(BRAND)).toBeNull();
     expect(await terminals.qrForBrand(BRAND)).toMatchObject({ terminalId: 'QRT123456789012345' });
-    expect(await terminals.qrForBrand(OTHER)).toMatchObject({ id: null, terminalId: 'QRT000000000000001' });
+    expect(await terminals.qrForBrand(OTHER)).toBeNull();
+    expect(await terminals.onlinePaymentByBrand([BRAND, OTHER])).toEqual(
+      new Map([
+        [BRAND, { card: false, qr: true }],
+        [OTHER, { card: false, qr: false }],
+      ]),
+    );
     expect(await admin.status(OTHER)).toEqual({
       connected: false,
-      flows: { card: 'DEFAULT', web: 'DEFAULT', qr: 'DEFAULT' },
+      flows: { card: 'NONE', web: 'NONE', qr: 'NONE' },
     });
     expect((await admin.status(BRAND)).connected).toBe(true);
   });
@@ -229,7 +236,7 @@ suite('brand payment terminals on Postgres', () => {
     expect(rows[0]?.retiredAt).not.toBeNull();
     expect(rows[1]).toMatchObject({ retiredAt: null, cardTerminalId: 'E-BRAND-2', cardMerchantId: 'M-BRAND' });
     // New payments go through the new one, refunds of the old one through the old one.
-    expect((await terminals.cardForBrand(BRAND)).terminalId).toBe('E-BRAND-2');
+    expect((await terminals.cardForBrand(BRAND))?.terminalId).toBe('E-BRAND-2');
     expect((await terminals.cardFor(old.id)).terminalId).toBe('E-BRAND');
   });
 
@@ -244,9 +251,9 @@ suite('brand payment terminals on Postgres', () => {
     const view = await admin.remove(BRAND, ADMIN);
 
     expect(view.id).toBeNull();
-    expect(view.card.source).toBe('DEFAULT');
+    expect(view.card.source).toBe('NONE');
     expect((await prisma.paymentTerminal.findUniqueOrThrow({ where: { id: used.id } })).retiredAt).not.toBeNull();
-    expect((await terminals.cardForBrand(BRAND)).id).toBeNull();
+    expect(await terminals.cardForBrand(BRAND)).toBeNull();
     expect((await terminals.cardFor(used.id)).merchantId).toBe('M-BRAND');
   });
 

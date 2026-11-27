@@ -36,7 +36,11 @@ describe('PaymentHoldsService', () => {
   /** The terminal a stubbed lookup answers: the default one, or the brand row the payment names. */
   const terminalFor = (flow: string) => async (id: string | null) => ({ flow, id, brandId: id ? 'brand-b' : null });
 
-  function build(flow: 'token' | 'web' | 'none' = 'web', qrCurrencies: string[] = []) {
+  function build(
+    flow: 'token' | 'web' | 'none' = 'web',
+    qrCurrencies: string[] = [],
+    online: { card: boolean; qr: boolean } = { card: false, qr: false },
+  ) {
     const prisma = {
       payment: {
         findFirst: jest.fn(),
@@ -58,6 +62,7 @@ describe('PaymentHoldsService', () => {
       cardFor: jest.fn(terminalFor('card')),
       webFor: jest.fn(terminalFor('web')),
       qrFor: jest.fn(terminalFor('qr')),
+      onlinePayment: jest.fn().mockResolvedValue(online),
     };
     const service = new PaymentHoldsService(
       prisma as unknown as PrismaService,
@@ -65,7 +70,7 @@ describe('PaymentHoldsService', () => {
       client as unknown as AgroprombankClient,
       { isConfigured: true, cardPaymentFlow: flow, canCall: () => true } as unknown as AgroprombankWebConfig,
       webClient as unknown as AgroprombankWebClient,
-      { canCallBank: true, currencies: qrCurrencies, canCall: () => true } as unknown as AgroprombankQrConfig,
+      { canCallBank: true, offeredCurrencies: qrCurrencies, canCall: () => true } as unknown as AgroprombankQrConfig,
       qrClient as unknown as AgroprombankQrClient,
       terminals as unknown as PaymentTerminalsService,
     );
@@ -201,18 +206,28 @@ describe('PaymentHoldsService', () => {
     });
   });
 
-  it('requires a card for a paid order whichever flow is on, and none when both are off', () => {
-    expect(build('web').service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(true);
-    expect(build('token').service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(true);
-    expect(build('none').service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(false);
-    expect(build('web').service.cardPaymentRequired({ totalCents: 0, currency: 'RUP' })).toBe(false);
+  // The brand's own terminal decides (owner, 2026-11-27): online payment only
+  // where the brand takes it, never takeAway's terminal in its place.
+  it("requires paying online when the brand's own terminal takes cards, and asks about that brand", async () => {
+    const { service, terminals } = build('token', [], { card: true, qr: false });
+    await expect(service.paymentRequired({ totalCents: 100, currency: 'RUP', brandId: 'b1' })).resolves.toBe(true);
+    expect(terminals.onlinePayment).toHaveBeenCalledWith('b1');
+    await expect(service.paymentRequired({ totalCents: 0, currency: 'RUP', brandId: 'b1' })).resolves.toBe(false);
   });
 
-  // With cards off, a QR-only deployment still needs paying — but only in a currency QR takes.
-  it('requires payment when only the QR payment is on, for orders in its currency', () => {
-    expect(build('none', ['RUP']).service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(true);
-    expect(build('none', ['RUP']).service.cardPaymentRequired({ totalCents: 100, currency: 'USD' })).toBe(false);
-    expect(build('none', ['RUP']).service.cardPaymentRequired({ totalCents: 0, currency: 'RUP' })).toBe(false);
+  it('requires nothing online from a brand without a terminal of its own — its orders are paid at the store', async () => {
+    const { service } = build('token', ['RUP'], { card: false, qr: false });
+    await expect(service.paymentRequired({ totalCents: 100, currency: 'RUP', brandId: 'b1' })).resolves.toBe(false);
+  });
+
+  it("requires paying by QR at the brand's QR terminal, for orders in the currency QR takes", async () => {
+    const qrOnly = build('none', ['RUP'], { card: false, qr: true });
+    await expect(qrOnly.service.paymentRequired({ totalCents: 100, currency: 'RUP', brandId: 'b1' })).resolves.toBe(
+      true,
+    );
+    await expect(qrOnly.service.paymentRequired({ totalCents: 100, currency: 'USD', brandId: 'b1' })).resolves.toBe(
+      false,
+    );
   });
 
   it('gives a paid QR invoice back with ReversePayment, using the ids recorded when it was paid', async () => {

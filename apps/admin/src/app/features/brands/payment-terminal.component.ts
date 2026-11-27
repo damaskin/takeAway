@@ -50,8 +50,9 @@ interface Draft {
 /**
  * «Платёжный терминал» on a brand's card (SUPER_ADMIN): the brand's own
  * Agroprombank registration, per flow — bound cards, Web-платёж, QR. A flow
- * without a section of its own takes money on takeAway's default terminal,
- * and the block says so. Secrets are never shown: «задан · …1234», and an
+ * without a section of its own is not offered to the brand's guests (never
+ * takeAway's default terminal in its place, since 2026-11-27), and the block
+ * says so; with no section at all the brand's orders are paid at the store. Secrets are never shown: «задан · …1234», and an
  * empty field keeps what is stored. Loads when opened, not for every brand
  * on the list.
  */
@@ -229,8 +230,7 @@ interface Draft {
                   <span class="source source-brand">{{ 'admin.brands.terminal.sourceBrand' | translate }}</span>
                   · {{ identity(v, flow) }}
                 } @else {
-                  <span class="source source-default">{{ 'admin.brands.terminal.sourceDefault' | translate }}</span>
-                  · {{ defaultIdentity(v, flow) }}
+                  <span class="source source-default">{{ 'admin.brands.terminal.sourceNone' | translate }}</span>
                 }
               </li>
             }
@@ -550,20 +550,6 @@ export class PaymentTerminalComponent {
     if (flow === 'card') return [v.card.merchantId, v.card.terminalId].filter(Boolean).join(' / ');
     if (flow === 'web') return v.web.merchantLogin ?? '';
     return v.qr.terminalId ?? '';
-  }
-
-  defaultIdentity(v: PaymentTerminalView, flow: PaymentTerminalFlow): string {
-    const d = v.defaultTerminal;
-    const id =
-      flow === 'card'
-        ? [d.card.merchantId, d.card.terminalId].filter(Boolean).join(' / ')
-        : flow === 'web'
-          ? (d.web.merchantLogin ?? '')
-          : (d.qr.terminalId ?? '');
-    const configured = d[flow].configured;
-    return configured
-      ? id
-      : `${id ? `${id} · ` : ''}${this.translate.instant('admin.brands.terminal.defaultNotConfigured')}`;
   }
 
   secretLabel(secret: PaymentTerminalSecret): string {

@@ -25,26 +25,24 @@ describe('FeatureFlagsService.support', () => {
       deliveryEnabled: false,
       agroprombankEnabled: false,
       cardPaymentFlow: 'none',
-      qrPaymentCurrencies: [],
+      // On by default since 2026-11-27: a store gets it only through its brand's own QR terminal.
+      qrPaymentCurrencies: ['RUP'],
       support: { email: 'help@takeaway.md', telegram: null },
     });
   });
 });
 
 describe('FeatureFlagsService.qrPaymentCurrencies', () => {
-  const qr = {
-    AGROPROMBANK_QR_TERMINAL_ID: 'QRT169007299815722',
-    AGROPROMBANK_QR_LOGIN: 'takeaway',
-    AGROPROMBANK_QR_PASSWORD: 'secret',
-  };
-
-  it('offers RUP while the QR payment is on and configured', () => {
-    expect(withEnv({ ...qr, AGROPROMBANK_QR_ENABLED: 'true' }).snapshot().qrPaymentCurrencies).toEqual(['RUP']);
+  // takeAway's own terminal plays no part: a store is offered the QR payment
+  // through its brand's terminal (`onlinePayment.qr`), so the flag only says
+  // the switch is on and which currency it takes.
+  it('offers RUP while the QR payment is switched on — by default, with no terminal in env', () => {
+    expect(withEnv({}).snapshot().qrPaymentCurrencies).toEqual(['RUP']);
+    expect(withEnv({ AGROPROMBANK_QR_ENABLED: 'true' }).qrPaymentCurrencies).toEqual(['RUP']);
   });
 
-  it('offers nothing while it is off, or on without its settings', () => {
-    expect(withEnv(qr).qrPaymentCurrencies).toEqual([]);
-    expect(withEnv({ AGROPROMBANK_QR_ENABLED: 'true' }).qrPaymentCurrencies).toEqual([]);
+  it('offers nothing once it is switched off', () => {
+    expect(withEnv({ AGROPROMBANK_QR_ENABLED: 'false' }).qrPaymentCurrencies).toEqual([]);
   });
 });
 

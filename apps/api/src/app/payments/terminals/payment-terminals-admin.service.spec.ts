@@ -93,7 +93,7 @@ describe('PaymentTerminalsAdminService (masking)', () => {
   it('shows which flows use the brand’s terminal and what the default one is', async () => {
     const view = await build(row).view('brand-1');
 
-    expect([view.card.source, view.web.source, view.qr.source]).toEqual(['BRAND', 'DEFAULT', 'BRAND']);
+    expect([view.card.source, view.web.source, view.qr.source]).toEqual(['BRAND', 'NONE', 'BRAND']);
     expect(view.defaultTerminal.card).toMatchObject({ merchantId: 'M-DEFAULT', terminalId: 'E-DEFAULT' });
     expect(view.defaultTerminal.qr.terminalId).toBe('QRT000000000000001');
   });
@@ -102,7 +102,7 @@ describe('PaymentTerminalsAdminService (masking)', () => {
     const view = await build(null).view('brand-1');
 
     expect(view.id).toBeNull();
-    expect([view.card.source, view.web.source, view.qr.source]).toEqual(['DEFAULT', 'DEFAULT', 'DEFAULT']);
+    expect([view.card.source, view.web.source, view.qr.source]).toEqual(['NONE', 'NONE', 'NONE']);
   });
 
   it('does not give away a short secret by its tail', () => {
