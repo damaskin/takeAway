@@ -235,7 +235,7 @@ function harness() {
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitKdsOrderChanged: jest.fn() };
   // Card payments off unless a test says otherwise.
-  const holds = { cardPaymentRequired: jest.fn().mockReturnValue(false) };
+  const holds = { paymentRequired: jest.fn().mockResolvedValue(false) };
   const config = { get: jest.fn() };
 
   const cart = new CartService(
@@ -425,17 +425,37 @@ describe('OrdersService.create', () => {
     expect(tx.order.create).not.toHaveBeenCalled();
   });
 
-  it('starts the acceptance clock at once when nothing is paid by card, and not before the payment otherwise', async () => {
+  it('starts the acceptance clock at once when nothing is paid online, and not before the payment otherwise', async () => {
     const paidLater = harness();
-    paidLater.holds.cardPaymentRequired.mockReturnValue(true);
+    paidLater.holds.paymentRequired.mockResolvedValue(true);
     paidLater.prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
     await paidLater.service.create('user-1', placeOrder);
-    expect(paidLater.tx.order.create.mock.calls[0]?.[0]?.data['kitchenVisibleAt']).toBeNull();
+    const online = paidLater.tx.order.create.mock.calls[0]?.[0]?.data;
+    expect(online?.['kitchenVisibleAt']).toBeNull();
+    expect(online?.['payAtCounter']).toBe(false);
 
     const free = harness();
     free.prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
     await free.service.create('user-1', placeOrder);
     expect(free.tx.order.create.mock.calls[0]?.[0]?.data['kitchenVisibleAt']).toBeInstanceOf(Date);
+  });
+
+  it("asks the brand's terminal, and marks an order its brand takes no online payment for as paid at the store", async () => {
+    const { service, prisma, tx, holds } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    await service.create('user-1', placeOrder);
+
+    expect(holds.paymentRequired).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brandId: expect.any(String),
+        currency: expect.any(String),
+        totalCents: expect.any(Number),
+      }),
+    );
+    const data = tx.order.create.mock.calls[0]?.[0]?.data;
+    expect(data?.['payAtCounter']).toBe(true);
+    expect(data?.['kitchenVisibleAt']).toBeInstanceOf(Date);
   });
 
   it('announces the new order to the store kitchen right away', async () => {
@@ -462,7 +482,7 @@ describe('OrdersService.create', () => {
 
   it('keeps an order that has to be paid by card off the kitchen board until its hold is in place', async () => {
     const { service, prisma, realtime, holds } = harness();
-    holds.cardPaymentRequired.mockReturnValue(true);
+    holds.paymentRequired.mockResolvedValue(true);
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
 
     await service.create('user-1', placeOrder);

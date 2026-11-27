@@ -86,10 +86,11 @@ export class FeatureFlagsService {
   /**
    * Where an order can be paid by QR in the bank's app — see
    * docs/agroprombank-payments.md §12. A client offers «Оплатить мобильным платежом» only
-   * for a store whose currency is listed.
+   * for a store whose currency is listed AND whose `onlinePayment.qr` is true
+   * (its brand has its own QR terminal, §13.3).
    */
   get qrPaymentCurrencies(): string[] {
-    return this.qr.currencies;
+    return this.qr.offeredCurrencies;
   }
 
   /**

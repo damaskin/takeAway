@@ -50,7 +50,7 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { BonusesService } from '../../core/loyalty/bonuses.service';
 import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
-import { OrdersApi } from '../../core/orders/orders.service';
+import { OrdersApi, type OrderPageState } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { PaymentMethodChoice } from '../../core/payments/payment-method-choice.service';
 import { QrPaymentApi } from '../../core/payments/qr-payment.service';
@@ -723,7 +723,8 @@ interface Step {
 
             <!-- How the order gets paid for: by card — the amount is held now
                  and taken when the store accepts the order — or by QR in the
-                 bank's app. There is no paying at the counter. -->
+                 bank's app. A store whose brand takes no online payment (no
+                 terminal of its own) is paid at the counter instead. -->
             <section class="w-full flex flex-col" style="max-width: 500px; gap: var(--spacing-sm)">
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary)"
@@ -751,7 +752,20 @@ interface Step {
                 </div>
               }
 
-              @if (paymentMethod() === 'QR') {
+              @if (payAtCounter()) {
+                <!-- No payment step: the order goes to the kitchen at once. -->
+                @if (hasTotal()) {
+                  <div
+                    role="note"
+                    data-testid="pay-at-counter"
+                    class="flex flex-col"
+                    style="gap: 4px; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                  >
+                    <strong>{{ 'common.payAtCounter.title' | translate }}</strong>
+                    <span>{{ 'common.payAtCounter.checkoutHint' | translate }}</span>
+                  </div>
+                }
+              } @else if (paymentMethod() === 'QR') {
                 @if (totalCents(c.subtotalCents) > 0) {
                   <p
                     data-testid="qr-payment-hint"
@@ -845,7 +859,7 @@ interface Step {
               {{
                 submitting()
                   ? ('common.loading' | translate)
-                  : ('web.checkout.payCta'
+                  : ((payAtCounter() ? 'web.checkout.orderCta' : 'web.checkout.payCta')
                     | translate: { total: price(totalCents(c.subtotalCents)), time: readyTimeLabel() })
               }}
             </button>
@@ -938,13 +952,36 @@ export class CheckoutPage implements OnInit {
   /** The store takes no orders at all right now, not even for later: switched off, or nothing bookable. */
   readonly storeInactive = signal(false);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
-  readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  /**
+   * How the store's brand takes payment online — its own bank terminal
+   * decides (`onlinePayment`). Null from an API that predates it: the
+   * feature flags alone decide then, as before.
+   */
+  private readonly onlinePayment = computed(() => this.servingStore()?.onlinePayment ?? null);
+  /**
+   * The store takes no online payment at all — its brand has no terminal of
+   * its own: the order goes to the kitchen at once and is paid at the store.
+   * Only when the API says so; it decides the same when the order is placed.
+   */
+  readonly payAtCounter = computed(() => {
+    const online = this.onlinePayment();
+    return !!online && !online.card && !online.qr;
+  });
+  /** Orders here can be paid by card, whichever way: the card flow is on and the store's brand takes cards. */
+  readonly cardPaymentsEnabled = computed(
+    () => this.flags.cardPaymentsEnabled() && (this.onlinePayment()?.card ?? true),
+  );
   /** Cards bound in the profile, held in one tap — the `token` flow. */
-  readonly boundCardsEnabled = this.flags.boundCardsEnabled;
+  readonly boundCardsEnabled = computed(() => this.flags.boundCardsEnabled() && this.cardPaymentsEnabled());
   /** The customer pays on the bank's own page — the `web` flow. */
-  readonly webPaymentsEnabled = this.flags.webPaymentsEnabled;
-  /** The store can be paid by QR in Agroprombank's app: its currency is one the QR payment takes. */
-  readonly qrPaymentOffered = computed(() => qrPaymentOffered(this.currency(), this.flags.qrPaymentCurrencies()));
+  readonly webPaymentsEnabled = computed(() => this.flags.webPaymentsEnabled() && this.cardPaymentsEnabled());
+  /**
+   * The store can be paid by QR in Agroprombank's app: its currency is one
+   * the QR payment takes, and its brand takes QR payment.
+   */
+  readonly qrPaymentOffered = computed(
+    () => qrPaymentOffered(this.currency(), this.flags.qrPaymentCurrencies()) && (this.onlinePayment()?.qr ?? true),
+  );
   /** Both ways are on: the customer picks, and the pick is remembered on this device. */
   readonly paymentMethodChoice = computed(() => this.cardPaymentsEnabled() && this.qrPaymentOffered());
   /** How this order gets paid; null while neither the card nor QR is on. */
@@ -1168,15 +1205,19 @@ export class CheckoutPage implements OnInit {
     // customer at the button instead of letting them tap into an error.
     if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() === 'OUTSIDE_RADIUS') return false;
     // Orders are paid by card or by QR; a total that points or a gift card
-    // covered in full is the one thing that needs no payment.
+    // covered in full needs no payment, nor does one paid at the store.
     if (this.needsCard() && !this.paymentReady()) return false;
     return true;
   });
 
-  readonly needsCard = computed(() => {
+  /** The order costs something once promo, points and a gift card are off it. */
+  readonly hasTotal = computed(() => {
     const c = this.cart();
     return !!c && this.totalCents(c.subtotalCents) > 0;
   });
+
+  /** Paid online before the kitchen sees it: there is something to pay, and the store takes online payment. */
+  readonly needsCard = computed(() => this.hasTotal() && !this.payAtCounter());
 
   /** A way to pay by card is ready: the bank's page, or a bound card picked. */
   readonly payingByCard = computed(
@@ -1783,7 +1824,7 @@ export class CheckoutPage implements OnInit {
       next: (order) => {
         this.placedOrderId = order.id;
         this.placedOrder.set(true);
-        this.payFor(order.id);
+        this.payFor(order.id, order.payAtCounter === true);
       },
       error: (err) => {
         this.submitting.set(false);
@@ -1867,17 +1908,18 @@ export class CheckoutPage implements OnInit {
 
   /**
    * Holds the amount on the chosen card and then opens the order screen,
-   * which is what tells the customer where their money stands. Only an
-   * order with nothing left to pay skips the card. In the Web-платёж flow
-   * the amount is held on the bank's page instead.
+   * which is what tells the customer where their money stands. An order with
+   * nothing left to pay skips the card, and so does one the API placed to be
+   * paid at the store (`atCounter`), whatever way was chosen here. In the
+   * Web-платёж flow the amount is held on the bank's page instead.
    *
    * A decline keeps the customer on checkout with the reason, because that is
    * the only screen where they can pick a different card. Paying by QR goes
    * on to the QR screen.
    */
-  private payFor(orderId: string): void {
+  private payFor(orderId: string, atCounter = false): void {
     const cardId = this.selectedCardId();
-    if (!this.needsCard()) {
+    if (atCounter || !this.needsCard()) {
       this.submitting.set(false);
       void this.router.navigate(['/orders', orderId]);
       return;
@@ -1903,9 +1945,25 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.submitting.set(false);
+        if (this.openOrderIfPaymentRefused(orderId, err)) return;
         this.error.set(this.errorText(err));
       },
     });
+  }
+
+  /**
+   * Starting the payment was refused because the brand takes no online
+   * payment (any more) — 409 `ONLINE_PAYMENT_UNAVAILABLE`, or
+   * `QR_PAYMENT_DISABLED` for QR. The order exists: open it, with the reason,
+   * rather than leave a pay button that cannot work. False for any other
+   * failure.
+   */
+  private openOrderIfPaymentRefused(orderId: string, err: unknown): boolean {
+    const code = ((err as { error?: unknown } | null)?.error as { code?: unknown } | null)?.code;
+    if (code !== 'ONLINE_PAYMENT_UNAVAILABLE' && code !== 'QR_PAYMENT_DISABLED') return false;
+    const state: OrderPageState = { paymentRefused: code };
+    void this.router.navigate(['/orders', orderId], { replaceUrl: true, state });
+    return true;
   }
 
   /**
@@ -1928,6 +1986,7 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.submitting.set(false);
+        if (this.openOrderIfPaymentRefused(orderId, err)) return;
         this.error.set(this.errorText(err));
       },
     });
@@ -1949,6 +2008,7 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.submitting.set(false);
+        if (this.openOrderIfPaymentRefused(orderId, err)) return;
         this.error.set(this.errorText(err));
       },
     });

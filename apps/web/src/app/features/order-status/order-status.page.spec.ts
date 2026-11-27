@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
@@ -11,7 +11,7 @@ import { type Observable, of, throwError } from 'rxjs';
 import { AuthStore } from '../../core/auth/auth.store';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
-import { OrdersApi, type OrderView } from '../../core/orders/orders.service';
+import { OrdersApi, type OrderPageState, type OrderView } from '../../core/orders/orders.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { OrderStatusPage } from './order-status.page';
@@ -91,8 +91,10 @@ describe('OrderStatusPage — waiting for the store', () => {
     order: OrderView,
     store: Partial<StoreDetail> = {},
     cancel: () => Observable<OrderView> = () => of({ ...order, status: 'CANCELLED', canCancel: false }),
-    /** `qrPaymentCurrencies` and whether a card flow is on; no QR and cards on by default. */
-    flags: { qr?: string[]; cards?: boolean } = {},
+    /** `qrPaymentCurrencies`, whether a card flow is on and whether it is the bank's page; no QR, cards on, no bank page by default. */
+    flags: { qr?: string[]; cards?: boolean; web?: boolean } = {},
+    /** Router state checkout left for the page. */
+    state?: OrderPageState,
   ) {
     orders = { get: jest.fn(() => of(order)), cancel: jest.fn(cancel) };
     TestBed.configureTestingModule({
@@ -122,7 +124,7 @@ describe('OrderStatusPage — waiting for the store', () => {
           provide: FeatureFlagsStore,
           useValue: {
             load: jest.fn(),
-            webPaymentsEnabled: signal(false),
+            webPaymentsEnabled: signal(flags.web ?? false),
             cardPaymentsEnabled: signal(flags.cards ?? true),
             qrPaymentCurrencies: signal(flags.qr ?? []),
           },
@@ -135,7 +137,13 @@ describe('OrderStatusPage — waiting for the store', () => {
     translate.use('ru');
 
     const harness = await RouterTestingHarness.create();
-    const page = await harness.navigateByUrl(`/orders/${order.id}`, OrderStatusPage);
+    let page: OrderStatusPage;
+    if (state) {
+      await TestBed.inject(Router).navigateByUrl(`/orders/${order.id}`, { state });
+      page = harness.routeDebugElement?.componentInstance as OrderStatusPage;
+    } else {
+      page = await harness.navigateByUrl(`/orders/${order.id}`, OrderStatusPage);
+    }
     harness.detectChanges();
     const root = harness.routeNativeElement as HTMLElement;
     const byTestId = (id: string) => root.querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -542,6 +550,86 @@ describe('OrderStatusPage — waiting for the store', () => {
       detect();
       expect(testText('cancel-error')).toBe('Не удалось отменить заказ. Попробуйте ещё раз.');
       expect(byTestId('cancel-order')).not.toBeNull();
+    });
+  });
+
+  /** Online payment only at the brand's own terminal, else at the counter (docs/agroprombank-payments.md §13.3). */
+  describe('paid at the counter, or waiting for the online payment', () => {
+    const NONE = { state: 'NONE' as const, amountCents: 0, cardMask: null, paidAt: null };
+    const steps = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll('ol li'), (li) => li.textContent?.replace(/\s+/g, ' ').trim());
+
+    it('says «Оплата на месте» from the moment the order is placed, never «Оплачено», and offers no payment', async () => {
+      const { page, root, text, testText, byTestId } = await open(
+        { ...ORDER, payAtCounter: true, payment: NONE },
+        {},
+        undefined,
+        { qr: ['RUP'], web: true },
+      );
+      expect(steps(root)).toEqual(['🏪 Оплата на месте', '⏱ Готовим', '🛎 Готово', '🏁 Выдано']);
+      expect(page.steps()[0]?.background).toBe('var(--color-caramel)');
+      expect(testText('payment-line')).toBe('🏪 Оплата на месте 45 руб. Оплатите заказ при получении.');
+      expect(text()).not.toContain('Оплачено');
+      expect(byTestId('pay-by-qr')).toBeNull();
+      expect(byTestId('retry-payment')).toBeNull();
+      // On the kitchen's board from the start: the code to say, and the wait for the store.
+      expect(testText('pickup-code')).toBe('Ваш код 1234 Назовите его на кассе — по нему выдадут заказ');
+      expect(testText('order-subtitle')).toBe('Ждём подтверждения точки');
+    });
+
+    it('keeps «Оплата на месте» as the order moves on', async () => {
+      const { root, text } = await open({ ...ORDER, status: 'IN_PROGRESS', payAtCounter: true, payment: NONE });
+      expect(steps(root)[0]).toBe('🏪 Оплата на месте');
+      expect(text()).not.toContain('Оплачено');
+    });
+
+    it('waits for the online payment: «Ждём оплату» as the current step, and no pickup code yet', async () => {
+      const { page, root, text, testText, byTestId } = await open({ ...ORDER, payment: NONE }, {}, undefined, {
+        qr: ['RUP'],
+      });
+      expect(steps(root)[0]).toBe('⏳ Ждём оплату');
+      expect(page.steps()[0]?.background).toBe('var(--color-caramel)');
+      expect(text()).not.toContain('Оплачено');
+      expect(byTestId('pickup-code')).toBeNull();
+      expect(testText('payment-line')).toBe('💳 Ждём оплату');
+      expect(byTestId('pay-by-qr')).not.toBeNull();
+    });
+
+    it('offers no online payment the store no longer takes', async () => {
+      const { byTestId } = await open(
+        { ...ORDER, payment: NONE },
+        { onlinePayment: { card: false, qr: false } },
+        undefined,
+        { qr: ['RUP'], web: true },
+      );
+      expect(byTestId('pay-by-qr')).toBeNull();
+      expect(byTestId('retry-payment')).toBeNull();
+    });
+
+    it('says «Оплачено» once the money is held or taken online', async () => {
+      const held = await open(ORDER);
+      expect(steps(held.root)[0]).toBe('✓ Оплачено');
+      expect(held.byTestId('pickup-code')).not.toBeNull();
+      TestBed.resetTestingModule();
+
+      const paid = await open({
+        ...ORDER,
+        status: 'ACCEPTED',
+        payment: { state: 'PAID', amountCents: 4500, cardMask: null, paidAt: minutesFromNow(-1) },
+      });
+      expect(steps(paid.root)[0]).toBe('✓ Оплачено');
+    });
+
+    it('says why when checkout could not start the online payment', async () => {
+      const { testText, text } = await open(
+        { ...ORDER, payAtCounter: true, payment: NONE },
+        {},
+        undefined,
+        {},
+        { paymentRefused: 'ONLINE_PAYMENT_UNAVAILABLE' },
+      );
+      expect(text()).toContain('Онлайн-оплата в этом заведении недоступна — оплатите заказ на месте');
+      expect(testText('payment-line')).toContain('Оплата на месте');
     });
   });
 

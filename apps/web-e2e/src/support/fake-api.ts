@@ -743,7 +743,19 @@ export async function installFakeApi(
     if (path === '/payments/agroprombank/pay' && method === 'POST') {
       const body = request.postDataJSON() as Record<string, unknown>;
       payments.push(body);
-      // Held, not taken: the store's accept is what captures it.
+      // Held, not taken: the store's accept is what captures it. The order
+      // reads as held from now on, as the real API reports it — an order
+      // still waiting for its money shows no pickup code.
+      const order = orders.find((o) => o['id'] === body['orderId']);
+      if (order) {
+        order['payment'] = {
+          state: 'HELD',
+          amountCents: order['totalCents'],
+          cardMask: '•••• 4242',
+          paidAt: null,
+          provider: 'AGROPROMBANK',
+        };
+      }
       return json(route, { paymentId: 'pay-1', status: 'REQUIRES_ACTION', amountCents: 0 });
     }
 

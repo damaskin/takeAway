@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { PaymentTerminal } from '@prisma/client';
 
 import { SecretCipher } from '../../common/crypto/secret-cipher';
@@ -7,6 +7,20 @@ import { AgroprombankQrConfig } from '../agroprombank-qr/agroprombank-qr.config'
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
 import { AgroprombankConfig } from '../agroprombank/agroprombank.config';
 import type { CardTerminal, QrTerminal, WebTerminal } from './terminal-types';
+
+/**
+ * How a brand's customers can pay online: by card in the card flow the
+ * deployment runs (`CARD_PAYMENT_FLOW` — bound cards or the bank's page), and
+ * by QR in the bank's app. Each needs the flow switched on AND the brand's own
+ * terminal carrying that flow's section. Without either the brand's orders go
+ * to the kitchen at once and are paid at the store.
+ */
+export interface BrandOnlinePayment {
+  card: boolean;
+  qr: boolean;
+}
+
+export const NO_ONLINE_PAYMENT: BrandOnlinePayment = Object.freeze({ card: false, qr: false });
 
 /** The flows a terminal row can have a section for. */
 export type TerminalFlow = 'card' | 'web' | 'qr';
@@ -26,10 +40,11 @@ export function hasSection(row: PaymentTerminal, flow: TerminalFlow): boolean {
 /**
  * Which Agroprombank terminal a bank call goes through.
  *
- * - A new payment (or card binding) for a brand uses the brand's own active
- *   terminal, for the flows its row has a section for; anything else — no
- *   terminal, or no section for this flow — is takeAway's default terminal
- *   from env (`*ForBrand`).
+ * - A new payment for a brand uses the brand's own active terminal, for the
+ *   flows its row has a section for (`*ForBrand`). A brand without one takes
+ *   no online payment for that flow at all — null — and never falls back to
+ *   takeAway's default terminal: the money of a brand's guests lands on the
+ *   brand's own account or is paid at the store (owner, 2026-11-27).
  * - Everything after that — capture, status, cancel, refund, reconciliation,
  *   a callback — uses the terminal recorded on the payment (or card token),
  *   retired or not (`*For(id)`): the money goes back the way it came.
@@ -67,19 +82,57 @@ export class PaymentTerminalsService {
     return order.store.brandId;
   }
 
-  async cardForBrand(brandId: string): Promise<CardTerminal> {
+  /** The brand's own bound-card terminal; null — the brand takes no card payment. */
+  async cardForBrand(brandId: string): Promise<CardTerminal | null> {
     const row = await this.activeRow(brandId);
-    return row && hasSection(row, 'card') ? this.cardOf(row) : this.card.defaultTerminal();
+    return row && hasSection(row, 'card') ? this.cardOf(row) : null;
   }
 
-  async webForBrand(brandId: string): Promise<WebTerminal> {
+  /** The brand's own Web-платёж registration; null — none. */
+  async webForBrand(brandId: string): Promise<WebTerminal | null> {
     const row = await this.activeRow(brandId);
-    return row && hasSection(row, 'web') ? this.webOf(row) : this.web.defaultTerminal();
+    return row && hasSection(row, 'web') ? this.webOf(row) : null;
   }
 
-  async qrForBrand(brandId: string): Promise<QrTerminal> {
+  /** The brand's own QR terminal; null — the brand takes no QR payment. */
+  async qrForBrand(brandId: string): Promise<QrTerminal | null> {
     const row = await this.activeRow(brandId);
-    return row && hasSection(row, 'qr') ? this.qrOf(row) : this.qr.defaultTerminal();
+    return row && hasSection(row, 'qr') ? this.qrOf(row) : null;
+  }
+
+  /** {@link onlinePaymentByBrand} for one brand. */
+  async onlinePayment(brandId: string): Promise<BrandOnlinePayment> {
+    return (await this.onlinePaymentByBrand([brandId])).get(brandId) ?? NO_ONLINE_PAYMENT;
+  }
+
+  /**
+   * How each brand's customers can pay online, in one query and without
+   * decrypting anything: the flow switched on for the deployment, and the
+   * brand's active terminal carrying its section. The QR payment is RUP only —
+   * the caller checks the store's currency against `qrPaymentCurrencies`.
+   */
+  async onlinePaymentByBrand(brandIds: ReadonlyArray<string>): Promise<Map<string, BrandOnlinePayment>> {
+    const wanted = [...new Set(brandIds)];
+    const out = new Map<string, BrandOnlinePayment>(wanted.map((id) => [id, NO_ONLINE_PAYMENT]));
+    const flow = this.web.cardPaymentFlow;
+    const qrOn = this.qr.enabled;
+    if (wanted.length === 0 || (flow === 'none' && !qrOn)) return out;
+    const rows = await this.prisma.paymentTerminal.findMany({
+      where: { brandId: { in: wanted }, retiredAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { brandId: true, cardMerchantId: true, webMerchantLogin: true, qrTerminalId: true },
+    });
+    const seen = new Set<string>();
+    for (const row of rows) {
+      // The latest active row is the brand's terminal, as in activeRow().
+      if (seen.has(row.brandId)) continue;
+      seen.add(row.brandId);
+      out.set(row.brandId, {
+        card: flow === 'token' ? !!row.cardMerchantId : flow === 'web' ? !!row.webMerchantLogin : false,
+        qr: qrOn && !!row.qrTerminalId,
+      });
+    }
+    return out;
   }
 
   /** The terminal a payment or card token went through; null — the default one. */
@@ -184,4 +237,19 @@ export class PaymentTerminalsService {
       throw new ServiceUnavailableException('Stored terminal credentials are unreadable on this deployment');
     }
   }
+}
+
+/**
+ * A new payment for a brand that takes none online in this flow: its orders
+ * go to the kitchen unpaid and are paid at the store. `409` with
+ * `ONLINE_PAYMENT_UNAVAILABLE`, so a client that offered the payment anyway
+ * (an older build) can say so instead of a generic failure.
+ */
+export function onlinePaymentUnavailable(flow: TerminalFlow): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    code: 'ONLINE_PAYMENT_UNAVAILABLE',
+    message: `This brand takes no ${flow === 'card' ? 'bound-card' : flow === 'web' ? 'Web-платёж' : 'QR'} payment: it has no terminal of its own for it`,
+  });
 }

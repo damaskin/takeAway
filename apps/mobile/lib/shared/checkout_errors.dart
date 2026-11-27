@@ -4,6 +4,17 @@ import 'package:takeaway_api/takeaway_api.dart';
 import '../l10n/app_localizations.dart';
 import 'money_text.dart';
 
+/// A card payment start for a store whose brand has no terminal of its own
+/// (409): its orders are paid at the store.
+const onlinePaymentUnavailableCode = 'ONLINE_PAYMENT_UNAVAILABLE';
+
+/// The same for a QR payment (409), also when QR is switched off on the server.
+const qrPaymentDisabledCode = 'QR_PAYMENT_DISABLED';
+
+/// The payment start was refused because the store takes no online payment
+/// this way: no point retrying it, the customer pays at the store.
+bool isOnlinePaymentRefusal(String? code) => code == onlinePaymentUnavailableCode || code == qrPaymentDisabledCode;
+
 /// Words for an order-path error the API sent with a stable code —
 /// «Срок действия промокода истёк» instead of "Promo has expired". Takes the
 /// rest of the error body (or of a promo check) for what the words need: the
@@ -66,8 +77,11 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     'GIFT_CARD_CANCELLED' => l10n.errGiftCardCancelled,
     'GIFT_CARD_BALANCE_CHANGED' => l10n.errGiftCardBalanceChanged,
     'TOO_MANY_UNPAID_ORDERS' => l10n.errTooManyUnpaidOrders,
+    // A card or QR payment for a store whose brand takes none online — no
+    // terminal of its own (owner decision 2026-11-27); the order screen opens
+    // next. A QR payment switched off on the server answers the same code.
+    onlinePaymentUnavailableCode || qrPaymentDisabledCode => l10n.errOnlinePaymentUnavailable,
     // Paying by QR in Agroprombank's app (docs/agroprombank-payments.md §12.3).
-    'QR_PAYMENT_DISABLED' => l10n.errQrPaymentDisabled,
     'QR_CURRENCY_UNSUPPORTED' => l10n.errQrCurrencyUnsupported,
     'ORDER_NOT_PAYABLE' => l10n.errOrderNotPayable,
     'QR_BANK_UNAVAILABLE' => l10n.errQrBankUnavailable,

@@ -19,11 +19,14 @@ const READY = {
 };
 
 describe('AgroprombankQrConfig', () => {
-  it('is off and unconfigured by default, with the documented defaults', () => {
+  // On by default since 2026-11-27: the brand's own QR terminal offers it to
+  // a store, the switch only stops it everywhere. takeAway's default terminal
+  // stays unconfigured.
+  it('is switched on but has no default terminal by default, with the documented defaults', () => {
     const config = configWith({});
-    expect(config.enabled).toBe(false);
+    expect(config.enabled).toBe(true);
     expect(config.isConfigured).toBe(false);
-    expect(config.currencies).toEqual([]);
+    expect(config.offeredCurrencies).toEqual(['RUP']);
     expect(config.serviceUrl).toBe('https://api.agroprombank.com/mobile/QRMobileService.asmx');
     expect(config.namespace).toBe('http://services.agroprombank.com/');
     expect(config.codeFormat).toBe('{terminal}:{rub}:{extid}');
@@ -36,7 +39,13 @@ describe('AgroprombankQrConfig', () => {
     const config = configWith(READY);
     expect(config.missingSettings()).toEqual([]);
     expect(config.isConfigured).toBe(true);
-    expect(config.currencies).toEqual(['RUP']);
+    expect(config.offeredCurrencies).toEqual(['RUP']);
+  });
+
+  it('offers nothing once switched off, whatever is configured', () => {
+    const config = configWith({ ...READY, AGROPROMBANK_QR_ENABLED: 'false' });
+    expect(config.enabled).toBe(false);
+    expect(config.offeredCurrencies).toEqual([]);
   });
 
   it('takes an external token in place of login and password', () => {
@@ -66,7 +75,7 @@ describe('AgroprombankQrConfig', () => {
     const config = configWith({ ...READY, AGROPROMBANK_QR_ENABLED: 'false' });
     expect(config.isConfigured).toBe(false);
     expect(config.canCallBank).toBe(true);
-    expect(config.currencies).toEqual([]);
+    expect(config.offeredCurrencies).toEqual([]);
   });
 
   describe('secrets from files', () => {

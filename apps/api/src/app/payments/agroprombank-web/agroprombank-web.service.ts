@@ -15,7 +15,7 @@ import { withFreshInvoiceId } from '../agroprombank/invoice-ids';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
 import { CARD_PROVIDERS } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
-import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
+import { onlinePaymentUnavailable, PaymentTerminalsService } from '../terminals/payment-terminals.service';
 import { type WebTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankWebClient, AgroprombankWebError, AgroprombankWebTransportError } from './agroprombank-web.client';
 import { AgroprombankWebConfig } from './agroprombank-web.config';
@@ -148,8 +148,10 @@ export class AgroprombankWebService {
     const currencyCode = BANK_CURRENCY_CODES[order.currency];
     if (!currencyCode) throw new BadRequestException(`Agroprombank does not settle in ${order.currency}`);
 
-    // The brand's own registration takes the money; without one, takeAway's.
+    // The brand's own registration takes the money; a brand without one takes
+    // no card payment — never takeAway's terminal in its place (§13.3).
     const terminal = await this.terminals.webForBrand(order.store.brandId);
+    if (!terminal) throw onlinePaymentUnavailable('web');
     this.assertCanCall(terminal);
     const preauth = terminal.holdUntilAccepted;
     const expiresAt = new Date(Date.now() + this.config.lifetimeMinutes * 60_000);

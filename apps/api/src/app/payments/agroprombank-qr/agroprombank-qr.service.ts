@@ -116,8 +116,12 @@ export class AgroprombankQrService {
       include: { store: { select: { brandId: true } } },
     });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
-    // The brand's own QR terminal takes the money; without one, takeAway's.
+    // The brand's own QR terminal takes the money; a brand without one takes
+    // no QR payment — never takeAway's terminal in its place (§13.3).
     const terminal = await this.terminals.qrForBrand(order.store.brandId);
+    if (!terminal) {
+      throw qrError(409, 'QR_PAYMENT_DISABLED', 'This brand takes no QR payment: it has no QR terminal of its own');
+    }
     this.assertOffered(terminal);
     if (order.currency !== QR_CURRENCY) {
       throw qrError(409, 'QR_CURRENCY_UNSUPPORTED', `The QR payment takes ${QR_CURRENCY} only`);

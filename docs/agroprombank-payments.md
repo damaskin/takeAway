@@ -20,8 +20,10 @@ is offered next to either; see
 [section 12](#12-мобильный-платёж-paying-by-qr-in-the-banks-app).
 
 Every brand takes these payments on **its own terminal**, entered by the
-platform team in the brand's card; the `AGROPROMBANK_*` env describes
-takeAway's default terminal, used by a brand that has none. See
+platform team in the brand's card. A brand without one takes no online
+payment at all — its orders go to the kitchen at once and are paid at the
+store (owner, 2026-11-27). The `AGROPROMBANK_*` env describes takeAway's
+default terminal, which now only looks after the money it took before. See
 [section 13](#13-every-brand-on-its-own-terminal).
 
 ---
@@ -722,20 +724,20 @@ No card is bound, no key pair is needed, card data never touches us.
 
 ### 12.2 Configuration
 
-| Env                                        | Meaning                                                                                                                                                                                                |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AGROPROMBANK_QR_ENABLED`                  | Switches the QR payment on. It is offered **next to** the card flow (`CARD_PAYMENT_FLOW`), not instead of it: with both on the customer chooses at checkout, with cards off it is the only way to pay. |
-| `AGROPROMBANK_QR_SERVICE_URL`              | default `https://api.agroprombank.com/mobile/QRMobileService.asmx`                                                                                                                                     |
-| `AGROPROMBANK_QR_NAMESPACE`                | default `http://services.agroprombank.com/` (SOAPAction = namespace + function)                                                                                                                        |
-| `AGROPROMBANK_QR_LOGIN`                    | login for remote operations, issued by the bank                                                                                                                                                        |
-| `AGROPROMBANK_QR_PASSWORD` / `_FILE`       | its password                                                                                                                                                                                           |
-| `AGROPROMBANK_QR_EXTERNAL_TOKEN` / `_FILE` | optional token the bank may issue instead of login/password; when set, `Login` and `Password` go out empty                                                                                             |
-| `AGROPROMBANK_QR_DEVICE_ID`                | optional device id the bank issues for payment notifications; goes in `DeviceId` (otherwise `-1`). Per brand: «ID устройства» in the brand terminal                                                    |
-| `AGROPROMBANK_QR_TERMINAL_ID`              | the QR terminal, `QRT\d{15}`                                                                                                                                                                           |
-| `AGROPROMBANK_QR_CODE_FORMAT`              | what the QR code says. Default `{terminal}:{rub}:{extid}`; placeholders `{terminal}`, `{rub}` (sum as `12.50`), `{kop}` (sum in kopecks), `{extid}`. See question 1.                                   |
-| `AGROPROMBANK_QR_APP_LINK`                 | optional link that opens the bank app on the same phone with the code; placeholders `{code}` (URL-encoded QR text), `{extid}`, `{terminal}`. Unset: the clients show the QR code only. See question 2. |
-| `AGROPROMBANK_QR_LIFETIME_MINUTES`         | how long an invoice is offered, default 10; then it is closed (`ClosePaymentExtId`). Keep it at or below `ORDER_PAYMENT_TTL_MINUTES`.                                                                  |
-| `AGROPROMBANK_QR_TIMEOUT_MS`               | per call, default 15000                                                                                                                                                                                |
+| Env                                        | Meaning                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGROPROMBANK_QR_ENABLED`                  | **On unless `false`** (since 2026-11-27). Offered only to the stores of brands whose own terminal has a QR section (§13.3), **next to** the card flow (`CARD_PAYMENT_FLOW`), not instead of it: with both on the customer chooses at checkout, with cards off it is the only way to pay. `false` stops new invoices everywhere. |
+| `AGROPROMBANK_QR_SERVICE_URL`              | default `https://api.agroprombank.com/mobile/QRMobileService.asmx`                                                                                                                                                                                                                                                              |
+| `AGROPROMBANK_QR_NAMESPACE`                | default `http://services.agroprombank.com/` (SOAPAction = namespace + function)                                                                                                                                                                                                                                                 |
+| `AGROPROMBANK_QR_LOGIN`                    | login for remote operations, issued by the bank                                                                                                                                                                                                                                                                                 |
+| `AGROPROMBANK_QR_PASSWORD` / `_FILE`       | its password                                                                                                                                                                                                                                                                                                                    |
+| `AGROPROMBANK_QR_EXTERNAL_TOKEN` / `_FILE` | optional token the bank may issue instead of login/password; when set, `Login` and `Password` go out empty                                                                                                                                                                                                                      |
+| `AGROPROMBANK_QR_DEVICE_ID`                | optional device id the bank issues for payment notifications; goes in `DeviceId` (otherwise `-1`). Per brand: «ID устройства» in the brand terminal                                                                                                                                                                             |
+| `AGROPROMBANK_QR_TERMINAL_ID`              | the QR terminal, `QRT\d{15}`                                                                                                                                                                                                                                                                                                    |
+| `AGROPROMBANK_QR_CODE_FORMAT`              | what the QR code says. Default `{terminal}:{rub}:{extid}`; placeholders `{terminal}`, `{rub}` (sum as `12.50`), `{kop}` (sum in kopecks), `{extid}`. See question 1.                                                                                                                                                            |
+| `AGROPROMBANK_QR_APP_LINK`                 | optional link that opens the bank app on the same phone with the code; placeholders `{code}` (URL-encoded QR text), `{extid}`, `{terminal}`. Unset: the clients show the QR code only. See question 2.                                                                                                                          |
+| `AGROPROMBANK_QR_LIFETIME_MINUTES`         | how long an invoice is offered, default 10; then it is closed (`ClosePaymentExtId`). Keep it at or below `ORDER_PAYMENT_TTL_MINUTES`.                                                                                                                                                                                           |
+| `AGROPROMBANK_QR_TIMEOUT_MS`               | per call, default 15000                                                                                                                                                                                                                                                                                                         |
 
 The external id of an invoice (`extid`) is our `Payment.invoiceId`, taken from
 the same `agroprombank_invoice_seq` with the same digits-only
@@ -747,11 +749,12 @@ merchant a device id for payment notifications (the brand terminal's «ID
 in `DeviceId`. Maxim's instructions to brands (2026-11-18) ask the bank for it.
 
 `GET /config/features` gains `qrPaymentCurrencies: string[]` — `["RUP"]` while
-the QR payment is on and configured, `[]` otherwise; always present. A client
-offers «Оплатить по QR» only for a store whose currency is in that list.
-`PaymentHoldsService.cardPaymentRequired` treats an order as needing payment
-when the card flow is on, or when the QR payment is on and the order is in a
-currency it takes — a QR-only deployment does not lock a USD order out.
+the QR payment is switched on, `[]` otherwise; always present. A client offers
+«Оплатить по QR» only for a store whose currency is in that list **and** whose
+`onlinePayment.qr` is true (its brand's own QR terminal, §13.3).
+`PaymentHoldsService.paymentRequired` treats a new order as needing payment
+when its brand's own terminal takes it online — by card in the card flow, or
+by QR in a currency QR takes; otherwise the order is paid at the store.
 
 Switching `AGROPROMBANK_QR_ENABLED` off stops new invoices only. As long as
 the terminal and the credentials are configured, money already taken by QR
@@ -1058,14 +1061,32 @@ own terminal has at least one section (`GET /my-brand/onboarding`
 `payments`, rule `brandLaunch`), and shows the same instructions until then
 (since 2026-11-18; before, the step always read as done).
 
-### 13.3 Routing and fallback
+### 13.3 Routing — no fallback, pay at the store
+
+Decided 2026-11-27 (owner; Maxim's check of 18.11, п.3: «если я убрал
+терминал, я все равно получил возможность оплатить qr кодом»).
 
 - A **new payment** — a bound-card charge, a Web-платёж page, a QR invoice —
   uses the terminal of the order's brand (`Order → Store.brandId`) for that
   flow, and records it on `Payment.paymentTerminalId`. A brand without a
-  terminal, or without the section for this flow, uses takeAway's default
-  terminal from env, recorded as `null`. The admin card shows each flow as
-  «терминал бренда» or «терминал takeAway по умолчанию».
+  terminal, or without the section for this flow, **takes no payment in that
+  flow**: the start is refused with `409` (`ONLINE_PAYMENT_UNAVAILABLE` for
+  bound cards and Web-платёж, `QR_PAYMENT_DISABLED` for QR). takeAway's
+  default terminal is never used in its place — before 2026-11-27 it was,
+  and the brand's guests' money landed on takeAway's account with nobody
+  passing it on. The admin card shows each flow as «терминал бренда» or «нет
+  своего терминала — оплата на месте».
+- **What the customer sees.** The public store (`GET /stores`,
+  `GET /stores/:id`) carries `onlinePayment: { card, qr }` — the card flow of
+  `/config/features` and the QR payment at the brand's own terminal, QR
+  already checked against the store currency. The clients offer only those.
+  With both false the checkout says «Оплата на месте», the order is placed
+  without a payment step, goes to the kitchen at once (`kitchenVisibleAt`
+  set at creation) and comes back with `payAtCounter: true`; the order page
+  shows «Оплата на месте» instead of «Оплачено». `PaymentHoldsService.paymentRequired`
+  decides this once, when the order is placed; the kitchen board and the
+  accept rule then go by the order's own `kitchenVisibleAt` (null — still
+  waiting for its money), whatever the brand's terminal does later.
 - **Everything after** — capture on accept, a deferred charge, a hold
   released on cancel, a refund or reversal from the admin, the reconciliation
   cron, a Web-платёж notification (verified with that registration's
@@ -1088,9 +1109,16 @@ own terminal has at least one section (`GET /my-brand/onboarding`
 - Switches, endpoints, namespaces, time-outs, response verification and the
   invoice prefix stay in env for every terminal; invoice ids come from the one
   `agroprombank_invoice_seq`, so they never collide between terminals.
-- Whether a flow is offered to customers at all is still decided by env
-  (`CARD_PAYMENT_FLOW`, `AGROPROMBANK_QR_ENABLED` and the default terminal
-  being configured).
+- Whether a flow exists at all is decided by env (`CARD_PAYMENT_FLOW`,
+  `AGROPROMBANK_QR_ENABLED`); to whom it is offered, by the brands' own
+  terminals. takeAway's default terminal in env no longer offers anything:
+  it only serves the payments recorded with `paymentTerminalId` null —
+  capture, refund, reconciliation — and card binding from a client that sends
+  no `storeId`.
+- **takeAway's own money.** takeAway takes payment on its own merchant only
+  where it sells itself: its terminal is entered as the brand terminal of a
+  brand takeAway runs (e.g. the live test of 2026-11-27, QR terminal
+  `QRT085680911056227`, merchant `M00021872` / terminal `E1044010`).
 
 Code: `apps/api/src/app/payments/terminals` (`PaymentTerminalsService` picks
 the terminal, `PaymentTerminalsAdminService` stores it); the bank clients take

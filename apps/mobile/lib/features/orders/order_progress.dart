@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/chips.dart';
+import 'order_wait.dart';
 
 /// Where an order sits on the Received → Preparing → Ready → Picked up
 /// line, as a 0..1 fraction for the ring and an index for the stepper.
@@ -19,6 +20,27 @@ int orderStepIndex(OrderStatus status) => switch (status) {
   OrderStatus.pickedUp || OrderStatus.delivered => 3,
   _ => 0,
 };
+
+/// What the first step of the [OrderStepper] says.
+enum OrderFirstStep {
+  /// «Принят»: on the kitchen board — paid (or held) online, or nothing to
+  /// pay.
+  received,
+
+  /// «Ждём оплату»: the online payment has not gone through yet
+  /// ([awaitsOnlinePayment]); never «Принят» or «Оплачено» before it has.
+  awaitingPayment,
+
+  /// «Оплата на месте»: paid at the store ([Order.payAtCounter]), done from
+  /// the moment it was placed.
+  payAtCounter,
+}
+
+OrderFirstStep orderFirstStep(Order order) => order.payAtCounter
+    ? OrderFirstStep.payAtCounter
+    : awaitsOnlinePayment(order)
+    ? OrderFirstStep.awaitingPayment
+    : OrderFirstStep.received;
 
 /// The big live dial: a countdown to the due time ([Order.dueAt] — the
 /// kitchen's new estimate once it gave one, else the promised time) while
@@ -265,23 +287,32 @@ class _RingPainter extends CustomPainter {
 
 /// Four labelled dots joined by a line that fills as the order advances.
 class OrderStepper extends StatelessWidget {
-  const OrderStepper({required this.status, required this.delivery, super.key});
+  const OrderStepper({required this.status, required this.delivery, this.first = OrderFirstStep.received, super.key});
 
   final OrderStatus status;
   final bool delivery;
+
+  /// What the first dot says: see [orderFirstStep].
+  final OrderFirstStep first;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final labels = [
-      l10n.stepReceived,
+      switch (first) {
+        OrderFirstStep.received => l10n.stepReceived,
+        OrderFirstStep.awaitingPayment => l10n.stepAwaitingPayment,
+        OrderFirstStep.payAtCounter => l10n.stepPayAtCounter,
+      },
       l10n.stepPreparing,
       delivery ? l10n.stepOnTheWay : l10n.stepReady,
       delivery ? l10n.stepDelivered : l10n.stepPickedUp,
     ];
     final current = orderStepIndex(status);
     final cancelled = status.isCancelled;
+    // Ticked: behind the order — and paying at the store from the start.
+    bool done(int i) => !cancelled && (i < current || (i == 0 && first == OrderFirstStep.payAtCounter));
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,9 +346,7 @@ class OrderStepper extends StatelessWidget {
                             : brand.foam,
                         border: Border.all(color: !cancelled && i <= current ? brand.caramel : brand.border, width: 2),
                       ),
-                      child: !cancelled && i < current
-                          ? const Icon(Icons.check_rounded, size: 11, color: Colors.white)
-                          : null,
+                      child: done(i) ? const Icon(Icons.check_rounded, size: 11, color: Colors.white) : null,
                     ),
                     Expanded(
                       child: i == labels.length - 1

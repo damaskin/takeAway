@@ -6,7 +6,8 @@
  * Every brand takes its guests' card and QR money on its own terminal, so it
  * lands on the brand's account. Each flow — bound cards, the Web-платёж page,
  * the QR terminal — is a section of its own; a brand without a section for a
- * flow pays through takeAway's default terminal (the API's env) for it.
+ * flow takes no online payment in it (never takeAway's default terminal in its
+ * place — owner, 2026-11-27), and without any its orders are paid at the store.
  *
  * Secrets are write-only: the API never returns them, only whether one is
  * stored and its last four characters.
@@ -15,8 +16,11 @@
 /** The three Agroprombank flows. */
 export type PaymentTerminalFlow = 'card' | 'web' | 'qr';
 
-/** Whose terminal a flow uses for this brand. */
-export type PaymentTerminalSource = 'BRAND' | 'DEFAULT';
+/**
+ * Whether the brand takes a flow's payments on its own terminal (`BRAND`) or
+ * not at all (`NONE`, since 2026-11-27 — before, `DEFAULT`: takeAway's terminal).
+ */
+export type PaymentTerminalSource = 'BRAND' | 'NONE';
 
 /** A write-only secret: stored or not, and its tail to recognise it by. */
 export interface PaymentTerminalSecret {

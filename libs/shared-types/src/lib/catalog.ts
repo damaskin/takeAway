@@ -131,6 +131,22 @@ export interface StoreListItem {
   /** What the store sells, for map markers and filters. Missing or empty = coffee. */
   kinds?: StoreKind[];
   distanceMeters: number | null;
+  /**
+   * How this store's customers can pay online: its brand's own terminal
+   * decides (docs/agroprombank-payments.md §13.3). `card` — in the card flow
+   * of `GET /config/features` `cardPaymentFlow`; `qr` — «Мобильный платёж»,
+   * already checked against the store's currency. Both false: the store
+   * takes no online payment and its orders are paid at the store (the order
+   * comes back with `payAtCounter`). Absent from older API builds — clients
+   * then go by the feature flags alone.
+   */
+  onlinePayment?: StoreOnlinePayment;
+}
+
+/** {@link StoreListItem.onlinePayment}. */
+export interface StoreOnlinePayment {
+  card: boolean;
+  qr: boolean;
 }
 
 /**

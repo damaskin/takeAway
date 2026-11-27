@@ -182,7 +182,7 @@ function harness() {
   };
   const recompute = { touch: jest.fn() };
   const realtime = { emitKdsOrderChanged: jest.fn() };
-  const holds = { cardPaymentRequired: jest.fn().mockReturnValue(false) };
+  const holds = { paymentRequired: jest.fn().mockResolvedValue(false) };
 
   const cart = new CartService(
     prisma as unknown as PrismaService,

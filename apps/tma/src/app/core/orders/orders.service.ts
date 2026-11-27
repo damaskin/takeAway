@@ -81,6 +81,12 @@ export interface OrderView {
    */
   canCancel?: boolean;
   /**
+   * Paid at the store: the order costs something, but its brand took no
+   * online payment when it was placed, so it went to the kitchen at once —
+   * no payment step, nothing to pay here. Absent from an older API — false.
+   */
+  payAtCounter?: boolean;
+  /**
    * Who cancelled the order, the store's reason and its comment — read them
    * with `orderCancellation`. Absent from an older API.
    */
@@ -106,6 +112,15 @@ export interface OrderView {
    * absent from an older API.
    */
   takeawayPromo?: TakeawayPromoLine | null;
+}
+
+/**
+ * Router state checkout hands the order screen when it could not start the
+ * online payment because the brand takes none (any more): the API's code,
+ * `ONLINE_PAYMENT_UNAVAILABLE` or `QR_PAYMENT_DISABLED`, shown there once.
+ */
+export interface OrderPageState {
+  paymentRefused?: string;
 }
 
 export interface OrderSummary {

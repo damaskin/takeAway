@@ -216,6 +216,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       QR_CURRENCY_UNSUPPORTED: "This store doesn't take mobile payment",
       ORDER_NOT_PAYABLE: 'This order is already paid or closed',
       QR_BANK_UNAVAILABLE: 'The bank is not answering — try again in a minute',
+      ONLINE_PAYMENT_UNAVAILABLE: "This venue doesn't take online payment — pay for the order at the counter",
     },
     units: {
       min: 'min',
@@ -325,6 +326,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
         refunded: 'Money returned',
         refundedLine: 'Your mobile payment was reversed — the money is back in your bank account.',
       },
+    },
+    payAtCounter: {
+      title: 'Pay at the counter',
+      checkoutHint: 'Your order goes straight to the venue — pay for it when you collect it.',
+      orderHint: 'Pay for the order when you collect it.',
     },
   },
   nav: {
@@ -490,6 +496,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       bankPageHint:
         "You pay by card on the bank's secure page. We hold the money now and take it when the store accepts your order.",
       payCta: 'Pay {{total}} · ready by {{time}}',
+      orderCta: 'Order for {{total}} · ready by {{time}}',
       fulfillmentPickup: 'Pickup',
       fulfillmentDelivery: 'Delivery',
       deliveryAddressLabel: 'Address',
@@ -528,6 +535,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       step: {
         paid: 'Paid',
+        awaitingPayment: 'Awaiting payment',
+        atCounter: 'Pay at the counter',
         preparing: 'Preparing',
         ready: 'Ready',
         pickedUp: 'Picked up',
@@ -1483,9 +1492,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'Payment terminal',
         flows: { card: 'Bound cards', web: 'Web payment', qr: 'Mobile payment (QR)' },
         sourceBrand: 'the brand’s terminal',
-        sourceDefault: 'takeAway’s default terminal',
-        defaultNotConfigured: 'not configured on this server',
-        hint: 'The guest’s money for an order lands on the brand’s terminal. A flow without a terminal of its own takes payments on takeAway’s default terminal. A refund always goes back through the terminal that took the payment.',
+        sourceNone: 'no terminal of its own — paid at the store',
+        hint: 'The guest’s money for an order lands on the brand’s terminal. A payment method without a terminal of its own is not offered to the brand’s guests: with no section at all, the brand’s orders go straight to the kitchen and are paid at the store. A refund always goes back through the terminal that took the payment.',
         updated: 'Changed {{date}} · {{name}}',
         common: 'General',
         fields: {
@@ -1516,12 +1524,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         pemPlaceholder: '-----BEGIN …-----',
         cardHint:
           'Cards bound earlier belong to takeAway’s terminal: they have to be bound again for the brand’s. The site, the mini app and the app still bind cards to takeAway’s terminal only — until that changes, leave this section empty while customers pay with bound cards.',
-        clearSection: 'Remove the section — this payment method goes through takeAway’s default terminal',
+        clearSection: 'Remove the section — this payment method is no longer offered to the brand’s guests',
         secretsHint: 'Secrets are never shown. An empty field keeps the stored value.',
         check: 'Check connection',
         remove: 'Remove terminal',
         removeConfirm:
-          'New payments go to takeAway’s default terminal. Refunds of payments already taken still go through this terminal.',
+          'The brand stops taking online payment: new orders go to the kitchen unpaid and are paid at the store. Refunds of payments already taken still go through this terminal.',
         saved: 'Saved',
         outcome: { OK: 'connected', ANSWERED: 'the bank answered', FAILED: 'no connection' },
       },
@@ -4139,6 +4147,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       payScheduled: 'Pay {{total}} · Scheduled',
       payDelivery: 'Pay {{total}} · Deliver',
       payDeliveryScheduled: 'Pay {{total}} · Scheduled delivery',
+      counterAsap: 'Order for {{total}} · ASAP',
+      counterScheduled: 'Order for {{total}} · Scheduled',
+      counterDelivery: 'Order for {{total}} · Deliver',
+      counterDeliveryScheduled: 'Order for {{total}} · Scheduled delivery',
       deliveryWhen: 'When do you want it delivered?',
       placeOrderFailed: 'Failed to place the order',
       payFailed: 'The bank declined the payment',

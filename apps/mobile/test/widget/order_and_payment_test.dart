@@ -33,13 +33,16 @@ Future<void> openCheckout(WidgetTester tester) async {
 void main() {
   group('order screen', () {
     testWidgets('shows the pickup code, where the money stands and lets the customer cancel', (tester) async {
-      final api = FakeApi()..currentOrder = FakeApi.sampleOrder();
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(
+          payment: {'state': 'HELD', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        );
       final h = await pumpApp(tester, api: api);
       await openOrder(tester, h);
 
       expect(find.text('Заказ #4821'), findsOneWidget);
       expect(find.text('Заказ получен'), findsOneWidget);
-      expect(find.text('Ждём оплату'), findsOneWidget, reason: 'a new order with no card on it yet is unpaid');
+      expect(find.text('Спишем при принятии заказа'), findsOneWidget, reason: 'the card hold is in place');
       expect(find.text('Я на месте'), findsOneWidget);
 
       // The code is what the counter hands the order over by; nobody scans a QR.

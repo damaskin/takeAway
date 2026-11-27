@@ -626,6 +626,10 @@
   "@qrPaymentHint": {
     "description": "Checkout, QR chosen: what happens next. The money is taken at once and given back if the store turns the order down."
   },
+  "payAtCounterNotice": "Pay at the store. Your order goes straight to the coffee shop — pay when you pick it up.",
+  "@payAtCounterNotice": {
+    "description": "Checkout, in place of the payment choice: the store's brand takes no online payment, so the order goes to the kitchen at once and is paid at the store."
+  },
   "qrPayTitle": "Mobile payment",
   "@qrPayTitle": {
     "description": "Title of the QR payment screen."
@@ -816,6 +820,14 @@
   "stepPickedUp": "Picked up",
   "stepOnTheWay": "On the way",
   "stepDelivered": "Delivered",
+  "stepAwaitingPayment": "Awaiting payment",
+  "@stepAwaitingPayment": {
+    "description": "Order screen, first step of the progress line while a new order waits for its online payment (in place of «Received»)."
+  },
+  "stepPayAtCounter": "Pay at the store",
+  "@stepPayAtCounter": {
+    "description": "Order screen, first step of the progress line of an order paid at the store (its brand takes no online payment); done from placement."
+  },
   "paymentStatePaid": "Payment went through",
   "paymentStateHeld": "Charged when the store accepts",
   "paymentStateHeldHint": "If the store does not accept the order, your card is not charged.",
@@ -1302,9 +1314,9 @@
   "@errTooManyUnpaidOrders": {
     "description": "Checkout refused: the customer already has the maximum number of unpaid orders (TOO_MANY_UNPAID_ORDERS)."
   },
-  "errQrPaymentDisabled": "Mobile payment is not available right now",
-  "@errQrPaymentDisabled": {
-    "description": "QR payment refused: switched off on the server (QR_PAYMENT_DISABLED)."
+  "errOnlinePaymentUnavailable": "Online payment isn't available at this coffee shop — please pay at the store",
+  "@errOnlinePaymentUnavailable": {
+    "description": "A card or QR payment start refused: the store's brand takes no online payment (ONLINE_PAYMENT_UNAVAILABLE, QR_PAYMENT_DISABLED). The order screen opens next."
   },
   "errQrCurrencyUnsupported": "This store doesn't take mobile payment",
   "@errQrCurrencyUnsupported": {

@@ -13,6 +13,7 @@ import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/checkout_errors.dart';
 import '../../shared/error_message.dart';
 import '../../shared/money_text.dart';
 import '../../shared/widgets/app_button.dart';
@@ -43,8 +44,15 @@ class QrPaymentScreen extends ConsumerStatefulWidget {
   ConsumerState<QrPaymentScreen> createState() => _QrPaymentScreenState();
 }
 
-/// Error codes after which asking again cannot help.
-const _finalCodes = {'ORDER_NOT_PAYABLE', 'QR_PAYMENT_DISABLED', 'QR_CURRENCY_UNSUPPORTED'};
+/// Error codes after which asking again cannot help. A store that takes no
+/// QR payment (its brand has no terminal of its own) leads to the order: it
+/// is paid at the store.
+const _finalCodes = {
+  'ORDER_NOT_PAYABLE',
+  qrPaymentDisabledCode,
+  onlinePaymentUnavailableCode,
+  'QR_CURRENCY_UNSUPPORTED',
+};
 
 class _QrPaymentScreenState extends ConsumerState<QrPaymentScreen> {
   late final AppLifecycleListener _lifecycle;

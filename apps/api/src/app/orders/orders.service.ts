@@ -352,6 +352,14 @@ export class OrdersService {
     // admin «Без имени».
     const customerName = dto.customerName?.trim() || (await this.profileName(userId));
 
+    // Paid online before the kitchen sees it — when the brand takes online
+    // payment at its own terminal — or paid at the store (§13.3).
+    const payOnline = await this.holds.paymentRequired({
+      totalCents,
+      currency: cart.store.currency,
+      brandId: cart.store.brandId,
+    });
+
     const placed = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
         // The queue policy books under the store's lock: the check above may
@@ -372,11 +380,11 @@ export class OrdersService {
             workSeconds,
             // L of the queue policy: «Загружены» when the order was placed.
             placedUnderLoad: cart.store.status === 'OVERLOADED',
-            // Nothing to pay by card: the order is the kitchen's to accept
-            // right away. Otherwise the clock starts when the payment lands.
-            kitchenVisibleAt: this.holds.cardPaymentRequired({ totalCents, currency: cart.store.currency })
-              ? null
-              : new Date(),
+            // Nothing to pay online: the order is the kitchen's to accept
+            // right away (and paid at the store when it costs anything).
+            // Otherwise the clock starts when the payment lands.
+            kitchenVisibleAt: payOnline ? null : new Date(),
+            payAtCounter: !payOnline && totalCents > 0,
             subtotalCents,
             discountCents,
             takeawayDiscountCents,
@@ -514,12 +522,12 @@ export class OrdersService {
     // estimates of the orders behind it may move.
     this.recompute?.touch(order.storeId);
 
-    // An order that has to be paid by card reaches the kitchen once its hold
+    // An order that has to be paid online reaches the kitchen once its hold
     // is in place — the payment service announces it then. Until that moment
-    // it is a basket nobody has paid for, and there is no paying at the
-    // counter any more to fall back on. Only an order with nothing to pay is
-    // announced straight away.
-    if (this.holds.cardPaymentRequired(order)) return this.toOrderDto(order);
+    // it is a basket nobody has paid for. An order with nothing to pay, or one
+    // paid at the store (its brand takes no online payment), is announced
+    // straight away.
+    if (payOnline) return this.toOrderDto(order);
 
     const row = await this.prisma.order.findUnique({ where: { id: order.id }, include: BOARD_INCLUDE });
     if (row) {
@@ -1432,6 +1440,7 @@ export class OrdersService {
       readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
       ...(this.queue?.enabled ? { readyFromQueue: true as const } : {}),
       canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),
+      payAtCounter: order.payAtCounter,
       canReview: canCustomerReview({ status: order.status, review }),
       review: review
         ? { rating: review.rating, comment: review.comment, createdAt: review.createdAt.toISOString() }

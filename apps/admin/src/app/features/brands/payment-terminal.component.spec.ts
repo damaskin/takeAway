@@ -15,14 +15,14 @@ const VIEW: PaymentTerminalView = {
   brandId: 'b1',
   id: 'term-1',
   card: {
-    source: 'DEFAULT',
+    source: 'NONE',
     merchantId: null,
     terminalId: null,
     privateKey: unset,
     certificate: noCert,
     bankCertificate: noCert,
   },
-  web: { source: 'DEFAULT', merchantLogin: null, merchantId: null, merchantPass: unset, bankCertificate: noCert },
+  web: { source: 'NONE', merchantLogin: null, merchantId: null, merchantPass: unset, bankCertificate: noCert },
   qr: {
     source: 'BRAND',
     terminalId: 'QRT123456789012345',
@@ -46,7 +46,7 @@ function setup(view: PaymentTerminalView = VIEW) {
   const api = {
     get: jest.fn().mockReturnValue(of(view)),
     save: jest.fn().mockReturnValue(of(view)),
-    remove: jest.fn().mockReturnValue(of({ ...view, id: null, qr: { ...view.qr, source: 'DEFAULT' } })),
+    remove: jest.fn().mockReturnValue(of({ ...view, id: null, qr: { ...view.qr, source: 'NONE' } })),
     check: jest
       .fn()
       .mockReturnValue(of({ checks: [{ flow: 'qr', outcome: 'OK', message: 'Банк ответил: счёта нет' }] })),
@@ -82,15 +82,16 @@ const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace
 describe('PaymentTerminalComponent («Платёжный терминал»)', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
-  it('loads only when opened and says which flows use takeAway’s default terminal', () => {
+  it('loads only when opened and says which flows the brand takes on its own terminal, and which not at all', () => {
     const { api, click, byTestId } = setup();
     expect(api.get).not.toHaveBeenCalled();
     click('payment-terminal-toggle');
 
     expect(api.get).toHaveBeenCalledWith('b1');
     const flows = text(byTestId('payment-terminal-flows'));
-    expect(flows).toContain('Привязанные карты: терминал takeAway по умолчанию · M00012345 / E1043280');
-    expect(flows).toContain('Web-платёж: терминал takeAway по умолчанию · не настроен на этом сервере');
+    expect(flows).toContain('Привязанные карты: нет своего терминала — оплата на месте');
+    expect(flows).toContain('Web-платёж: нет своего терминала — оплата на месте');
+    expect(flows).not.toContain('по умолчанию');
     expect(flows).toContain('Мобильный платёж (QR): терминал бренда · QRT123456789012345');
   });
 

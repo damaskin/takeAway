@@ -763,6 +763,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'We\'ll show a QR code to pay in Agroprombank\'s app. If the store does not accept the order, the money is returned.';
 
   @override
+  String get payAtCounterNotice =>
+      'Pay at the store. Your order goes straight to the coffee shop — pay when you pick it up.';
+
+  @override
   String get qrPayTitle => 'Mobile payment';
 
   @override
@@ -1000,6 +1004,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get stepDelivered => 'Delivered';
+
+  @override
+  String get stepAwaitingPayment => 'Awaiting payment';
+
+  @override
+  String get stepPayAtCounter => 'Pay at the store';
 
   @override
   String get paymentStatePaid => 'Payment went through';
@@ -1835,7 +1845,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'You already have unpaid orders — pay for or cancel one before placing a new one';
 
   @override
-  String get errQrPaymentDisabled => 'Mobile payment is not available right now';
+  String get errOnlinePaymentUnavailable =>
+      'Online payment isn\'t available at this coffee shop — please pay at the store';
 
   @override
   String get errQrCurrencyUnsupported => 'This store doesn\'t take mobile payment';

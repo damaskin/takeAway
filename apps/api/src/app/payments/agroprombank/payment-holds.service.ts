@@ -61,19 +61,26 @@ export class PaymentHoldsService {
   }
 
   /**
-   * Whether an order has to be paid before the kitchen may take it.
+   * Whether a new order has to be paid online before the kitchen may take it.
    *
-   * Paying at the counter is gone: with card payments on — either flow — or
-   * the QR payment on for the order's currency, an order that costs anything
-   * waits for its hold (or its paid QR invoice) before it reaches the kitchen
-   * board, and the board cannot accept it without one. A zero total (points or
-   * a gift card covered it all) has nothing to hold. With no way to pay
-   * switched on for the order nothing can be held, so the rule stands down
-   * rather than locking every order out.
+   * The brand decides, through its own terminal: an order that costs anything
+   * waits for its hold (or its paid QR invoice) when the customer can pay it
+   * online — by card in the deployment's card flow, or by QR in a currency the
+   * QR payment takes — at the brand's own terminal. A brand without one takes
+   * no online payment (never takeAway's terminal in its place — owner,
+   * 2026-11-27): its orders go to the kitchen at once and are paid at the
+   * store. A zero total (points or a gift card covered it all) has nothing to
+   * pay either way.
+   *
+   * Decided once, when the order is placed: from then on the order's own
+   * `kitchenVisibleAt` (null — still waiting for the money) and
+   * `payAtCounter` say what was decided, whatever the brand's terminal does
+   * later.
    */
-  cardPaymentRequired(order: { totalCents: number; currency: Currency }): boolean {
+  async paymentRequired(order: { totalCents: number; currency: Currency; brandId: string }): Promise<boolean> {
     if (order.totalCents <= 0) return false;
-    return this.webConfig.cardPaymentFlow !== 'none' || this.qrConfig.currencies.includes(order.currency);
+    const online = await this.terminals.onlinePayment(order.brandId);
+    return online.card || (online.qr && this.qrConfig.offeredCurrencies.includes(order.currency));
   }
 
   /** A hold or a completed card charge is on the order. */

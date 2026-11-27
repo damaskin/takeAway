@@ -127,9 +127,9 @@ export class PaymentTerminalsAdminService {
   async status(brandId: string): Promise<PaymentTerminalStatus> {
     const row = await this.terminals.activeRow(brandId);
     const flows = {
-      card: row && hasSection(row, 'card') ? 'BRAND' : 'DEFAULT',
-      web: row && hasSection(row, 'web') ? 'BRAND' : 'DEFAULT',
-      qr: row && hasSection(row, 'qr') ? 'BRAND' : 'DEFAULT',
+      card: row && hasSection(row, 'card') ? 'BRAND' : 'NONE',
+      web: row && hasSection(row, 'web') ? 'BRAND' : 'NONE',
+      qr: row && hasSection(row, 'qr') ? 'BRAND' : 'NONE',
     } as const;
     return { connected: Object.values(flows).includes('BRAND'), flows };
   }
@@ -162,8 +162,8 @@ export class PaymentTerminalsAdminService {
   }
 
   /**
-   * «Убрать терминал»: the brand goes back to takeAway's default terminal for
-   * new payments. A terminal that took payments (or bound cards) is retired,
+   * «Убрать терминал»: the brand stops taking online payment — its new orders
+   * are paid at the store. A terminal that took payments (or bound cards) is retired,
    * not deleted — its refunds still go back through it; an unused one is
    * deleted with its secrets.
    */
@@ -343,7 +343,7 @@ export class PaymentTerminalsAdminService {
       brandId,
       id: row?.id ?? null,
       card: {
-        source: card ? 'BRAND' : 'DEFAULT',
+        source: card ? 'BRAND' : 'NONE',
         merchantId: row?.cardMerchantId ?? null,
         terminalId: row?.cardTerminalId ?? null,
         privateKey: this.secretState(row?.cardPrivateKeyCipher ?? null, true),
@@ -351,14 +351,14 @@ export class PaymentTerminalsAdminService {
         bankCertificate: certificateState(row?.cardBankCertificatePem ?? null),
       },
       web: {
-        source: web ? 'BRAND' : 'DEFAULT',
+        source: web ? 'BRAND' : 'NONE',
         merchantLogin: row?.webMerchantLogin ?? null,
         merchantId: row?.webMerchantId ?? null,
         merchantPass: this.secretState(row?.webMerchantPassCipher ?? null),
         bankCertificate: certificateState(row?.webBankCertificatePem ?? null),
       },
       qr: {
-        source: qr ? 'BRAND' : 'DEFAULT',
+        source: qr ? 'BRAND' : 'NONE',
         terminalId: row?.qrTerminalId ?? null,
         login: row?.qrLogin ?? null,
         password: this.secretState(row?.qrPasswordCipher ?? null),

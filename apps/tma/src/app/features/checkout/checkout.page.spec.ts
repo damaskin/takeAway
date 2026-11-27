@@ -135,6 +135,7 @@ describe('TmaCheckoutPage — pickup time', () => {
   let catalog: Record<string, jest.Mock>;
   let orders: { create: jest.Mock };
   let qrPayments: { start: jest.Mock };
+  let webPayments: { start: jest.Mock };
   let mainButton: { label: string; tap: () => void } | null;
   /** The windows the API offers; reset to {@link SLOTS} after each test. */
   let catalogSlots: PickupSlot[] = SLOTS;
@@ -155,6 +156,7 @@ describe('TmaCheckoutPage — pickup time', () => {
   ) {
     mainButton = null;
     qrPayments = { start: jest.fn() };
+    webPayments = { start: jest.fn() };
     catalog = {
       listStores: jest.fn(() => of([store])),
       getStore: jest.fn(() => of(store)),
@@ -187,7 +189,7 @@ describe('TmaCheckoutPage — pickup time', () => {
         },
         { provide: PaymentCardsApi, useValue: {} },
         { provide: PaymentCardsStore, useValue: { load: () => of([]) } },
-        { provide: WebPaymentApi, useValue: { start: jest.fn() } },
+        { provide: WebPaymentApi, useValue: webPayments },
         { provide: PromoApi, useValue: {} },
         { provide: BonusesApi, useValue: { list: () => of([]), isDismissed: () => false } },
         { provide: QrPaymentApi, useValue: qrPayments },
@@ -432,6 +434,84 @@ describe('TmaCheckoutPage — pickup time', () => {
       mainButton?.tap();
       expect(orders.create).toHaveBeenCalledTimes(1);
       expect(qrPayments.start).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  /** Online payment only at the brand's own terminal, else at the counter (docs/agroprombank-payments.md §13.3). */
+  describe("a store paid at its brand's own terminal or at the counter", () => {
+    const AT_COUNTER: StoreListItem = { ...STORE, onlinePayment: { card: false, qr: false } };
+
+    afterEach(() => localStorage.clear());
+
+    it('says the order is paid at the counter, places it from the main button and opens it, with no payment', async () => {
+      const { page, root } = await open(AT_COUNTER, { qr: ['RUP'] });
+      const notice = root.querySelector('[data-testid="pay-at-counter"]');
+      expect(Array.from(notice?.children ?? [], (el) => el.textContent?.trim())).toEqual([
+        'Оплата на месте',
+        'Заказ сразу уйдёт в заведение — оплатите его при получении.',
+      ]);
+      expect(root.querySelector('[data-testid="pay-method"]')).toBeNull();
+      expect(root.querySelector('[data-testid="web-payment-hint"]')).toBeNull();
+      expect(root.textContent).not.toContain('Оплата картой сейчас недоступна');
+      expect(page.needsCard()).toBe(false);
+      expect(mainButton?.label).toMatch(/^Заказать за 45\sруб\. · Сейчас$/);
+
+      orders.create.mockReturnValue(of({ id: 'ord-1', payAtCounter: true }));
+      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      mainButton?.tap();
+
+      expect(orders.create).toHaveBeenCalledTimes(1);
+      expect(webPayments.start).not.toHaveBeenCalled();
+      expect(qrPayments.start).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/orders', 'ord-1']);
+    });
+
+    it('pays by QR only where the brand takes QR but no card', async () => {
+      const { page, root, texts } = await open({ ...STORE, onlinePayment: { card: false, qr: true } }, { qr: ['RUP'] });
+      expect(root.querySelector('[data-testid="pay-method"]')).toBeNull();
+      expect(page.paymentMethod()).toBe('QR');
+      expect(texts('qr-payment-hint')).toHaveLength(1);
+      expect(root.querySelector('[data-testid="pay-at-counter"]')).toBeNull();
+      expect(mainButton?.label).toMatch(/^Оплатить 45\sруб\. · Сейчас$/);
+    });
+
+    it('goes by the feature flags alone with an API that does not say', async () => {
+      const { page, root } = await open(STORE, { qr: ['RUP'] });
+      expect(page.payAtCounter()).toBe(false);
+      expect(root.querySelector('[data-testid="pay-method"]')).not.toBeNull();
+      expect(page.needsCard()).toBe(true);
+      expect(mainButton?.label).toMatch(/^Оплатить/);
+    });
+
+    it('skips the payment when the API placed the order for the counter after all', async () => {
+      await open(STORE);
+      orders.create.mockReturnValue(of({ id: 'ord-1', payAtCounter: true }));
+      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      mainButton?.tap();
+
+      expect(webPayments.start).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/orders', 'ord-1']);
+    });
+
+    it('opens the order with the reason when the brand no longer takes the payment', async () => {
+      const { page } = await open(STORE);
+      orders.create.mockReturnValue(of({ id: 'ord-1' }));
+      webPayments.start.mockReturnValue(
+        throwError(
+          () => new HttpErrorResponse({ status: 409, error: { statusCode: 409, code: 'ONLINE_PAYMENT_UNAVAILABLE' } }),
+        ),
+      );
+      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      mainButton?.tap();
+
+      expect(navigate).toHaveBeenCalledWith(['/orders', 'ord-1'], {
+        replaceUrl: true,
+        state: { paymentRefused: 'ONLINE_PAYMENT_UNAVAILABLE' },
+      });
+      expect(page.error()).toBeNull();
+      expect(page.paying()).toBe(false);
     });
   });
 

@@ -9,6 +9,7 @@ import '../../core/location/location_service.dart';
 import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 import '../../core/storage/app_prefs.dart';
+import '../../shared/checkout_errors.dart';
 import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
 import '../orders/orders_providers.dart';
@@ -110,6 +111,7 @@ class CheckoutState {
     this.webLaunch,
     this.qrPayment,
     this.asapRefused,
+    this.onlinePaymentSkipped = false,
   });
 
   final FulfillmentType fulfillment;
@@ -129,8 +131,9 @@ class CheckoutState {
   final PointsState points;
   final DeliveryState delivery;
 
-  /// Card to charge. Null only until the customer has a usable card: there is
-  /// no paying at the counter.
+  /// Card to charge. Null until the customer has a usable card; a store that
+  /// takes no online payment needs none (see
+  /// [CheckoutController.paysAtCounter]).
   final String? cardId;
 
   /// Whether the customer picked the method themselves (so a late-loading
@@ -160,6 +163,13 @@ class CheckoutState {
   /// again, still says it is open — a closing too close for this order's
   /// own cooking time (CLOSING_SOON) does not show on the store.
   final AsapBlockedReason? asapRefused;
+
+  /// The order went in, but the online payment checkout meant to take did
+  /// not happen: the API placed it as paid at the store
+  /// ([Order.payAtCounter]) or refused the payment start because the store's
+  /// brand takes none (`ONLINE_PAYMENT_UNAVAILABLE`, `QR_PAYMENT_DISABLED`).
+  /// The screen says so and opens the order instead of a payment step.
+  final bool onlinePaymentSkipped;
 
   /// Whether «Как можно скорее» can be chosen for [store] now.
   bool asapOffered(Store store) => store.isOpen && asapRefused == null;
@@ -197,6 +207,7 @@ class CheckoutState {
     WebPaymentLaunch? webLaunch,
     QrPayment? Function()? qrPayment,
     AsapBlockedReason? asapRefused,
+    bool? onlinePaymentSkipped,
   }) => CheckoutState(
     fulfillment: fulfillment ?? this.fulfillment,
     mode: mode ?? this.mode,
@@ -217,6 +228,7 @@ class CheckoutState {
     webLaunch: webLaunch ?? this.webLaunch,
     qrPayment: qrPayment == null ? this.qrPayment : qrPayment(),
     asapRefused: asapRefused ?? this.asapRefused,
+    onlinePaymentSkipped: onlinePaymentSkipped ?? this.onlinePaymentSkipped,
   );
 }
 
@@ -339,19 +351,31 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
   // ── Card or QR ─────────────────────────────────────────────────────────
 
+  // Since 2026-11-27 a store takes online payment only at its brand's own
+  // terminal ([Store.onlinePayment]); the feature flags still say what the
+  // deployment runs. An API that does not send it leaves the flags alone.
+
+  /// A card pays for [store]'s order: the deployment runs a card flow and
+  /// the store's brand takes card payment.
+  bool cardOffered(Store store) => _flags.cardPaymentsEnabled && (store.onlinePayment?.card ?? true);
+
   /// QR in Agroprombank's app is offered for [store]: the server takes it
-  /// for the store's currency (RUP).
-  bool qrOffered(Store store) => _flags.qrPaymentsFor(store.currency);
+  /// for the store's currency (RUP), and the store's brand takes it.
+  bool qrOffered(Store store) => _flags.qrPaymentsFor(store.currency) && (store.onlinePayment?.qr ?? true);
 
   /// Both a card and QR can pay for [store]'s order: checkout shows the
   /// choice.
-  bool choosesPayMethod(Store store) => qrOffered(store) && _flags.cardPaymentsEnabled;
+  bool choosesPayMethod(Store store) => qrOffered(store) && cardOffered(store);
+
+  /// [store] says it takes no online payment at all: its orders go to the
+  /// kitchen at once and are paid at the store («Оплата на месте»).
+  bool paysAtCounter(Store store) => store.paysAtCounter;
 
   /// The way the order will be paid: QR when it is the only one the store
   /// has, a card when QR is not offered, else the customer's pick.
   PayMethod payMethod(Store store) {
     if (!qrOffered(store)) return PayMethod.card;
-    if (!_flags.cardPaymentsEnabled) return PayMethod.qr;
+    if (!cardOffered(store)) return PayMethod.qr;
     return state.payMethod;
   }
 
@@ -591,20 +615,28 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     return flags.boundCardsEnabled && state.cardId != null;
   }
 
-  /// Every order that costs anything is paid — by card, the amount held at
-  /// checkout and taken when the store accepts, or by QR, given back if the
-  /// store turns it down. Only an order that points or a gift card covered
-  /// in full goes through without paying.
-  bool needsCard(Cart cart, Store store) => breakdown(cart, store).totalCents > 0;
+  /// Whether checkout takes the money online: every order that costs
+  /// anything — by card, the amount held at checkout and taken when the
+  /// store accepts, or by QR, given back if the store turns it down — except
+  /// at a store that takes no online payment ([paysAtCounter]), whose orders
+  /// are paid at the store. An order that points or a gift card covered in
+  /// full goes through without paying.
+  bool paysOnline(Cart cart, Store store) => breakdown(cart, store).totalCents > 0 && !paysAtCounter(store);
 
-  /// A QR payment needs nothing picked; a card one, see [payingByCard].
-  bool canPay(Cart cart, Store store) => !needsCard(cart, store) || payMethod(store) == PayMethod.qr || payingByCard;
+  /// A QR payment needs nothing picked; a card one needs the store to take
+  /// cards ([cardOffered]) and, with bound cards, one picked ([payingByCard]).
+  bool canPay(Cart cart, Store store) =>
+      !paysOnline(cart, store) || payMethod(store) == PayMethod.qr || (cardOffered(store) && payingByCard);
 
   // ── Place order ────────────────────────────────────────────────────────
 
   /// Creates the order (once) and charges the chosen card, or, in the web
   /// flow, opens the bank's page for it, or issues its QR invoice
-  /// ([CheckoutState.qrPayment], shown next). Returns the order id when the
+  /// ([CheckoutState.qrPayment], shown next). An order paid at the store —
+  /// the store said so, or the API placed it so ([Order.payAtCounter]) — has
+  /// no payment step; neither has one whose payment start the API refused
+  /// because the store takes no online payment
+  /// ([CheckoutState.onlinePaymentSkipped]). Returns the order id when the
   /// customer can move on.
   Future<String?> placeOrder(CheckoutForm form) async {
     final cart = _cart;
@@ -626,14 +658,18 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
       throw const CheckoutValidation(CheckoutProblem.deliveryAddress);
     }
     if (delivery && s.delivery.outside) throw const CheckoutValidation(CheckoutProblem.outsideDeliveryArea);
-    final byCard = needsCard(cart, store);
+    final online = paysOnline(cart, store);
     // One amount and no tips: the QR invoice is the order's total.
-    final byQr = byCard && payMethod(store) == PayMethod.qr;
-    if (byCard && !byQr && !payingByCard) throw const CheckoutValidation(CheckoutProblem.cardNeeded);
+    final byQr = online && payMethod(store) == PayMethod.qr;
+    final byCard = online && !byQr;
+    if (byCard && !(cardOffered(store) && payingByCard)) throw const CheckoutValidation(CheckoutProblem.cardNeeded);
 
     state = s.copyWith(submitting: true, error: () => null, qrPayment: () => null);
+    var orderId = s.placedOrderId;
     try {
-      var orderId = s.placedOrderId;
+      // The API decides at creation whether the order is paid online; one it
+      // placed as paid at the store is with the kitchen already.
+      var atCounter = false;
       if (orderId == null) {
         final order = await _api.createOrder(
           CreateOrderRequest(
@@ -660,7 +696,8 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
           ),
         );
         orderId = order.id;
-        state = state.copyWith(placedOrderId: orderId);
+        atCounter = order.payAtCounter;
+        state = state.copyWith(placedOrderId: orderId, onlinePaymentSkipped: online && atCounter);
         // The cart became an order: a bonus taken off it is offered again
         // on the next one, and a bonus used here leaves the profile.
         ref.read(bonusRemovedCartsProvider.notifier).update((carts) => {...carts}..remove(cart.id));
@@ -668,7 +705,9 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         unawaited(ref.read(contactPrefsProvider).remember(name: form.name, phone: form.phone));
       }
 
-      if (byQr) {
+      if (atCounter) {
+        // Nothing to pay here: the guest pays at the store.
+      } else if (byQr) {
         // The invoice to pay in the bank's app, which the QR screen shows. A
         // retry answers the same invoice while it is still pending.
         final payment = await _api.startQrPayment(StartQrPaymentRequest(orderId: orderId));
@@ -682,19 +721,33 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         ref.invalidate(cardsProvider);
       }
       state = state.copyWith(submitting: false);
-      // The server emptied the cart and took the points when the order was
-      // created; sync once the customer is moving on.
-      unawaited(ref.read(cartProvider(store.id).notifier).reload());
-      ref
-        ..invalidate(ordersProvider)
-        ..invalidate(loyaltyProvider);
+      _movedOn(store);
       return orderId;
     } on Object catch (error) {
       final apiError = ApiError.from(error);
+      final placed = orderId;
+      // The store took no online payment after all (its brand has no
+      // terminal of its own any more): no retry can help, so on to the
+      // order, and the store is read again for the next checkout.
+      if (placed != null && isOnlinePaymentRefusal(apiError.code)) {
+        state = state.copyWith(submitting: false, onlinePaymentSkipped: true);
+        ref.invalidate(storesProvider);
+        _movedOn(store);
+        return placed;
+      }
       state = state.copyWith(submitting: false, error: () => apiError);
       _onTimeRefused(apiError);
       return null;
     }
+  }
+
+  /// The server emptied the cart and took the points when the order was
+  /// created; sync once the customer is moving on.
+  void _movedOn(Store store) {
+    unawaited(ref.read(cartProvider(store.id).notifier).reload());
+    ref
+      ..invalidate(ordersProvider)
+      ..invalidate(loyaltyProvider);
   }
 
   /// The API turned the order down for its time. «As soon as possible» is

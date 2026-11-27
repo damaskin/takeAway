@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
+import '../../shared/checkout_errors.dart';
+import '../catalog/catalog_providers.dart';
 
 // Agroprombank's «Мобильный платёж» on the phone: the order's QR invoice,
 // shown until the customer pays it in the bank's app
@@ -176,7 +178,11 @@ class QrPaymentController extends AutoDisposeFamilyNotifier<QrPaymentState, Stri
       final payment = await _api.startQrPayment(StartQrPaymentRequest(orderId: arg));
       if (generation == _generation) _apply(payment);
     } on Object catch (error) {
-      if (generation == _generation) state = QrPaymentState(phase: QrPhase.failed, error: ApiError.from(error));
+      final apiError = ApiError.from(error);
+      // The store takes no QR payment (any more): read it again, so the
+      // order screen stops offering it.
+      if (isOnlinePaymentRefusal(apiError.code)) ref.invalidate(storesProvider);
+      if (generation == _generation) state = QrPaymentState(phase: QrPhase.failed, error: apiError);
     }
   }
 

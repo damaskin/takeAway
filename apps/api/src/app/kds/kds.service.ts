@@ -69,9 +69,11 @@ export class KdsService {
     });
 
     // A new order the customer has not paid for yet is not the kitchen's
-    // business: it shows up once its card hold is in place.
+    // business: it shows up once its card hold is in place. One with nothing
+    // to pay online — paid at the store, or covered in full — was the
+    // kitchen's from the start (`kitchenVisibleAt` set when it was placed).
     const payable = orders.filter(
-      (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
+      (o) => o.status !== 'CREATED' || o.kitchenVisibleAt !== null || o.payments.length > 0,
     );
     const plans = await this.plans(storeId);
     return payable.map((o) => toBoardRow(o, plans?.get(o.id)));
@@ -115,13 +117,10 @@ export class KdsService {
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
     if (!(ALLOWED_TRANSITIONS['accept'] ?? []).includes(order.status)) return;
 
-    // Nothing is paid at the counter any more: an order that costs money is
-    // taken on only with the customer's card behind it.
-    if (
-      order.status === 'CREATED' &&
-      this.holds.cardPaymentRequired(order) &&
-      !(await this.holds.hasCardPayment(orderId))
-    ) {
+    // An order waiting for its online payment is taken on only with the money
+    // behind it. One paid at the store (or with nothing to pay) became the
+    // kitchen's when it was placed — `kitchenVisibleAt` says which.
+    if (order.status === 'CREATED' && order.kitchenVisibleAt === null && !(await this.holds.hasCardPayment(orderId))) {
       throw new BadRequestException('The customer has not paid for this order yet');
     }
 
