@@ -14,7 +14,7 @@ import { SecretCipher } from '../../common/crypto/secret-cipher';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isDeferredCharge } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
-import { PaymentTerminalsService } from '../terminals/payment-terminals.service';
+import { onlinePaymentUnavailable, PaymentTerminalsService } from '../terminals/payment-terminals.service';
 import { type CardTerminal, describeTerminal } from '../terminals/terminal-types';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig, CARD_INSTITUTES } from './agroprombank.config';
@@ -372,8 +372,10 @@ export class AgroprombankService {
     });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
 
-    // The brand's own terminal takes the money; without one, takeAway's.
+    // The brand's own terminal takes the money; a brand without one takes no
+    // card payment — never takeAway's terminal in its place (§13.3).
     const terminal = await this.terminals.cardForBrand(order.store.brandId);
+    if (!terminal) throw onlinePaymentUnavailable('card');
     this.assertCanCall(terminal);
     const moment =
       options.preauth === undefined ? this.config.chargeMomentFor(terminal) : options.preauth ? 'hold' : 'checkout';
@@ -835,12 +837,18 @@ export class AgroprombankService {
     return terminal;
   }
 
-  /** The brand's terminal for a store a card is bound for; the default one without a store. */
+  /**
+   * The brand's terminal for a store a card is bound for; the default one
+   * without a store. A store whose brand takes no card payment has nothing to
+   * bind a card for.
+   */
   private async terminalForStore(storeId: string | undefined): Promise<CardTerminal> {
     if (!storeId) return this.config.defaultTerminal();
     const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
     if (!store) throw new NotFoundException('Store not found');
-    return this.terminals.cardForBrand(store.brandId);
+    const terminal = await this.terminals.cardForBrand(store.brandId);
+    if (!terminal) throw onlinePaymentUnavailable('card');
+    return terminal;
   }
 
   /**

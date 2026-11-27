@@ -1683,6 +1683,11 @@ model Order {
   /// landed. The acceptance clock runs from here. Null for orders still
   /// waiting for their payment, and for orders from before 2026-10-14.
   kitchenVisibleAt      DateTime?
+  /// Paid at the store: the order cost something, but its brand took no
+  /// online payment when it was placed (no terminal of its own for any flow
+  /// the customer could use), so it went to the kitchen at once. Decided at
+  /// creation and never recomputed. Since 2026-11-27.
+  payAtCounter          Boolean   @default(false)
   /// Staff and the brand owner were told the order is still not accepted (once).
   acceptAlertSentAt     DateTime?
   /// «Пора готовить предзаказ» went to the staff (once).

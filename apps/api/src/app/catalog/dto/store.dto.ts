@@ -174,6 +174,22 @@ export class StoreListItemDto {
 
   @ApiProperty({ nullable: true, type: Number, description: 'Distance from query point in meters, if lat/lng passed' })
   distanceMeters!: number | null;
+
+  @ApiProperty({
+    type: () => StoreOnlinePaymentDto,
+    required: false,
+    description:
+      "How the store's customers can pay online — its brand's own terminal decides. Both false: orders are paid at the store.",
+  })
+  onlinePayment?: StoreOnlinePaymentDto;
+}
+
+export class StoreOnlinePaymentDto {
+  @ApiProperty({ description: 'By card, in the card flow of /config/features `cardPaymentFlow`.' })
+  card!: boolean;
+
+  @ApiProperty({ description: '«Мобильный платёж» by QR in the bank app; already checked against the store currency.' })
+  qr!: boolean;
 }
 
 export class BrandThemeDto {

@@ -345,6 +345,13 @@ export class OrderDto {
 
   @ApiProperty({
     description:
+      'Paid at the store: the order costs something, but its brand took no online payment when it was placed (no ' +
+      'terminal of its own), so it went to the kitchen at once. False for orders paid online or with nothing to pay.',
+  })
+  payAtCounter!: boolean;
+
+  @ApiProperty({
+    description:
       'The customer may review the order now: handed over (PICKED_UP or DELIVERED) and not reviewed yet. ' +
       'Otherwise POST /orders/:id/review answers 409.',
   })

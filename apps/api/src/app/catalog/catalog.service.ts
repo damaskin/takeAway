@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CategoryKind, StoreFulfillment } from '@prisma/client';
 import { needsOptionChoice, offersVariantAndAddon, showsNutrition } from '@takeaway/utils';
+import type { StoreOnlinePayment } from '@takeaway/shared-types';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService, type PickupSlot } from '../kitchen/kitchen-load.service';
 import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
+import { NO_ONLINE_PAYMENT, PaymentTerminalsService } from '../payments/terminals/payment-terminals.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere } from './option-availability';
 import { SOLD_ON_ITS_OWN } from './product-listing';
@@ -58,7 +60,28 @@ export class CatalogService {
     private readonly optionGroups: ProductOptionGroupsService,
     /** Always provided by KitchenModule; unit tests written before the queue policy leave it out (= off). */
     @Optional() private readonly queue?: QueuePolicyService,
+    /** Always provided by PaymentHoldsModule; unit tests that predate `onlinePayment` leave it out (field omitted). */
+    @Optional() private readonly terminals?: PaymentTerminalsService,
   ) {}
+
+  /**
+   * How each store's customers can pay online — its brand's own terminal
+   * (docs/agroprombank-payments.md §13.3); QR only in a currency the QR
+   * payment takes. Neither: the store's orders are paid at the store.
+   */
+  private async onlinePaymentOf(
+    stores: ReadonlyArray<{ id: string; brandId: string; currency: string }>,
+  ): Promise<Map<string, StoreOnlinePayment> | null> {
+    if (!this.terminals) return null;
+    const byBrand = await this.terminals.onlinePaymentByBrand(stores.map((s) => s.brandId));
+    const qrCurrencies = this.flags.qrPaymentCurrencies;
+    return new Map(
+      stores.map((s) => {
+        const brand = byBrand.get(s.brandId) ?? NO_ONLINE_PAYMENT;
+        return [s.id, { card: brand.card, qr: brand.qr && qrCurrencies.includes(s.currency) }];
+      }),
+    );
+  }
 
   /**
    * Strip `DELIVERY` from a store's advertised fulfillment modes when the
@@ -92,6 +115,7 @@ export class CatalogService {
     // (and the busy wait while the kitchen has pressed «Загружены») plus a
     // typical order's cooking, pushed to the first slot with room.
     const availability = await this.availability.evaluate(stores);
+    const online = await this.onlinePaymentOf(stores);
 
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';
     const radius = query.radius ?? 5000;
@@ -125,6 +149,7 @@ export class CatalogService {
           heroImageUrl: s.heroImageUrl,
           kinds: storeKinds(s.kinds),
           distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
+          ...(online ? { onlinePayment: online.get(s.id) ?? NO_ONLINE_PAYMENT } : {}),
         };
       })
       .filter((s) => !hasPoint || (s.distanceMeters ?? Infinity) <= radius)
@@ -227,6 +252,7 @@ export class CatalogService {
 
     const view = (await this.availability.evaluate([store])).get(store.id);
     const currentEtaSeconds = view?.currentEtaSeconds ?? store.baseEtaSeconds;
+    const online = await this.onlinePaymentOf([store]);
 
     return {
       id: store.id,
@@ -252,6 +278,7 @@ export class CatalogService {
       heroImageUrl: store.heroImageUrl,
       kinds: storeKinds(store.kinds),
       distanceMeters: null,
+      ...(online ? { onlinePayment: online.get(store.id) ?? NO_ONLINE_PAYMENT } : {}),
       timezone: store.timezone,
       phone: store.phone,
       email: store.email,

@@ -26,11 +26,16 @@ export class AgroprombankQrConfig {
   constructor(private readonly config: ConfigService) {}
 
   /**
-   * Offers the QR payment to customers. Offered next to the card flow
+   * Offers the QR payment to customers — of the brands whose own terminal has
+   * a QR section, and nobody else's. Offered next to the card flow
    * (`CARD_PAYMENT_FLOW`), not instead of it.
+   *
+   * On unless `AGROPROMBANK_QR_ENABLED=false` (since 2026-11-27): what offers
+   * it to a brand is the QR section a platform admin enters in the brand's
+   * terminal, so the switch is only there to stop new invoices everywhere.
    */
   get enabled(): boolean {
-    return this.bool('AGROPROMBANK_QR_ENABLED', false);
+    return this.bool('AGROPROMBANK_QR_ENABLED', true);
   }
 
   get serviceUrl(): string {
@@ -97,12 +102,17 @@ export class AgroprombankQrConfig {
     return this.config.get<string>('AGROPROMBANK_INVOICE_PREFIX')?.trim() ?? '';
   }
 
-  /** Currencies an order can be paid in by QR — `GET /config/features` `qrPaymentCurrencies`. */
-  get currencies(): string[] {
-    return this.isConfigured ? [QR_CURRENCY] : [];
+  /**
+   * Currencies an order can be paid in by QR — `GET /config/features`
+   * `qrPaymentCurrencies`: RUP while the QR payment is switched on. Whether a
+   * store's customers get it is the store's `onlinePayment.qr` (its brand's
+   * own terminal).
+   */
+  get offeredCurrencies(): string[] {
+    return this.enabled ? [QR_CURRENCY] : [];
   }
 
-  /** Switched on, and everything a call needs is there: new invoices can be issued. */
+  /** takeAway's default terminal is switched on and complete — it still looks after the money it took. */
   get isConfigured(): boolean {
     return this.enabled && this.missingSettings().length === 0;
   }

@@ -371,6 +371,13 @@ export interface Order extends OrderSummary {
    */
   canCancel?: boolean;
   /**
+   * Paid at the store: the order costs something, but its brand took no
+   * online payment when it was placed (no terminal of its own), so it went to
+   * the kitchen at once — no «Оплачено» step, no payment screen. False for an
+   * order paid online or with nothing to pay. Optional for older API builds.
+   */
+  payAtCounter?: boolean;
+  /**
    * The customer's review of the order — shown back as «Спасибо за отзыв!»
    * with the stars. Null before one. Optional for older API builds.
    */
