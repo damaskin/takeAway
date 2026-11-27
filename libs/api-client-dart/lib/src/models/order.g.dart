@@ -86,6 +86,7 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
   payment: json['payment'] == null ? OrderPayment.none : _paymentFromJson(json['payment']),
   readyEstimateAt: json['readyEstimateAt'] == null ? null : DateTime.parse(json['readyEstimateAt'] as String),
   canCancel: json['canCancel'] as bool?,
+  payAtCounter: json['payAtCounter'] as bool? ?? false,
   cancelledBy: $enumDecodeNullable(
     _$OrderCancellerEnumMap,
     json['cancelledBy'],

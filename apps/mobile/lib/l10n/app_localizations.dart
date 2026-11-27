@@ -1388,6 +1388,12 @@ abstract class AppLocalizations {
   /// **'We\'ll show a QR code to pay in Agroprombank\'s app. If the store does not accept the order, the money is returned.'**
   String get qrPaymentHint;
 
+  /// Checkout, in place of the payment choice: the store's brand takes no online payment, so the order goes to the kitchen at once and is paid at the store.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay at the store. Your order goes straight to the coffee shop — pay when you pick it up.'**
+  String get payAtCounterNotice;
+
   /// Title of the QR payment screen.
   ///
   /// In en, this message translates to:
@@ -1825,6 +1831,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delivered'**
   String get stepDelivered;
+
+  /// Order screen, first step of the progress line while a new order waits for its online payment (in place of «Received»).
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting payment'**
+  String get stepAwaitingPayment;
+
+  /// Order screen, first step of the progress line of an order paid at the store (its brand takes no online payment); done from placement.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay at the store'**
+  String get stepPayAtCounter;
 
   /// No description provided for @paymentStatePaid.
   ///
@@ -3368,11 +3386,11 @@ abstract class AppLocalizations {
   /// **'You already have unpaid orders — pay for or cancel one before placing a new one'**
   String get errTooManyUnpaidOrders;
 
-  /// QR payment refused: switched off on the server (QR_PAYMENT_DISABLED).
+  /// A card or QR payment start refused: the store's brand takes no online payment (ONLINE_PAYMENT_UNAVAILABLE, QR_PAYMENT_DISABLED). The order screen opens next.
   ///
   /// In en, this message translates to:
-  /// **'Mobile payment is not available right now'**
-  String get errQrPaymentDisabled;
+  /// **'Online payment isn\'t available at this coffee shop — please pay at the store'**
+  String get errOnlinePaymentUnavailable;
 
   /// QR payment refused: the store sells in a currency the QR payment does not take (QR_CURRENCY_UNSUPPORTED).
   ///

@@ -182,6 +182,57 @@ void main() {
       expect(Store.fromJson(jsonDecode(jsonEncode(cached.toJson())) as Map<String, dynamic>).kinds, ['FOOD']);
     });
 
+    test('reads how the store takes online payment, and nothing said by an older API', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+
+      final both = Store.fromJson({
+        ...raw,
+        'onlinePayment': {'card': true, 'qr': true},
+      });
+      expect(both.onlinePayment?.card, isTrue);
+      expect(both.onlinePayment?.qr, isTrue);
+      expect(both.paysAtCounter, isFalse);
+
+      final qrOnly = Store.fromJson({
+        ...raw,
+        'onlinePayment': {'card': false, 'qr': true},
+      });
+      expect(qrOnly.onlinePayment?.card, isFalse);
+      expect(qrOnly.onlinePayment?.qr, isTrue);
+      expect(qrOnly.paysAtCounter, isFalse);
+
+      // The brand has no terminal of its own: its orders are paid at the store.
+      final none = Store.fromJson({
+        ...raw,
+        'onlinePayment': {'card': false, 'qr': false},
+      });
+      expect(none.onlinePayment?.none, isTrue);
+      expect(none.paysAtCounter, isTrue);
+      expect(
+        Store.fromJson({...raw, 'onlinePayment': <String, dynamic>{}}).paysAtCounter,
+        isTrue,
+        reason: 'missing = false',
+      );
+
+      final older = Store.fromJson({...raw}..remove('onlinePayment'));
+      expect(older.onlinePayment, isNull);
+      expect(older.paysAtCounter, isFalse, reason: 'the feature flags decide alone');
+      expect(Store.fromJson({...raw, 'onlinePayment': 'yes'}).onlinePayment, isNull);
+
+      // The offline cache keeps it.
+      final cached = Store.fromJson(jsonDecode(jsonEncode(qrOnly.toJson())) as Map<String, dynamic>);
+      expect(cached.onlinePayment?.card, isFalse);
+      expect(cached.onlinePayment?.qr, isTrue);
+      expect(Store.fromJson(jsonDecode(jsonEncode(older.toJson())) as Map<String, dynamic>).onlinePayment, isNull);
+
+      final detail = StoreDetail.fromJson({
+        ...fixture('store_detail.json')! as Map<String, dynamic>,
+        'onlinePayment': {'card': false, 'qr': false},
+      });
+      expect(detail.paysAtCounter, isTrue);
+      expect(StoreDetail.fromJson(fixture('store_detail.json')! as Map<String, dynamic>).onlinePayment, isNull);
+    });
+
     test('parses store detail with brand and empty working hours', () {
       final store = StoreDetail.fromJson(fixture('store_detail.json')! as Map<String, dynamic>);
       expect(store.brand.name, 'NoName Coffee');
@@ -375,6 +426,16 @@ void main() {
     test('treats a missing payment block as paying at the counter', () {
       final order = Order.fromJson(orderJson());
       expect(order.payment.state, PaymentState.none);
+    });
+
+    test('reads an order paid at the store, and not one from an older API', () {
+      final atCounter = Order.fromJson({...orderJson(), 'status': 'CREATED', 'payAtCounter': true});
+      expect(atCounter.payAtCounter, isTrue);
+      expect(atCounter.copyWithStatus(OrderStatus.accepted).payAtCounter, isTrue, reason: 'a live event keeps it');
+
+      expect(Order.fromJson({...orderJson(), 'payAtCounter': false}).payAtCounter, isFalse);
+      expect(Order.fromJson(orderJson()).payAtCounter, isFalse, reason: 'absent from older API builds');
+      expect(Order.fromJson({...orderJson(), 'payAtCounter': null}).payAtCounter, isFalse);
     });
 
     test('reads the takeAway promo on an order, and none from an older API', () {

@@ -11,6 +11,7 @@ import 'package:takeaway_api/takeaway_api.dart';
 import '../../app/router.dart';
 import '../../core/format/time.dart';
 import '../../core/location/location_service.dart';
+import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 import '../../core/push/push_prompt.dart';
 import '../../core/realtime/realtime_service.dart';
@@ -18,6 +19,7 @@ import '../../core/storage/app_prefs.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/checkout_errors.dart';
 import '../../shared/directions.dart';
 import '../../shared/money_text.dart';
 import '../../shared/store_kinds.dart';
@@ -102,6 +104,12 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
       }
       unawaited(controller.watchPayment());
     } on Object catch (error) {
+      // The store took no online payment after all: read it and the order
+      // again, so the screen stops offering a payment that cannot be.
+      if (isOnlinePaymentRefusal(ApiError.from(error).code)) {
+        ref.invalidate(storesProvider);
+        unawaited(controller.refresh());
+      }
       if (mounted) Snack.error(context, error);
     } finally {
       if (mounted) setState(() => _paying = false);
@@ -254,7 +262,15 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
     final async = ref.watch(orderProvider(widget.orderId));
     final order = async.valueOrNull;
     final flags = ref.watch(featureFlagsProvider).valueOrNull ?? FeatureFlags.off;
-    final unpaid = order != null && _awaitsPayment(order);
+    // Never on an order paid at the store: nothing is paid in the app.
+    final unpaid = order != null && awaitsOnlinePayment(order);
+    final ways = order == null
+        ? (card: false, qr: false)
+        : _paymentWays(
+            card: unpaid && flags.webPaymentsEnabled,
+            qr: unpaid && flags.qrPaymentsFor(order.currency),
+            store: ref.watch(liveStoreProvider(order.storeId)),
+          );
 
     // Haptic nudge on every status change after the first render.
     if (order != null) {
@@ -291,8 +307,8 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
           ? null
           : _ActionBar(
               order: order,
-              canPayOnline: unpaid && flags.webPaymentsEnabled,
-              canPayByQr: unpaid && flags.qrPaymentsFor(order.currency),
+              canPayOnline: ways.card,
+              canPayByQr: ways.qr,
               preferQr: PayMethodPref.read(ref.read(sharedPreferencesProvider)) == PayMethod.qr,
               paying: _paying,
               hereSent: _hereSent,
@@ -307,15 +323,16 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
   }
 }
 
-/// A new order whose payment never went through — on the bank's page or by
-/// QR: nothing is held or paid for it yet.
-bool _awaitsPayment(Order order) =>
-    order.status == OrderStatus.created &&
-    order.totalCents > 0 &&
-    switch (order.payment.state) {
-      PaymentState.none || PaymentState.pending || PaymentState.failed => true,
-      PaymentState.held || PaymentState.paid || PaymentState.refunded => false,
-    };
+/// The ways the flags allow to pay an unpaid order, narrowed to those its
+/// store takes ([Store.onlinePayment]) — unless that leaves none: the order
+/// itself says it waits for an online payment, so the API decides then (a
+/// refusal is worded, see `isOnlinePaymentRefusal`) rather than leaving the
+/// customer with no way at all.
+({bool card, bool qr}) _paymentWays({required bool card, required bool qr, required Store? store}) {
+  final online = store?.onlinePayment;
+  if (online == null || !((card && online.card) || (qr && online.qr))) return (card: card, qr: qr);
+  return (card: card && online.card, qr: qr && online.qr);
+}
 
 /// The one thing to do next, pinned under the thumb rather than below the
 /// map and the receipt: "Pay" (on the bank's page, by QR, or either) while
@@ -513,7 +530,9 @@ class _OrderBody extends ConsumerWidget {
     final brand = context.brand;
     final status = order.status;
     final name = ref.watch(currentUserProvider)?.firstName ?? '';
-    final showCode = !status.isTerminal;
+    // No pickup code before the online payment went through: the kitchen
+    // does not see the order yet.
+    final showCode = !status.isTerminal && !awaitsOnlinePayment(order);
     final ringSize = (MediaQuery.sizeOf(context).width * 0.62).clamp(200.0, 300.0);
     // The store as it is now: whether a pre-order waits for it to open, and
     // its phone — the customer may already be at the counter.
@@ -570,7 +589,7 @@ class _OrderBody extends ConsumerWidget {
           _CancellationCard(cancellation: cancellation, byQr: byQr),
         ],
         const SizedBox(height: 24),
-        OrderStepper(status: status, delivery: order.isDelivery),
+        OrderStepper(status: status, delivery: order.isDelivery, first: orderFirstStep(order)),
         const SizedBox(height: 20),
         if (showCode) ...[_CodeCard(order: order), const SizedBox(height: 12)],
         _PaymentCard(order: order, byQr: byQr),
@@ -819,6 +838,13 @@ class _PaymentCard extends StatelessWidget {
     BrandColors brand, {
     required bool byQr,
   }) => switch (order.payment.state) {
+    // Its brand takes no online payment: paid at the store, never awaited
+    // here.
+    PaymentState.none when order.payAtCounter && !order.status.isCancelled => (
+      l10n.paymentStateAtCounter,
+      Icons.storefront_rounded,
+      brand.caramel,
+    ),
     // QR money is taken at once and parked on the order like a hold.
     PaymentState.held when byQr => (l10n.paymentStatePaidByQr, Icons.qr_code_2_rounded, brand.mint),
     PaymentState.pending when order.payment.byQr => (l10n.paymentStateAwaitingQr, Icons.qr_code_2_rounded, brand.amber),

@@ -272,6 +272,7 @@ class Order {
     this.payment = OrderPayment.none,
     this.readyEstimateAt,
     this.canCancel,
+    this.payAtCounter = false,
     this.cancelledBy,
     this.cancelReason,
     this.cancelComment,
@@ -344,6 +345,14 @@ class Order {
   /// The API's verdict on whether the customer may cancel now: not accepted
   /// yet and no money taken. Null from API versions that predate it.
   final bool? canCancel;
+
+  /// Paid at the store: the order costs something, but its brand took no
+  /// online payment when it was placed (no terminal of its own), so it went
+  /// to the kitchen at once — no payment step, nothing to pay in the app.
+  /// False for an order paid online or with nothing to pay, and from API
+  /// builds that predate it.
+  @JsonKey(defaultValue: false)
+  final bool payAtCounter;
 
   /// Who cancelled a cancelled order. Null otherwise, on orders cancelled
   /// before 2026-11-05 whose record did not say, and from older APIs.
@@ -440,6 +449,7 @@ class Order {
     readyEstimateAt: readyEstimateAt,
     // A cancel the order allowed before is off once the kitchen took it.
     canCancel: next.isCancellable ? canCancel : false,
+    payAtCounter: payAtCounter,
     cancelledBy: cancelledBy,
     cancelReason: cancelReason,
     cancelComment: cancelComment,

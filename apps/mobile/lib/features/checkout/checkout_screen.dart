@@ -93,6 +93,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       if (placed.webLaunch == WebPaymentLaunch.notOpened) {
         Snack.show(context, AppLocalizations.of(context).webPaymentNotOpened, icon: Icons.error_outline_rounded);
       }
+      // The store took no online payment after all: the order is placed and
+      // paid at the store, so on to it rather than a payment that cannot be.
+      if (placed.onlinePaymentSkipped) {
+        Snack.show(context, AppLocalizations.of(context).errOnlinePaymentUnavailable, icon: Icons.storefront_rounded);
+      }
       router.go(Routes.menu);
       // QR: the invoice to pay in the bank's app comes first, the order
       // screen once it is paid (straight away if it already is).
@@ -141,6 +146,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final breakdown = controller.breakdown(cart, store);
     final minOrder = ref.watch(storeDetailProvider(store.id)).valueOrNull?.minOrderCents ?? 0;
     final belowMinimum = minOrder > 0 && cart.subtotalCents < minOrder;
+    final paysOnline = controller.paysOnline(cart, store);
     // A store that stopped taking orders while the customer was choosing
     // takes no new one; one already placed (card declined) can still be paid
     // for. A store closed only for «as soon as possible» takes a pre-order.
@@ -202,7 +208,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
           ),
           _DiscountsSection(state: state, currency: store.currency),
-          _PaymentSection(store: store, state: state, flags: flags, needsCard: controller.needsCard(cart, store)),
+          if (!controller.paysAtCounter(store))
+            _PaymentSection(store: store, state: state, flags: flags, paysOnline: paysOnline)
+          // A store that takes no online payment: the order goes to the
+          // kitchen at once and is paid at the store — nothing to choose.
+          else if (breakdown.totalCents > 0)
+            CheckoutSection(
+              title: l10n.paymentTitle,
+              icon: Icons.account_balance_wallet_outlined,
+              child: _PaymentNotice(
+                key: const ValueKey('pay-at-counter'),
+                text: l10n.payAtCounterNotice,
+                icon: Icons.storefront_rounded,
+              ),
+            ),
           _SummarySection(cart: cart, store: store, state: state, breakdown: breakdown),
           if (belowMinimum)
             Padding(
@@ -247,9 +266,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             PrimaryButton(
               loading: state.submitting,
               onPressed: belowMinimum || closed || !controller.canPay(cart, store) ? null : _submit,
-              label: state.placedOrderId != null && controller.needsCard(cart, store)
+              label: state.placedOrderId != null && paysOnline
                   ? l10n.retryPayment
-                  : controller.needsCard(cart, store)
+                  : paysOnline
                   ? l10n.placeOrderPay(context.money(breakdown.totalCents, store.currency))
                   : l10n.placeOrder(context.money(breakdown.totalCents, store.currency)),
               trailing: Text(
@@ -581,21 +600,23 @@ String? promoLabel(AppLocalizations l10n, CheckoutState state) {
 }
 
 class _PaymentSection extends ConsumerWidget {
-  const _PaymentSection({required this.store, required this.state, required this.flags, required this.needsCard});
+  const _PaymentSection({required this.store, required this.state, required this.flags, required this.paysOnline});
 
   final Store store;
   final CheckoutState state;
   final FeatureFlags flags;
 
   /// False when points or a gift card already cover the whole order.
-  final bool needsCard;
+  final bool paysOnline;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final controller = ref.read(checkoutProvider.notifier);
-    final boundCards = flags.boundCardsEnabled;
+    // The deployment runs a card flow and the store's brand takes cards.
+    final cardOffered = controller.cardOffered(store);
+    final boundCards = flags.boundCardsEnabled && cardOffered;
     final cards = boundCards ? (ref.watch(cardsProvider).valueOrNull ?? const <BoundCard>[]) : const <BoundCard>[];
     final locked = state.placedOrderId != null;
     final method = controller.payMethod(store);
@@ -720,12 +741,13 @@ class _PaymentSection extends ConsumerWidget {
               : [if (card.label != null) card.maskedPan, card.instituteName].whereType<String>().join(' · '),
           enabled: !card.isInactive,
         ),
-      // Orders are paid by card only; there is no paying at the counter.
-      if (flags.webPaymentsEnabled) ...[
-        if (needsCard) _PaymentNotice(text: l10n.webPaymentHint, icon: Icons.lock_outline_rounded),
-      ] else if (!boundCards)
+      // At a store that takes online payment its orders are paid online;
+      // no card way here and no QR means nothing can be ordered.
+      if (!cardOffered)
         _PaymentNotice(text: l10n.cardPaymentsUnavailable)
-      else if (needsCard && !cards.any((c) => !c.isInactive))
+      else if (flags.webPaymentsEnabled) ...[
+        if (paysOnline) _PaymentNotice(text: l10n.webPaymentHint, icon: Icons.lock_outline_rounded),
+      ] else if (paysOnline && !cards.any((c) => !c.isInactive))
         _PaymentNotice(text: l10n.addCardToOrder),
       if (boundCards && !locked)
         Align(
@@ -753,7 +775,7 @@ class _PaymentSection extends ConsumerWidget {
           if (method == PayMethod.qr) ...[
             // Paid in the bank's app right after the order is placed; given
             // back if the store turns it down.
-            if (needsCard) _PaymentNotice(text: l10n.qrPaymentHint, icon: Icons.qr_code_2_rounded),
+            if (paysOnline) _PaymentNotice(text: l10n.qrPaymentHint, icon: Icons.qr_code_2_rounded),
           ] else
             ...cardSide,
         ],
@@ -763,7 +785,7 @@ class _PaymentSection extends ConsumerWidget {
 }
 
 class _PaymentNotice extends StatelessWidget {
-  const _PaymentNotice({required this.text, this.icon = Icons.credit_card_rounded});
+  const _PaymentNotice({required this.text, this.icon = Icons.credit_card_rounded, super.key});
 
   final String text;
   final IconData icon;

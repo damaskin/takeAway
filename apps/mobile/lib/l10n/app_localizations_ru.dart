@@ -771,6 +771,9 @@ class AppLocalizationsRu extends AppLocalizations {
       'Покажем QR-код для оплаты в приложении Агропромбанка. Если заведение не примет заказ, деньги вернутся.';
 
   @override
+  String get payAtCounterNotice => 'Оплата на месте. Заказ сразу уйдёт в кофейню — оплатите при получении.';
+
+  @override
   String get qrPayTitle => 'Оплата мобильным платежом';
 
   @override
@@ -1008,6 +1011,12 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get stepDelivered => 'Доставлен';
+
+  @override
+  String get stepAwaitingPayment => 'Ждём оплату';
+
+  @override
+  String get stepPayAtCounter => 'Оплата на месте';
 
   @override
   String get paymentStatePaid => 'Оплата прошла';
@@ -1855,7 +1864,7 @@ class AppLocalizationsRu extends AppLocalizations {
       'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый';
 
   @override
-  String get errQrPaymentDisabled => 'Оплата мобильным платежом сейчас недоступна';
+  String get errOnlinePaymentUnavailable => 'Онлайн-оплата в этой кофейне недоступна — оплатите на месте';
 
   @override
   String get errQrCurrencyUnsupported => 'В этом заведении нельзя оплатить мобильным платежом';

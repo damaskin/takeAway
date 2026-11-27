@@ -21,17 +21,31 @@ enum OrderWaitNote {
 }
 
 /// On the kitchen board and not accepted yet: the card hold went through (or
-/// there was nothing to pay), or — from before charge-on-accept — it was paid
-/// outright. A new order whose card has not gone through is not on the board.
+/// there was nothing to pay, or it is paid at the store), or — from before
+/// charge-on-accept — it was paid outright. A new order whose card has not
+/// gone through is not on the board.
 bool isAwaitingAcceptance(Order order) => switch (order.status) {
   OrderStatus.paid => true,
   OrderStatus.created => switch (order.payment.state) {
     PaymentState.held || PaymentState.paid => true,
-    PaymentState.none => order.totalCents == 0,
+    PaymentState.none => order.totalCents == 0 || order.payAtCounter,
     _ => false,
   },
   _ => false,
 };
+
+/// A new order still waiting for its online payment — on the bank's page or
+/// by QR: nothing is held or paid for it yet, and the kitchen does not see
+/// it. Never one paid at the store ([Order.payAtCounter]) or with nothing to
+/// pay.
+bool awaitsOnlinePayment(Order order) =>
+    order.status == OrderStatus.created &&
+    order.totalCents > 0 &&
+    !order.payAtCounter &&
+    switch (order.payment.state) {
+      PaymentState.none || PaymentState.pending || PaymentState.failed => true,
+      PaymentState.held || PaymentState.paid || PaymentState.refunded => false,
+    };
 
 /// [store] is the store as it is now; without it a pre-order reads as simply
 /// awaiting acceptance.
@@ -156,6 +170,8 @@ CancelledMoney? endedOrderMoney(Order order) {
     OrderCancelMoney.refunded => CancelledMoney.refunded,
     OrderCancelMoney.pending => CancelledMoney.holdPending,
     null => switch (order.payment.state) {
+      // Paid at the store: no card money to speak of.
+      PaymentState.none when order.payAtCounter => null,
       PaymentState.none || PaymentState.failed => order.totalCents == 0 ? null : CancelledMoney.notCharged,
       PaymentState.held => CancelledMoney.holdPending,
       PaymentState.refunded =>

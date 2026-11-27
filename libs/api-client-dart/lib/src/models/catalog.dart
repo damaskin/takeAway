@@ -101,6 +101,7 @@ class Store {
     this.heroImageUrl,
     this.kinds,
     this.distanceMeters,
+    this.onlinePayment,
   });
 
   factory Store.fromJson(Map<String, dynamic> json) => _$StoreFromJson(json);
@@ -179,6 +180,17 @@ class Store {
   final List<String>? kinds;
   final double? distanceMeters;
 
+  /// How the store's customers can pay online — its brand's own terminal
+  /// decides (owner decision 2026-11-27). Null from API builds that predate
+  /// it: the feature flags alone decide then.
+  @JsonKey(fromJson: StoreOnlinePayment.tryFrom)
+  final StoreOnlinePayment? onlinePayment;
+
+  /// The store says it takes no online payment at all: its orders go to the
+  /// kitchen at once and are paid at the store. False when the API does not
+  /// say ([onlinePayment] null).
+  bool get paysAtCounter => onlinePayment?.none ?? false;
+
   bool get hasLocation => latitude != 0 || longitude != 0;
 
   /// Takes ASAP orders right now. Falls back to the manual switch alone when
@@ -203,6 +215,33 @@ class Store {
   StoreStatus get effectiveStatus => isOpen ? status : StoreStatus.closed;
   bool get supportsDelivery => fulfillmentTypes.contains('DELIVERY');
   String get fullAddress => [addressLine, city].where((p) => p.trim().isNotEmpty).join(', ');
+}
+
+/// [Store.onlinePayment]: `card` — the store's brand takes card payment in
+/// the deployment's card flow (`GET /config/features` `cardPaymentFlow`);
+/// `qr` — «Мобильный платёж» by QR, already checked against the store's
+/// currency. Both false: no online payment, the store's orders are paid at
+/// the store (the order comes back with `Order.payAtCounter`).
+@JsonSerializable()
+class StoreOnlinePayment {
+  const StoreOnlinePayment({this.card = false, this.qr = false});
+
+  factory StoreOnlinePayment.fromJson(Map<String, dynamic> json) => _$StoreOnlinePaymentFromJson(json);
+
+  /// Anything but an object reads as not sent (null): the app then goes by
+  /// the feature flags alone, as with an older API.
+  static StoreOnlinePayment? tryFrom(Object? raw) =>
+      raw is Map<String, dynamic> ? StoreOnlinePayment.fromJson(raw) : null;
+
+  Map<String, dynamic> toJson() => _$StoreOnlinePaymentToJson(this);
+
+  @JsonKey(defaultValue: false)
+  final bool card;
+  @JsonKey(defaultValue: false)
+  final bool qr;
+
+  /// Neither: the store takes no online payment.
+  bool get none => !card && !qr;
 }
 
 @JsonSerializable(explicitToJson: true)
@@ -277,6 +316,7 @@ class StoreDetail extends Store {
     super.heroImageUrl,
     super.kinds,
     super.distanceMeters,
+    super.onlinePayment,
     this.phone,
     this.email,
   });

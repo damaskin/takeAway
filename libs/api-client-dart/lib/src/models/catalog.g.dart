@@ -44,6 +44,7 @@ Store _$StoreFromJson(Map<String, dynamic> json) => Store(
   heroImageUrl: json['heroImageUrl'] as String?,
   kinds: _kindsFromJson(json['kinds']),
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
+  onlinePayment: StoreOnlinePayment.tryFrom(json['onlinePayment']),
 );
 
 Map<String, dynamic> _$StoreToJson(Store instance) => <String, dynamic>{
@@ -76,6 +77,7 @@ Map<String, dynamic> _$StoreToJson(Store instance) => <String, dynamic>{
   'heroImageUrl': instance.heroImageUrl,
   'kinds': instance.kinds,
   'distanceMeters': instance.distanceMeters,
+  'onlinePayment': instance.onlinePayment?.toJson(),
 };
 
 const _$StoreStatusEnumMap = {
@@ -100,6 +102,14 @@ const _$StorePauseReasonEnumMap = {
   StorePauseReason.noStaff: 'NO_STAFF',
   StorePauseReason.other: 'OTHER',
   StorePauseReason.unknown: 'unknown',
+};
+
+StoreOnlinePayment _$StoreOnlinePaymentFromJson(Map<String, dynamic> json) =>
+    StoreOnlinePayment(card: json['card'] as bool? ?? false, qr: json['qr'] as bool? ?? false);
+
+Map<String, dynamic> _$StoreOnlinePaymentToJson(StoreOnlinePayment instance) => <String, dynamic>{
+  'card': instance.card,
+  'qr': instance.qr,
 };
 
 StoreWorkingHour _$StoreWorkingHourFromJson(Map<String, dynamic> json) => StoreWorkingHour(
@@ -177,6 +187,7 @@ StoreDetail _$StoreDetailFromJson(Map<String, dynamic> json) => StoreDetail(
   heroImageUrl: json['heroImageUrl'] as String?,
   kinds: _kindsFromJson(json['kinds']),
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
+  onlinePayment: StoreOnlinePayment.tryFrom(json['onlinePayment']),
   phone: json['phone'] as String?,
   email: json['email'] as String?,
 );
@@ -209,6 +220,7 @@ Map<String, dynamic> _$StoreDetailToJson(StoreDetail instance) => <String, dynam
   'heroImageUrl': instance.heroImageUrl,
   'kinds': instance.kinds,
   'distanceMeters': instance.distanceMeters,
+  'onlinePayment': instance.onlinePayment?.toJson(),
   'timezone': instance.timezone,
   'phone': instance.phone,
   'email': instance.email,

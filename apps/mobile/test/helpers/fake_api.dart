@@ -21,6 +21,10 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   /// True = the order is already held, so starting a web payment returns no page.
   bool webPaymentSettled = false;
+
+  /// Error body (with its status) the next web payment start fails with,
+  /// e.g. 409 `ONLINE_PAYMENT_UNAVAILABLE`; null = it opens the page.
+  (int, Map<String, Object?>)? webPaymentFailure;
   final cancelled = <String>[];
   Order? currentOrder;
   List<BoundCard> boundCards = const [];
@@ -124,6 +128,10 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   /// Currency of the orders placed, e.g. RUP for a store that takes QR.
   String orderCurrency = 'MDL';
+
+  /// The API places the orders as paid at the store (`payAtCounter`): the
+  /// store's brand takes no online payment.
+  bool orderPayAtCounter = false;
 
   /// Body of the next promo check; null = the code takes 2 MDL off.
   Map<String, dynamic>? promoAnswer;
@@ -336,6 +344,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     String? cancelMoney,
     bool? canReview,
     Map<String, dynamic>? review,
+    bool? payAtCounter,
     int discountCents = 0,
 
     /// The takeAway promo line, as API JSON.
@@ -387,6 +396,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     'cancelMoney': ?cancelMoney,
     'canReview': ?canReview,
     'review': ?review,
+    'payAtCounter': ?payAtCounter,
     'takeawayPromo': ?takeawayPromo,
   });
 
@@ -692,7 +702,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     }
     created.add(body);
     _cartItems.clear();
-    return currentOrder = sampleOrder(currency: orderCurrency);
+    return currentOrder = sampleOrder(currency: orderCurrency, payAtCounter: orderPayAtCounter ? true : null);
   }
 
   @override
@@ -779,6 +789,14 @@ class FakeApi extends Fake implements TakeAwayApi {
         type: DioExceptionType.badResponse,
       );
     }
+    // The amount is held on the card now, as the API reads the order after.
+    final order = currentOrder;
+    if (order != null && order.payment.state == PaymentState.none) {
+      currentOrder = sampleOrder(
+        currency: order.currency,
+        payment: {'state': 'HELD', 'amountCents': order.totalCents, 'cardMask': '9104 **** 1234', 'paidAt': null},
+      );
+    }
     return const ChargeResult(paymentId: 'pay_1', status: 'REQUIRES_ACTION', amountCents: 2000);
   }
 
@@ -787,6 +805,11 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<StartWebPaymentResult> startWebPayment(StartWebPaymentRequest body) async {
     webPayments.add(body);
+    final failure = webPaymentFailure;
+    if (failure != null) {
+      webPaymentFailure = null;
+      throw _apiError('/payments/agroprombank-web/start', failure.$1, failure.$2);
+    }
     return StartWebPaymentResult(
       paymentId: 'pay_web_1',
       invoiceId: 'inv_1',
